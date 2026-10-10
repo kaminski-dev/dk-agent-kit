@@ -1,0 +1,6 @@
+{
+  "name": "dk",
+  "description": "Daniel Kaminski's engineering skills: issue → worktree → TDD → review → verified PR into pre-main. Adapted from mattpocock/skills, pstack and HumanLayer.",
+  "author": { "name": "Daniel Kaminski" },
+  "license": "MIT"
+}
