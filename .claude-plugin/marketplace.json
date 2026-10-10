@@ -1,0 +1,14 @@
+{
+  "name": "dk-agent-kit",
+  "owner": {
+    "name": "Daniel Kaminski"
+  },
+  "description": "Daniel Kaminski's agent kit: guardrail hooks now, adapted skills (from mattpocock/skills, pstack, HumanLayer) next.",
+  "plugins": [
+    {
+      "name": "dk-guard",
+      "source": "./plugins/dk-guard",
+      "description": "Guardrail hooks: blocks docker prune, unfiltered mass removal, pushes to main, plain force pushes and git clean -x; asks before rewriting pre-main or reading credential files."
+    }
+  ]
+}

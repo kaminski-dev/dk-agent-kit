@@ -1,0 +1,6 @@
+{
+  "name": "dk-guard",
+  "description": "Deterministic guardrail hooks for agent sessions. Hooks only, no skills, so it stays on while skills are switched off.",
+  "author": { "name": "Daniel Kaminski" },
+  "license": "MIT"
+}

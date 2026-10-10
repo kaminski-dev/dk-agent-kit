@@ -1,0 +1,18 @@
+name: test
+on:
+  push:
+  pull_request:
+jobs:
+  hooks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: guard-bash fixture matrix
+        run: python3 -I tests/hooks/test_guard_bash.py
+      - name: bootstrap merge
+        run: bash tests/test_bootstrap.sh
+      - name: manifests parse
+        run: |
+          for f in .claude-plugin/marketplace.json plugins/*/.claude-plugin/plugin.json plugins/*/hooks/hooks.json settings/*.json; do
+            jq empty "$f" || exit 1
+          done

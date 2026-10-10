@@ -1,0 +1,5 @@
+.DS_Store
+__pycache__/
+*.pyc
+# transcript extracts for tests/hooks/replay_history.py stay local
+*.jsonl

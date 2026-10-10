@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(docker system prune *)",
+      "Bash(docker container prune *)",
+      "Bash(docker volume prune *)",
+      "Bash(docker image prune *)",
+      "Bash(docker network prune *)",
+      "Bash(docker builder prune *)",
+      "Bash(git push * main)",
+      "Bash(git push *:main)",
+      "Bash(git push *:refs/heads/main)",
+      "Bash(git push * master)",
+      "Bash(git push *:master)",
+      "Read(~/.sentryclirc)",
+      "Read(~/.aws/credentials)",
+      "Read(~/.netrc)"
+    ],
+    "ask": [
+      "Bash(git clean *)",
+      "Bash(npx skills add *)",
+      "Bash(npx skills@* add *)",
+      "Bash(bunx skills add *)"
+    ]
+  },
+  "autoMode": {
+    "hard_deny": [
+      "$defaults",
+      "Never run docker or podman prune, and never remove containers, volumes or images this session did not create.",
+      "Never push to main or master; changes reach main only through a merged PR.",
+      "Never print or copy the contents of credential files such as ~/.sentryclirc, ~/.aws/credentials or ~/.netrc."
+    ]
+  }
+}
