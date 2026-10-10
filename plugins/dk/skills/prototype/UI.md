@@ -59,6 +59,8 @@ Create a single switcher component on the route:
 
 ```tsx
 // pseudo-code, adapt to the project's framework
+// production always renders the normal page, whatever ?variant= says
+if (process.env.NODE_ENV === 'production') return <CurrentPage {...data} />;
 const variant = searchParams.get('variant') ?? 'A';
 return (
   <>
@@ -87,7 +89,7 @@ Behaviour:
 - Clicking an arrow updates the URL search param (use the framework's router, e.g. `router.replace` on Next, `navigate` on React Router, etc) so the variant is shareable and reload-stable.
 - Keyboard: `←` and `→` arrow keys also cycle. Don't intercept arrow keys when an `<input>`, `<textarea>`, or `[contenteditable]` is focused.
 - Visually distinct from the page (e.g. high-contrast pill, subtle shadow) so it's obviously not part of the design being evaluated.
-- Hidden in production builds: gate on `process.env.NODE_ENV !== 'production'` or an equivalent check, so a stray prototype merge can't ship the bar to users.
+- Hidden in production builds: gate on `process.env.NODE_ENV !== 'production'` or an equivalent check, together with the variant rendering in step 3, so a stray prototype merge ships neither the bar nor a variant to users.
 
 Put the switcher in a single shared component so both sub-shapes can reuse it. Locate it wherever shared UI lives in the project.
 

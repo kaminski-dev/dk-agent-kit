@@ -56,7 +56,7 @@ git push -f origin "$c:refs/heads/verify-assets/<N>"
 # embed: https://github.com/<owner>/<repo>/blob/$c/<file>.png?raw=true
 ```
 
-Rerunning replaces the branch; the guard allows force pushes to `verify-assets/*` only.
+Rerunning replaces the branch; the guard allows force pushes to `verify-assets/*` only. The branch stays after the merge: it is the only ref that keeps the embedded commit, so deleting it would eventually break the images in the merged PR.
 
 ## 6. Open the PR
 
@@ -72,7 +72,7 @@ Then write the customer reply on the issue as `workflow.md` describes. Merging i
 - Batch PR review findings are fixed in a new PR against `pre-main`, so they ride the same batch. A skipped finding gets its reason on the review thread.
 - `Refs #N` issues: once the batch reaches `main`, swap `ready-for-agent` for `awaiting-verification` and comment the exact query and the due date. When the window has passed, run the check and comment the evidence, then drop the label and close. A check that never had a chance to fire is reported as **shipped but not exercised**, which keeps the issue open.
 - Declining an issue: comment the reason, add `wontfix`, close.
-- Clean up: `git worktree remove ~/workspace/<prefix>-<N>`, `git branch -D <branch>`, `git push origin --delete verify-assets/<N>`.
+- Clean up: `git worktree remove ~/workspace/<prefix>-<N>`, `git branch -D <branch>`. Keep `verify-assets/<N>` (step 5).
 
 ## `pre-main`
 

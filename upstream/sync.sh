@@ -24,5 +24,5 @@ for p in $paths; do
     git -C "$clone" diff --stat "$base" origin/main -- "$p"
   fi
 done
-((changed)) || echo "no upstream changes to vendored skills"
+((changed)) || echo "no mattpocock/skills changes to vendored skills (pstack and HumanLayer ports: compare by hand, see UPSTREAM.md)"
 echo; echo "Full diff of one skill: git -C <clone> diff $base origin/main -- <path>"

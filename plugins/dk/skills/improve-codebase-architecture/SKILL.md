@@ -65,7 +65,7 @@ Once the user picks a candidate, call the Skill tool with `dk:grilling` to walk 
 
 Side effects happen inline as decisions crystallize; call the Skill tool with `dk:domain-modeling` to keep the domain model current as you go:
 
-- **Naming a deepened module after a concept not in `GLOSSARY.md`?** Add the term to `GLOSSARY.md`. Create the file lazily if it doesn't exist.
-- **Sharpening a fuzzy term during the conversation?** Update `GLOSSARY.md` right there.
+- **Naming a deepened module after a concept not in the glossary?** Record the term right there, in the glossary of the relevant context (`GLOSSARY.md`, or the one `GLOSSARY-MAP.md` points at) and by the change rule in `docs/agents/domain.md`. Create the file lazily if it doesn't exist.
+- **Sharpening a fuzzy term during the conversation?** Record it the same way, right there.
 - **User rejects the candidate with a load-bearing reason?** Offer an ADR, framed as: _"Want me to record this as an ADR so future architecture reviews don't re-suggest it?"_ Only offer when the reason would actually be needed by a future explorer to avoid re-suggesting the same thing; skip ephemeral reasons ("not worth it right now") and self-evident ones.
 - **Want to explore alternative interfaces for the deepened module?** Call the Skill tool with `dk:codebase-design` and use its design-it-twice parallel sub-agent pattern.

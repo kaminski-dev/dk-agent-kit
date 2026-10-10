@@ -18,7 +18,7 @@ Tracker commands are in `docs/agents/issue-tracker.md`. If it is missing, tell t
 
 Whatever the user said is the fixed point (a commit SHA, branch name, tag, `HEAD~5`, etc.). If they didn't specify one, use `origin/pre-main` after a `git fetch -q origin`: every branch here starts from it.
 
-Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`. When `git status --porcelain` shows uncommitted work, review it too: add `git diff HEAD` to the commands the sub-agents run.
+Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`. When `git status --porcelain` shows uncommitted work, review it too: add `git diff HEAD` (staged and unstaged changes) and the list of untracked files (`git ls-files --others --exclude-standard`) to what the sub-agents read.
 
 Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and the combined diff is non-empty. A bad ref or empty diff should fail here, not inside two parallel sub-agents.
 
