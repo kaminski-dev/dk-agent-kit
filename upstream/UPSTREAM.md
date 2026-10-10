@@ -1,6 +1,6 @@
 # Upstream sources
 
-Each vendored or ported file, the commit it was taken from, and how far it was changed. `upstream/sync.sh` shows what upstream changed since; merging those changes is a manual edit through `dk:writing-for-agents`, recorded by bumping the commit here.
+Each vendored or ported file, the commit it was taken from, and how far it was changed. `upstream/sync.sh` shows what mattpocock/skills changed since; the pstack and HumanLayer ports are compared by hand (`git log <commit>..origin/main -- <path>` in a clone). Merging upstream changes is a manual edit through `dk:writing-for-agents`, recorded by bumping the commit here.
 
 ## mattpocock/skills (MIT) @ 49dd158
 

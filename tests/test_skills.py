@@ -30,6 +30,8 @@ def frontmatter(path):
 
 skills = {p.parent.name: p for p in DK.glob("skills/*/SKILL.md")}
 agents = {p.stem: p for p in DK.glob("agents/*.md")}
+if not skills or not agents:
+    sys.exit(f"FAIL no skills or agents found under {DK}")
 
 for name, path in skills.items():
     fm = frontmatter(path)
