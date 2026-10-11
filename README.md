@@ -50,22 +50,28 @@ flowchart LR
 it describes the code as it is rather than arguing for a solution.
 
 ```mermaid
-flowchart TD
+flowchart LR
   ready(["ready-for-agent"]) --> implement["dk:implement<br/>worktree off pre-main"]
-  implement -. "side finding" .-> intake{"scope<br/>intake"}
-  intake -- "small, same place" --> implement
-  intake -- "otherwise" --> new(["new issue"])
   implement --> verify["dk:verify<br/>repo verify doc today"]
   verify --> review["dk:code-review<br/>Standards, Spec"]
   review --> pr["dk:pr<br/>PR into pre-main"]
-  pr --> batch(["batch PR to main<br/>deploys"])
+  implement -. "side finding" .-> intake{"scope<br/>intake"}
+  intake -- "small, same place" --> implement
+  intake -- "otherwise" --> new(["new issue"])
+  classDef planned stroke-dasharray: 5 5
+  class verify planned
+```
+
+```mermaid
+flowchart LR
+  pr["merged into pre-main"] --> batch(["batch PR to main<br/>deploys"])
   batch -- "Closes" --> closed(["issue closed"])
   batch -- "Refs" --> check["post-deploy check"]
   check --> closed
   closed -.-> retro["dk:retro<br/>monthly"]
   retro -. "repeat mistake" .-> guard[["new dk-guard check"]]
   classDef planned stroke-dasharray: 5 5
-  class verify,check planned
+  class check planned
 ```
 
 The scope intake decides what a side finding becomes: small work in the same
