@@ -42,7 +42,7 @@ Use this template for writing the PR body:
 Closes #<N>
 ```
 
-Drop "Also in this PR" and "Deviations" when empty. The last line is `Closes #N`, or `Refs #N` when a post-deploy check remains (see the `dk:issue-flow` skill); an epic PR or a batch PR into `main` carries one line per issue it resolves.
+Drop "Also in this PR" and "Deviations" when empty. The last line is `Closes #N`, or `Refs #N` when a post-deploy check remains (see the `dk:issue-flow` skill); an epic PR or a batch PR into `main` carries one `Closes #N` or `Refs #N` line per issue it covers.
 
 ## Sections
 
