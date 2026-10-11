@@ -76,7 +76,7 @@ Do NOT close or modify any parent issue.
 
 **What to build:** the end-to-end behaviour this ticket makes work, from the user's perspective, not a layer-by-layer implementation list.
 
-**Blocked by:** the numbers/titles of the tickets that gate this one, or "None (can start immediately)".
+**Blocked by:** the numbers/titles of the tickets that gate this one. A ticket that can start immediately has no such line.
 
 **Status:** ready-for-agent
 
@@ -102,7 +102,7 @@ The end-to-end behaviour this ticket makes work, from the user's perspective, no
 
 ## Blocked by
 
-- A reference to each blocking ticket, or "None (can start immediately)". Omit this section when blockers were set as native edges.
+- A reference to each blocking ticket. Include this section, heading and all, only when a ticket gates this one and the blockers were not set as native edges.
 
 </issue-template>
 

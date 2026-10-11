@@ -22,8 +22,8 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 | tdd | skills/engineering/tdd | `dk:` references |
 | teach | skills/productivity/teach | as-is |
 | to-spec | skills/engineering/to-spec | `spec` label instead of `ready-for-agent` |
-| to-tickets | skills/engineering/to-tickets | adapter files, same-place search, shared-module check |
-| triage | skills/engineering/triage | adapter files, same-place and premise checks, yes-only decisions batched, parallel-wave check |
+| to-tickets | skills/engineering/to-tickets | adapter files, same-place search, shared-module check; Blocked by only when a ticket gates it |
+| triage | skills/engineering/triage | adapter files, same-place and premise checks, yes-only decisions batched, parallel-wave check; brief gains an optional Blocked by line |
 | writing-for-agents | skills/productivity/writing-for-agents | as-is |
 | setup | skills/engineering/setup-matt-pocock-skills | rewritten; templates adapted |
 

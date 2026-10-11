@@ -36,8 +36,10 @@ cd ~/workspace/dk-agent-kit
 ./bootstrap.sh --apply    # write it, add the marketplace, install dk-guard and dk
 ```
 
-The marketplace is added from the local path, so edits apply on
-`/reload-plugins` without a version bump. Client-specific settings
+The marketplace is added from the local path, and its relative plugin
+sources load straight from this checkout: after `git pull`, `/reload-plugins`
+or a restart applies the changes, with no version bump and no
+`claude plugin update`. Client-specific settings
 (`autoMode.environment`, for example) go in `~/.config/dk-agent-kit/private.json`;
 bootstrap merges that file last, and it never enters this repo.
 
