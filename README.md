@@ -33,10 +33,10 @@ Every issue reaches `ready-for-agent` by one of two paths, then follows the
 same line to deploy. Dashed boxes are planned and not built yet.
 
 ```mermaid
-flowchart TD
+flowchart LR
   subgraph feature["Big feature"]
-    grill["dk:grill-with-docs"] --> research["dk:research-codebase<br/>fresh session, never sees the ticket"]
-    research --> spec["dk:to-spec<br/>epic issue, label spec"]
+    grill["dk:grill-with-docs"] --> research["dk:research-codebase"]
+    research --> spec["dk:to-spec<br/>epic, label spec"]
     spec --> tickets["dk:to-tickets<br/>sub-issues"]
   end
   subgraph bug["Bug or side finding"]
@@ -44,19 +44,26 @@ flowchart TD
   end
   tickets --> ready(["ready-for-agent"])
   triage --> ready
-  ready --> implement["dk:implement or dk:implement-spec<br/>worktree off origin/pre-main, dk:tdd"]
-  implement -. "side finding" .-> intake{"scope intake"}
-  intake -- "small, same place:<br/>scope amendment" --> implement
-  intake -- "otherwise" --> new
-  implement --> verify["verify<br/>repo verify doc today, dk:verify planned"]
-  verify --> review["dk:code-review<br/>Standards and Spec axes"]
+```
+
+`dk:research-codebase` runs in a fresh session that never sees the ticket, so
+it describes the code as it is rather than arguing for a solution.
+
+```mermaid
+flowchart TD
+  ready(["ready-for-agent"]) --> implement["dk:implement<br/>worktree off pre-main"]
+  implement -. "side finding" .-> intake{"scope<br/>intake"}
+  intake -- "small, same place" --> implement
+  intake -- "otherwise" --> new(["new issue"])
+  implement --> verify["dk:verify<br/>repo verify doc today"]
+  verify --> review["dk:code-review<br/>Standards, Spec"]
   review --> pr["dk:pr<br/>PR into pre-main"]
-  pr --> batch(["batch PR pre-main to main<br/>repeats the Closes and Refs lines, deploys"])
+  pr --> batch(["batch PR to main<br/>deploys"])
   batch -- "Closes" --> closed(["issue closed"])
-  batch -- "Refs" --> check["post-deploy check<br/>label awaiting-verification"]
+  batch -- "Refs" --> check["post-deploy check"]
   check --> closed
-  closed -.-> retro["dk:retro, monthly"]
-  retro -. "repeat mistake becomes a check" .-> guard[["dk-guard"]]
+  closed -.-> retro["dk:retro<br/>monthly"]
+  retro -. "repeat mistake" .-> guard[["new dk-guard check"]]
   classDef planned stroke-dasharray: 5 5
   class verify,check planned
 ```
@@ -89,8 +96,8 @@ flowchart LR
 ```
 
 L1 and L2 are deterministic and ship here, and the L3 Stop gate will join
-them; L4 is a judgement call and only a backstop. Outside the session, repo lint and CI are the next layer, and skill
-text and `AGENTS.md` the last.
+them; L4 is a judgement call and only a backstop. Outside the session, repo
+lint and CI are the next layer, and skill text and `AGENTS.md` the last.
 
 ## Install
 
