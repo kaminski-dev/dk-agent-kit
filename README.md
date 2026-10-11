@@ -46,8 +46,10 @@ flowchart LR
   triage --> ready
 ```
 
-`dk:research-codebase` runs in a fresh session that never sees the ticket, so
-it describes the code as it is rather than arguing for a solution.
+`dk:research-codebase` reads the ticket and turns it into neutral questions;
+the documentarian subagent that answers them never sees the ticket or the
+conversation, so it describes the code as it is rather than arguing for a
+solution.
 
 ```mermaid
 flowchart LR
@@ -106,8 +108,8 @@ flowchart LR
 The hook runs before the permission rules, and nothing it returns overrides
 a matching deny rule. L1 and L2 are deterministic and ship here, and the L3
 Stop gate will join them. L4 runs only in auto mode, is a judgement call, and
-is only a backstop. Outside the session, repo lint and CI are the next layer,
-and skill text and `AGENTS.md` the last.
+is only a backstop. CI is the next layer, outside the session, and skill
+text and `AGENTS.md` the last.
 
 ## Install
 
