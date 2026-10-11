@@ -40,8 +40,16 @@ def run_gate(gate, root):
     try:
         out, _ = proc.communicate(timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
-        os.killpg(proc.pid, signal.SIGKILL)  # the gate's test runners go with it
-        out, _ = proc.communicate()
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)  # the gate's test runners go with it
+        except ProcessLookupError:
+            pass  # the group exited between the timeout and the kill
+        try:
+            out, _ = proc.communicate(timeout=2)
+        except subprocess.TimeoutExpired as e:
+            # A child that left the group still holds the pipe: keep what was read, stop waiting.
+            proc.kill()
+            out = e.output or b""
         failure = f"timed out after {TIMEOUT} s"
     else:
         failure = f"failed (exit {proc.returncode})" if proc.returncode else None

@@ -11,6 +11,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK = os.path.join(HERE, "..", "..", "plugins", "dk-guard", "scripts", "stop-gate.py")
@@ -93,11 +94,23 @@ def case_gate_that_cannot_execute_blocks_with_the_reason(root):
     assert "could not run" in out["reason"], out["reason"]
 
 
-def case_gate_that_hangs_is_cut_off_and_blocks(root):
-    repo = make_repo(root, "hangs", "#!/bin/sh\necho 'starting tests'\nsleep 30\n")
+def case_gate_that_hangs_is_cut_off_with_its_children(root):
+    repo = make_repo(root, "hangs", "#!/bin/sh\n(sleep 2; touch .late) &\necho 'starting tests'\nsleep 30\n")
     code, out, err = run(repo, env={"DK_GATE_TIMEOUT": "1"})
     assert out and out.get("decision") == "block", (code, out, err)
     assert "timed out after 1 s" in out["reason"] and "starting tests" in out["reason"], out["reason"]
+    time.sleep(3)
+    assert not os.path.exists(os.path.join(repo, ".late")), "a child of the gate outlived the timeout"
+
+
+def case_child_that_escapes_the_group_does_not_hang_the_hook(root):
+    escape = "python3 -c 'import os, time; os.setsid(); time.sleep(10)' &\n"
+    repo = make_repo(root, "escapes", "#!/bin/sh\n" + escape + "echo 'starting tests'\nsleep 30\n")
+    start = time.monotonic()
+    code, out, err = run(repo, env={"DK_GATE_TIMEOUT": "1"})
+    assert time.monotonic() - start < 6, f"hook waited {time.monotonic() - start:.0f} s for the escaped child"
+    assert out and out.get("decision") == "block", (code, out, err)
+    assert "starting tests" in out["reason"], out["reason"]
 
 
 def case_one_huge_line_is_capped(root):
