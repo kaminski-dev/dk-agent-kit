@@ -1,7 +1,7 @@
 # dk-agent-kit
 
 My Claude Code setup as a plugin marketplace: guardrails that hold whether or
-not the agent reads its instructions, and (next) the skills I work with,
+not the agent reads its instructions, and the skills I work with,
 adapted from [mattpocock/skills](https://github.com/mattpocock/skills),
 [pstack](https://github.com/cursor/plugins/tree/main/pstack) and
 [HumanLayer](https://github.com/humanlayer/humanlayer).
@@ -13,6 +13,8 @@ Claude Code only for now. Codex and other hosts will follow.
 | Path | What it does |
 |---|---|
 | `plugins/dk-guard` | PreToolUse hook on Bash. It **denies** `docker`/`podman prune`, mass removal without a label or name filter, pushes to `main`/`master` (explicit, `HEAD:main`, or a bare push while on main), plain force pushes (`--force-with-lease` and `verify-assets/*` are fine), `git push --mirror` and `git clean -x`. It **asks** before rewriting or deleting `pre-main` and before reading `~/.sentryclirc`, `~/.aws/credentials`, `~/.netrc` or a private SSH key. Piped `gh issue view --comments` gets a hint that the body is missing. The hook fails closed (`onFailure: block`). |
+| `plugins/dk` | The skills, called as `/dk:<name>`. You start: `triage`, `implement`, `implement-spec`, `to-spec`, `to-tickets`, `research-codebase`, `grill-with-docs`, `improve-codebase-architecture`, `teach`, `prototype`, `retro`, `handoff`, `setup`. Other skills call: `issue-flow`, `tdd`, `code-review`, `pr`, `blast-radius`, `research`, `grilling`, `domain-modeling`, `codebase-design`, `writing-for-agents`. Agents: `reviewer` (read-only) and HumanLayer's `codebase-locator`, `codebase-analyzer`, `codebase-pattern-finder`. Each repo supplies its facts in adapter files that `/dk:setup` writes. |
+| `upstream/` | `UPSTREAM.md` records the commit and changes for every adapted file; `sync.sh` shows what mattpocock/skills changed since (pstack and HumanLayer are compared by hand). |
 | `settings/user.fragment.json` | What a plugin cannot ship: permission deny and ask rules, and `autoMode.hard_deny` lines. Merged into `~/.claude/settings.json` by `bootstrap.sh`. |
 | `bootstrap.sh` | Shows the settings diff; `--apply` backs up, merges and installs the plugins from this checkout. |
 | `tests/` | The guard's case matrix (taken from real incidents), a bootstrap merge test, and `replay_history.py` for checking the guard against past transcripts. |
@@ -31,7 +33,7 @@ security boundary.
 git clone https://github.com/kaminski-dev/dk-agent-kit ~/workspace/dk-agent-kit
 cd ~/workspace/dk-agent-kit
 ./bootstrap.sh            # read the diff
-./bootstrap.sh --apply    # write it, add the marketplace, install dk-guard
+./bootstrap.sh --apply    # write it, add the marketplace, install dk-guard and dk
 ```
 
 The marketplace is added from the local path, so edits apply on
@@ -46,6 +48,7 @@ nothing is removed, scalars from the fragment win. A second run is a no-op.
 
 ```sh
 python3 -I tests/hooks/test_guard_bash.py
+python3 -I tests/test_skills.py
 bash tests/test_bootstrap.sh
 claude plugin validate .
 ```

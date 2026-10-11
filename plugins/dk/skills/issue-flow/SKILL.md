@@ -1,0 +1,79 @@
+---
+name: issue-flow
+description: "How an issue travels from GitHub issue to merged PR in repos that batch through pre-main. Use when starting work on an issue (worktree, branch), reading or labelling an issue with gh, deciding whether newly found work joins the current issue, committing, attaching screenshots, opening the PR, or cleaning up after a merge."
+---
+
+# Issue flow
+
+The shared sequence for every repo that works issue → branch → PR into `pre-main` → batch merge to `main` → deploy. The repo supplies its parameters in `docs/agents/workflow.md`: worktree prefix, branch types, fresh-worktree setup, CI names, customer-reply language, production-data policy. Read it before the first git step. Tracker commands live in `docs/agents/issue-tracker.md`, labels in `docs/agents/triage-labels.md`.
+
+## 1. Read the issue
+
+`gh issue view N --json title,body,labels,comments`. The issue and its comments are the record; a recalled note is background to check against them. Plain `--comments` drops the body when piped, so the `--json` form is the one that works in an agent shell. An issue labelled `spec` is an epic: its sub-issues are the work, the spec is their context.
+
+## 2. Worktree before the first edit
+
+One issue, one branch, one worktree, based on the remote `pre-main`:
+
+```sh
+git ls-remote --heads origin pre-main     # the local origin/pre-main ref can outlive the branch
+git fetch -q origin
+git worktree add ~/workspace/<prefix>-<N> -b <type>/<N>-<slug> origin/pre-main
+```
+
+When `ls-remote` prints nothing, `pre-main` is missing: ask the maintainer to restore it, branching from `main` only on their word. Run the fresh-worktree setup from `workflow.md` before any gate means anything.
+
+Scratch files live in `$SCRATCH/<N>/` (`$SCRATCH` = the session's scratchpad directory), one directory per agent, never in the tree. Parallel agents each get their own worktree and their own scratch directory; a shared one is how two agents overwrote each other's `network-failure.ts`. `git stash` is one list across all worktrees, so set work aside with a WIP commit or a patch file in `$SCRATCH`.
+
+## 3. Scope intake
+
+Something new turns up mid-work: a bug next door, a missing case, a cleanup. Decide once, then move on.
+
+**Fold it in** when all four hold:
+
+- **Same place**: it touches files already in this branch's diff, or the same issue or acceptance area.
+- **Small**: about 50 changed lines or fewer, with no migration, no new route or public API, no new dependency.
+- **Context fits**: no new subsystem to read, and the session is far from compaction.
+- **Two-way door**: nothing the customer sees changes beyond what the issue already changes.
+
+Then record it, so review counts it as requested work: comment `Scope amendment: <what and why>` on the issue, and list it under "Also in this PR" in the PR body.
+
+**Otherwise file it**: a new issue labelled `needs-triage`, opening with `Found while working on #N` and the evidence. Before creating it, search open issues touching the same files (`gh issue list --state open --search "<file or term>" --json number,title`) and add it there as a comment when one fits. When it blocks the current issue, link it as a blocker (tracker doc) and say so on the issue.
+
+## 4. Commit per green step
+
+Each commit is one verifiable unit: the gates from `AGENTS.md` pass on what it touches before the next unit starts. For a bug, the failing test lands first and the fix on top, so the history shows red then green. Messages are English, imperative, and name the issue: `Fix X when Y (#N)`.
+
+## 5. Screenshots and evidence
+
+Evidence goes into the PR, never into the tree. Push the files as an orphan commit on `verify-assets/<N>` and embed them by commit SHA:
+
+```sh
+tree=$( { for f in "$SCRATCH/<N>"/shots/*.png; do
+          printf '100644 blob %s\t%s\n' "$(git hash-object -w "$f")" "$(basename "$f")"; done; } | git mktree )
+c=$(git commit-tree "$tree" -m "verify assets for #<N>")
+git push -f origin "$c:refs/heads/verify-assets/<N>"
+# embed: https://github.com/<owner>/<repo>/blob/$c/<file>.png?raw=true
+```
+
+Rerunning replaces the branch; the guard allows force pushes to `verify-assets/*` only. The branch stays after the merge: it is the only ref that keeps the embedded commit, so deleting it would eventually break the images in the merged PR.
+
+## 6. Open the PR
+
+Rebase onto the current `origin/pre-main`, push the branch, and open the PR against `pre-main` (`gh pr create --base pre-main --body-file …`), body written with the `dk:pr` skill. The body carries:
+
+- `Closes #N` when no post-deploy acceptance criterion remains, `Refs #N` when one does (a 24 h, 48 h or 7 d window on production logs or errors).
+- Every deviation from the issue, named for the maintainer's OK, and the "Also in this PR" list from scope intake.
+
+Then write the customer reply on the issue as `workflow.md` describes. Merging is the maintainer's.
+
+## 7. After the merge
+
+- Batch PR review findings are fixed in a new PR against `pre-main`, so they ride the same batch. A skipped finding gets its reason on the review thread.
+- `Refs #N` issues: once the batch reaches `main`, swap `ready-for-agent` for `awaiting-verification` and comment the exact query and the due date. When the window has passed, run the check and comment the evidence, then drop the label and close. A check that never had a chance to fire is reported as **shipped but not exercised**, which keeps the issue open.
+- Declining an issue: comment the reason, add `wontfix`, close.
+- Clean up: `git worktree remove ~/workspace/<prefix>-<N>`, `git branch -D <branch>`. Keep `verify-assets/<N>` (step 5).
+
+## `pre-main`
+
+`pre-main` is shared by every open PR. The maintainer moves it and brings it level with `main` after each batch; agents reach it only through PRs. A push that rewrites or deletes it makes the guard ask the user first.

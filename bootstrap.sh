@@ -15,7 +15,7 @@ set -euo pipefail
 repo=$(cd "$(dirname "$0")" && pwd)
 settings=${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}
 private=${DK_PRIVATE_SETTINGS:-$HOME/.config/dk-agent-kit/private.json}
-plugins=(dk-guard)
+plugins=(dk-guard dk)
 
 command -v jq >/dev/null || { echo "bootstrap: jq is required" >&2; exit 1; }
 [[ -f "$settings" ]] || echo '{}' > "$settings"
