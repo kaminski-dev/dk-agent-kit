@@ -99,14 +99,15 @@ flowchart LR
   subgraph turn["Every turn end"]
     done["agent says done"] --> stop["L3 Stop gate<br/>runs .claude/gate.sh"]
     stop -- "pass" --> ends["turn ends"]
-    stop -- "fail: errors fed back" --> done
+    stop -- "first fail: errors fed back" --> done
+    stop -- "second fail: you are told" --> ends
   end
 ```
 
 The hook runs before the permission rules, and nothing it returns overrides
-a matching deny rule. L1, L2 and the L3
-Stop gate are deterministic and ship here. L4 runs only in auto mode, is a judgement call, and
-is only a backstop. CI is the next layer, outside the session, and skill
+a matching deny rule. L1, L2 and the L3 Stop gate are deterministic and
+ship here. L4 runs only in auto mode, is a judgement call, and is only a
+backstop. CI is the next layer, outside the session, and skill
 text and `AGENTS.md` the last.
 
 ## Install

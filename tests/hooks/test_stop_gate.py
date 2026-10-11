@@ -43,11 +43,11 @@ def make_repo(root, name, gate=None, executable=True, dirty=True):
     return path
 
 
-def run(cwd, active=False):
+def run(cwd, active=False, env=None):
     payload = {"session_id": "test", "cwd": cwd, "hook_event_name": "Stop",
                "stop_hook_active": active, "last_assistant_message": "Done."}
     out = subprocess.run([sys.executable, "-I", HOOK], input=json.dumps(payload),
-                         capture_output=True, text=True, env={"PATH": os.environ["PATH"]})
+                         capture_output=True, text=True, env={"PATH": os.environ["PATH"], **(env or {})})
     return out.returncode, json.loads(out.stdout) if out.stdout.strip() else None, out.stderr
 
 
@@ -76,12 +76,41 @@ def case_still_failing_after_a_block_lets_the_turn_end(root):
 def case_passing_after_a_block_is_silent(root):
     repo = make_repo(root, "retry-pass", PASS)
     assert run(repo, active=True) == (0, None, "")
+    assert gate_ran(repo)
+
+
+def case_gate_output_that_is_not_utf8_still_blocks(root):
+    repo = make_repo(root, "binary", "#!/bin/sh\nprintf 'bad \\377\\376 bytes\\nerror: lint failed\\n'\nexit 1\n")
+    code, out, err = run(repo)
+    assert out and out.get("decision") == "block", (code, out, err)
+    assert "error: lint failed" in out["reason"], out["reason"]
+
+
+def case_gate_that_cannot_execute_blocks_with_the_reason(root):
+    repo = make_repo(root, "no-shebang", "echo hi\n")
+    code, out, err = run(repo)
+    assert out and out.get("decision") == "block", (code, out, err)
+    assert "could not run" in out["reason"], out["reason"]
+
+
+def case_gate_that_hangs_is_cut_off_and_blocks(root):
+    repo = make_repo(root, "hangs", "#!/bin/sh\necho 'starting tests'\nsleep 30\n")
+    code, out, err = run(repo, env={"DK_GATE_TIMEOUT": "1"})
+    assert out and out.get("decision") == "block", (code, out, err)
+    assert "timed out after 1 s" in out["reason"] and "starting tests" in out["reason"], out["reason"]
+
+
+def case_one_huge_line_is_capped(root):
+    repo = make_repo(root, "huge", "#!/bin/sh\nhead -c 200000 /dev/zero | tr '\\0' x\necho\necho 'error: at the end'\nexit 1\n")
+    code, out, err = run(repo)
+    assert out and len(out["reason"]) < 5000, len(out["reason"]) if out else (code, err)
+    assert "error: at the end" in out["reason"], out["reason"][-200:]
 
 
 def case_failing_gate_found_from_a_subdirectory(root):
     repo = make_repo(root, "subdir", FAIL)
     code, out, _ = run(os.path.join(repo, "src"))
-    assert out and out.get("decision") == "block", out
+    assert code == 0 and out and out.get("decision") == "block", (code, out)
 
 
 def case_passing_gate_is_silent(root):
