@@ -63,5 +63,19 @@
   {"why": "cd target unknown until run time", "cmd": "for w in 224 246; do cd ~/workspace/clientdata-$w && git push -q; done", "repo": "main", "expect": "allow"},
   {"cmd": "for w in a; do cd ../main-checkout && git push; done", "repo": "feature", "expect": "deny"},
   {"cmd": "docker ps -q --filter ancestor=jb-ffbench | xargs -r docker kill", "expect": "allow"},
-  {"cmd": "docker container prune -f --filter \"label!=keep\"", "expect": "deny"}
+  {"cmd": "docker container prune -f --filter \"label!=keep\"", "expect": "deny"},
+  {"why": "#10: hand-written verify Postgres (jetztbar)", "cmd": "docker run -d --name verify-1047-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=postgres -p 5547:5432 postgres:16-alpine", "expect": "hint"},
+  {"why": "#10: clientdata's, stopped containers kept on purpose", "cmd": "docker run -d --name clientdata-pg-233 \\\n  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=kaminski_advies \\\n  -p 55433:5432 --tmpfs /var/lib/postgresql/data postgres:16-alpine", "expect": "hint"},
+  {"cmd": "docker run -d -p 5433:5432 docker.io/library/postgres:17", "expect": "hint"},
+  {"cmd": "podman run -d --name pg pgvector/pgvector:pg16", "expect": "hint"},
+  {"cmd": "docker container run -d -e POSTGRES_PASSWORD=x postgis/postgis:16-3.4", "expect": "hint"},
+  {"cmd": "docker run --rm -d -p 5433:5432 postgres:16", "expect": "allow"},
+  {"cmd": "docker run -d --label dk.issue=10 postgres:16-alpine", "expect": "allow"},
+  {"cmd": "docker run --rm -it postgres:16-alpine psql -h host.docker.internal -U postgres", "expect": "allow"},
+  {"cmd": "docker run -d --user postgres -e POSTGRES_HOST=db redis:7", "expect": "allow"},
+  {"cmd": "docker run -d -v pgdata:/var/lib/postgresql/data --name cache redis:7", "expect": "allow"},
+  {"cmd": "docker pull postgres:16-alpine && docker exec verify-1047-pg pg_isready", "expect": "allow"},
+  {"cmd": "dk-pg up 1047", "expect": "allow"},
+  {"cmd": "export DATABASE_URL=$(dk-pg url 1047) && go test ./...", "expect": "allow"},
+  {"cmd": "dk-pg down 1047", "expect": "allow"}
 ]
