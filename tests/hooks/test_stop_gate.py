@@ -65,6 +65,19 @@ def case_failing_gate_blocks_with_last_lines(root):
     assert "first line, scrolled away" not in out["reason"], "reason should hold only the last lines"
 
 
+def case_still_failing_after_a_block_lets_the_turn_end(root):
+    repo = make_repo(root, "retry", FAIL)
+    code, out, _ = run(repo, active=True)
+    assert code == 0, code
+    assert out and "decision" not in out, out
+    assert "error TS2304" in out.get("systemMessage", ""), out
+
+
+def case_passing_after_a_block_is_silent(root):
+    repo = make_repo(root, "retry-pass", PASS)
+    assert run(repo, active=True) == (0, None, "")
+
+
 def case_failing_gate_found_from_a_subdirectory(root):
     repo = make_repo(root, "subdir", FAIL)
     code, out, _ = run(os.path.join(repo, "src"))
