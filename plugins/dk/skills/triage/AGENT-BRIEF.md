@@ -32,6 +32,10 @@ The agent needs to know when it's done. Every agent brief must have concrete, te
 - **Good:** "Running `gh issue list --label needs-triage` returns issues that have been through initial classification"
 - **Bad:** "Triage should work correctly"
 
+### Dependencies
+
+When another issue must land first, name it on a `Blocked by:` line, and set it as a native dependency when the tracker has one (`docs/agents/issue-tracker.md`). An independent issue's brief has no such line.
+
 ### Explicit scope boundaries
 
 State what is out of scope. This prevents the agent from gold-plating or making assumptions about adjacent features.
@@ -43,6 +47,7 @@ State what is out of scope. This prevents the agent from gold-plating or making 
 
 **Category:** bug / enhancement
 **Summary:** one-line description of what needs to happen
+**Blocked by:** #N, the issue that must land first (only when one exists)
 
 **Current behavior:**
 Describe what happens now. For bugs, this is the broken behavior.

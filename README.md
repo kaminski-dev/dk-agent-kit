@@ -36,8 +36,17 @@ cd ~/workspace/dk-agent-kit
 ./bootstrap.sh --apply    # write it, add the marketplace, install dk-guard and dk
 ```
 
-The marketplace is added from the local path, so edits apply on
-`/reload-plugins` without a version bump. Client-specific settings
+The marketplace is added from the local path, but Claude Code runs a copy
+cached per commit, so `git pull` and `/reload-plugins` alone keep the old
+skills. After a merge:
+
+```sh
+git -C ~/workspace/dk-agent-kit pull
+claude plugin marketplace update dk-agent-kit
+claude plugin update dk@dk-agent-kit       # and dk-guard@dk-agent-kit after a hook change
+```
+
+then `/reload-plugins` or a restart. Client-specific settings
 (`autoMode.environment`, for example) go in `~/.config/dk-agent-kit/private.json`;
 bootstrap merges that file last, and it never enters this repo.
 
