@@ -212,6 +212,23 @@ def run_image(args):
     return None
 
 
+def run_options(options):
+    """Split `docker run` options into flags (`--rm=true` read as `--rm`, `--rm=false` dropped) and label keys."""
+    flags, labels = [], set()
+    it = iter(options)
+    for a in it:
+        if a in ("--label", "-l"):
+            labels.add(next(it, "").partition("=")[0])
+        elif a.startswith("--label="):
+            labels.add(a[len("--label="):].partition("=")[0])
+        elif re.fullmatch(r"--[\w-]+=(?:true|false)", a):
+            name, _, value = a.partition("=")
+            flags += [name] if value == "true" else []
+        else:
+            flags.append(a)
+    return flags, labels
+
+
 def check_postgres(cmd):
     cmd = cmd.replace("\\\n", " ")
     for _, tokens in segments(cmd, "docker|podman"):
@@ -223,10 +240,9 @@ def check_postgres(cmd):
         i = run_image(args[1:])
         if i is None or not POSTGRES_IMAGE.match(args[1 + i]):
             continue
-        options = args[1:1 + i]  # what follows the image is the container's command
-        labelled = any("dk.issue=" in a for a in options)
-        detached = any(a == "--detach" or re.fullmatch(r"-[ditPq]*d[ditPq]*", a) for a in options)
-        if not labelled and (detached or "--rm" not in options):
+        flags, labels = run_options(args[1:1 + i])  # what follows the image is the container's command
+        detached = any(a == "--detach" or re.fullmatch(r"-[ditPq]*d[ditPq]*", a) for a in flags)
+        if "dk.issue" not in labels and (detached or "--rm" not in flags):
             return [("hint", "This Postgres server carries no issue label, so nothing ties it to an issue or "
                      "cleans it up. `dk-pg up <issue>` starts a throwaway one on a free port (--rm, tmpfs, labels "
                      "dk.repo and dk.issue) and prints its URL; `dk-pg url <issue>` reprints it, "
