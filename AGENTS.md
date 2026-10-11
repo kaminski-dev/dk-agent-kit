@@ -1,6 +1,6 @@
 # dk-agent-kit
 
-A Claude Code marketplace with two plugins: `dk-guard` (hooks only, always on) and `dk` (skills and agents). `README.md` covers install and layout.
+A Claude Code marketplace with two plugins: `dk-guard` (hooks and the `dk-pg` command, always on) and `dk` (skills and agents). `README.md` covers install and layout.
 
 ## Rules
 
@@ -16,4 +16,4 @@ Issues live in GitHub Issues and move issue → worktree → PR into `main`. The
 
 ## Checks
 
-`python3 -I tests/hooks/test_guard_bash.py`, `python3 -I tests/test_skills.py`, `bash tests/test_bootstrap.sh`, `claude plugin validate .` (the only expected warning is the missing `version`, left out on purpose so installs track commits).
+`python3 -I tests/hooks/test_guard_bash.py`, `python3 -I tests/test_skills.py`, `bash tests/test_bootstrap.sh`, `bash tests/test_dk_pg.sh`, `claude plugin validate .` (the only expected warning is the missing `version`, left out on purpose so installs track commits).
