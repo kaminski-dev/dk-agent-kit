@@ -63,6 +63,7 @@ Rerunning replaces the branch; the guard allows force pushes to `verify-assets/*
 Rebase onto the current `origin/pre-main`, push the branch, and open the PR against `pre-main` (`gh pr create --base pre-main --body-file …`), body written with the `dk:pr` skill. The body carries:
 
 - `Closes #N` when no post-deploy acceptance criterion remains, `Refs #N` when one does (a 24 h, 48 h or 7 d window on production logs or errors).
+  GitHub acts on these keywords only in a PR into the default branch, so on this PR they do nothing. The batch PR into `main` repeats the line: its merge closes a `Closes #N` issue, and a `Refs #N` issue stays open for the post-deploy check (step 7).
 - Every deviation from the issue, named for the maintainer's OK, and the "Also in this PR" list from scope intake.
 
 Then write the customer reply on the issue as `workflow.md` describes. Merging is the maintainer's.
@@ -76,4 +77,4 @@ Then write the customer reply on the issue as `workflow.md` describes. Merging i
 
 ## `pre-main`
 
-`pre-main` is shared by every open PR. The maintainer moves it and brings it level with `main` after each batch; agents reach it only through PRs. A push that rewrites or deletes it makes the guard ask the user first.
+`pre-main` is shared by every open PR. The maintainer moves it and brings it level with `main` after each batch; agents reach it only through PRs. The batch PR into `main` carries every merged PR's `Closes #N` or `Refs #N` line (step 6). A push that rewrites or deletes it makes the guard ask the user first.
