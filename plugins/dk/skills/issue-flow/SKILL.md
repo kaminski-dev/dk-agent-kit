@@ -46,13 +46,13 @@ Each commit is one verifiable unit: the gates from `AGENTS.md` pass on what it t
 
 ## 5. Screenshots and evidence
 
-Evidence goes into the PR, never into the tree. Push the files as an orphan commit on `verify-assets/<N>` and embed them by commit SHA:
+Evidence goes into the PR, never into the tree. Collect the screenshots in `$SCRATCH/<N>/shots/` first (Playwright MCP saves only under its own roots, so move them there), then push them as an orphan commit on `verify-assets/<N>` and embed them by commit SHA:
 
 ```sh
 tree=$( { for f in "$SCRATCH/<N>"/shots/*.png; do
           printf '100644 blob %s\t%s\n' "$(git hash-object -w "$f")" "$(basename "$f")"; done; } | git mktree )
 c=$(git commit-tree "$tree" -m "verify assets for #<N>")
-git push -f origin "$c:refs/heads/verify-assets/<N>"
+git push -f origin "${c}:refs/heads/verify-assets/<N>"   # braces: zsh reads $c:r as a modifier
 # embed: https://github.com/<owner>/<repo>/blob/$c/<file>.png?raw=true
 ```
 
@@ -65,7 +65,7 @@ Rebase onto the current `origin/pre-main`, push the branch, and open the PR agai
 - `Closes #N` when no post-deploy acceptance criterion remains, `Refs #N` when one does (a 24 h, 48 h or 7 d window on production logs or errors).
 - Every deviation from the issue, named for the maintainer's OK, and the "Also in this PR" list from scope intake.
 
-Then write the customer reply on the issue as `workflow.md` describes. Merging is the maintainer's.
+When the change is one the customer sees, write the customer reply on the issue as `workflow.md` describes; for a change they never see (toolchain, CI, internal refactor), the PR says so instead. Merging is the maintainer's.
 
 ## 7. After the merge
 
