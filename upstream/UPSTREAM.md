@@ -15,7 +15,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 | implement | skills/engineering/implement | `dk:issue-flow`, commit per green step, runtime proof before review, `dk:pr` |
 | implement-spec | skills/engineering/implement-spec | integration branch off `origin/pre-main`, implementer worktrees from it, scratch per agent, one PR into `pre-main` |
 | improve-codebase-architecture | skills/engineering/improve-codebase-architecture | `dk:` references; glossary edits by the context and the `domain.md` rule |
-| pr | skills/engineering/pr | Also in this PR, Deviations, `Closes`/`Refs`, evidence on `verify-assets`, `dk:blast-radius` for one-way doors |
+| pr | skills/engineering/pr | Also in this PR, Deviations, `Closes`/`Refs` (repeated on the batch PR), evidence on `verify-assets`, `dk:blast-radius` for one-way doors |
 | prototype | skills/engineering/prototype | tracking issue, tracked paths, pushed `proto/` branch, versioned artifact titles; production never renders a variant |
 | research | skills/engineering/research | narrower trigger; notes in `docs/research/` |
 | retro | skills/engineering/retro | `dk:` references |
