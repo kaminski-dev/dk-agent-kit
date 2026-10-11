@@ -27,6 +27,90 @@ token out of `~/.sentryclirc`. Rules in prose did not prevent these, so they
 live in a hook now. The hook raises the floor against mistakes; it is not a
 security boundary.
 
+## Workflow
+
+Every issue reaches `ready-for-agent` by one of two paths, then follows the
+same line to deploy. Dashed boxes are planned and not built yet.
+
+```mermaid
+flowchart LR
+  subgraph feature["Big feature"]
+    grill["dk:grill-with-docs"] --> research["dk:research-codebase"]
+    research --> spec["dk:to-spec<br/>epic, label spec"]
+    spec --> tickets["dk:to-tickets<br/>sub-issues"]
+  end
+  subgraph bug["Bug or side finding"]
+    new(["new issue<br/>needs-triage"]) --> triage["dk:triage<br/>agent brief"]
+  end
+  tickets --> ready(["ready-for-agent"])
+  triage --> ready
+```
+
+`dk:research-codebase` reads the ticket and turns it into neutral questions;
+the documentarian subagent that answers them never sees the ticket or the
+conversation, so it describes the code as it is rather than arguing for a
+solution.
+
+```mermaid
+flowchart LR
+  ready(["ready-for-agent"]) --> implement["dk:implement<br/>worktree off pre-main"]
+  implement --> verify["dk:verify<br/>repo verify doc today"]
+  verify --> review["dk:code-review<br/>Standards, Spec"]
+  review --> pr["dk:pr<br/>PR into pre-main"]
+  implement -. "side finding" .-> intake{"scope<br/>intake"}
+  intake -- "small, same place" --> implement
+  intake -- "otherwise" --> new(["new issue"])
+  classDef planned stroke-dasharray: 5 5
+  class verify planned
+```
+
+```mermaid
+flowchart LR
+  pr["merged into pre-main"] --> batch(["batch PR to main<br/>deploys"])
+  batch -- "Closes" --> closed(["issue closed"])
+  batch -- "Refs" --> check["post-deploy check"]
+  check --> closed
+  closed -.-> retro["dk:retro<br/>monthly"]
+  retro -. "repeat mistake" .-> guard[["new dk-guard check"]]
+  classDef planned stroke-dasharray: 5 5
+  class check planned
+```
+
+The scope intake decides what a side finding becomes: small work in the same
+place joins the issue as a recorded scope amendment, anything else is a new
+issue. An issue with a `Refs` line stays open until its post-deploy check
+passes.
+
+### Where a command gets stopped
+
+```mermaid
+flowchart LR
+  subgraph call["Every Bash call"]
+    bash["agent runs Bash"] --> hook["L1 guard-bash<br/>PreToolUse, fails closed"]
+    hook -- "pass" --> deny["L2 deny rules<br/>settings.json"]
+    hook -- "deny, ask or hint" --> d1["bash -c '… prune'<br/>git -C … push main<br/>gh … --comments, piped"]
+    deny -- "deny" --> d2["docker … prune …<br/>git push … main<br/>Read ~/.sentryclirc"]
+    deny -- "pass" --> mode{"auto<br/>mode?"}
+    mode -- "other modes" --> run["command runs"]
+    mode -- "auto mode" --> auto["L4 classifier<br/>hard_deny"]
+    auto -- "pass" --> run
+    auto -. "may deny" .-> d3["judged destructive"]
+  end
+  subgraph turn["Every turn end"]
+    done["agent says done"] --> stop["L3 Stop gate<br/>runs .claude/gate.sh"]
+    stop -- "pass" --> ends["turn ends"]
+    stop -- "fail: errors fed back" --> done
+  end
+  classDef planned stroke-dasharray: 5 5
+  class stop planned
+```
+
+The hook runs before the permission rules, and nothing it returns overrides
+a matching deny rule. L1 and L2 are deterministic and ship here, and the L3
+Stop gate will join them. L4 runs only in auto mode, is a judgement call, and
+is only a backstop. CI is the next layer, outside the session, and skill
+text and `AGENTS.md` the last.
+
 ## Install
 
 ```sh
