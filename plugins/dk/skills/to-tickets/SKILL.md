@@ -102,7 +102,7 @@ The end-to-end behaviour this ticket makes work, from the user's perspective, no
 
 ## Blocked by
 
-- A reference to each blocking ticket. Present only when a ticket gates this one and the blockers were not set as native edges.
+- A reference to each blocking ticket. Include this section, heading and all, only when a ticket gates this one and the blockers were not set as native edges.
 
 </issue-template>
 
