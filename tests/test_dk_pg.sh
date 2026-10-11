@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # dk-pg against a real Docker: two issues at once on different ports, a second
-# `up` reuses the running database, `down` leaves nothing behind. Runs from a
-# throwaway repo so its dk.repo label matches no real container. Skips when no
-# Docker daemon answers.
+# `up` reuses the running database, `down` leaves nothing behind, and two
+# checkouts with the same directory name keep apart. Runs from throwaway repos
+# so their labels match no real container. Skips when no Docker daemon answers.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 dkpg="$root/plugins/dk-guard/bin/dk-pg"
@@ -12,9 +12,11 @@ docker info >/dev/null 2>&1 || { echo "dk-pg: skipped, no Docker daemon"; exit 0
 
 tmp=$(mktemp -d)
 repo="$tmp/dkpg-test-$$"
-a="t$$a" b="t$$b"
+one="$tmp/one/app" two="$tmp/two/app"
+a="t$$a" b="t$$b" c="t$$c"
 cleanup() {
   (cd "$repo" 2>/dev/null && { "$dkpg" down "$a"; "$dkpg" down "$b"; }) >/dev/null 2>&1 || true
+  for r in "$one" "$two"; do (cd "$r" 2>/dev/null && "$dkpg" down "$c") >/dev/null 2>&1 || true; done
   rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -47,8 +49,18 @@ fi
 [[ -z "$(docker ps -aq --filter "label=dk.issue=$a")" ]] || fail "container for a left behind"
 [[ "$("$dkpg" url "$b")" == "$url_b" ]] || fail "down a touched b"
 "$dkpg" url "$a" >/dev/null 2>&1 && fail "url a still answers after down"
+"$dkpg" up "$a" --db 'a b/c' >/dev/null 2>&1 && fail "up took a database name the URL cannot carry"
 "$dkpg" down "$b" >/dev/null
 [[ -z "$(docker ps -aq --filter "label=dk.issue=$b")" ]] || fail "container for b left behind"
 "$dkpg" down "$b" >/dev/null || fail "down twice is not a no-op"
+
+git init -q "$one"; git init -q "$two"
+url_one=$(cd "$one" && "$dkpg" up "$c")
+url_two=$(cd "$two" && "$dkpg" up "$c")
+[[ "$url_one" != "$url_two" ]] || fail "two checkouts named app share one database"
+(cd "$one" && "$dkpg" down "$c") >/dev/null
+[[ "$(cd "$two" && "$dkpg" url "$c")" == "$url_two" ]] || fail "down in one checkout removed the other's database"
+(cd "$two" && "$dkpg" down "$c") >/dev/null
+[[ -z "$(docker ps -aq --filter "label=dk.issue=$c")" ]] || fail "container for c left behind"
 [[ "$(docker volume ls -q | wc -l)" == "$volumes" ]] || fail "volumes left behind"
 echo "dk-pg: all checks passed"

@@ -7,9 +7,10 @@
 #
 # The container runs with --rm and tmpfs on every volume the image declares (so
 # no anonymous volume is left behind) on a free 127.0.0.1 port, labelled
-# dk.repo (the checkout's main repo, shared by its worktrees) and dk.issue. Data
-# never survives a stop, so `up` always starts empty and seeding stays the repo's
-# step. A second `up` for a running issue prints its URL instead.
+# dk.repo (the main checkout's name), dk.root (its path, which tells same-named
+# checkouts apart and is shared by its worktrees) and dk.issue. Data never
+# survives a stop, so `up` always starts empty and seeding stays the repo's step.
+# A second `up` for a running issue prints its URL instead.
 set -euo pipefail
 
 usage() { sed -n '3,6s/^# \{0,1\}//p' "$0" >&2; exit 2; }
@@ -28,12 +29,13 @@ while (($#)); do
     *) usage ;;
   esac
 done
+[[ "$db" =~ ^[A-Za-z0-9_-]+$ ]] || die "--db must be letters, digits, '_' or '-', so the URL needs no escaping: $db"
 
 common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
-if [[ -n "$common" ]]; then repo=$(basename "$(dirname "$common")"); else repo=$(basename "$PWD"); fi
-repo=$(tr -c 'A-Za-z0-9_.\n-' '-' <<<"$repo")
-name="dk-pg-$repo-$issue"
-filters=(--filter "label=dk.repo=$repo" --filter "label=dk.issue=$issue")
+if [[ -n "$common" ]]; then root=$(dirname "$common"); else root=$PWD; fi
+repo=$(basename "$root" | tr -c 'A-Za-z0-9_.\n-' '-')
+name="dk-pg-$repo-$(printf %s "$root" | cksum | cut -d' ' -f1)-$issue"
+filters=(--filter "label=dk.root=$root" --filter "label=dk.issue=$issue")
 
 running() { docker ps -q "${filters[@]}"; }
 
@@ -55,7 +57,7 @@ up() {
     for path in $(docker image inspect -f '{{range $p, $_ := .Config.Volumes}}{{$p}} {{end}}' "$image"); do
       tmpfs+=(--tmpfs "$path")
     done
-    docker run -d --rm --name "$name" --label "dk.repo=$repo" --label "dk.issue=$issue" \
+    docker run -d --rm --name "$name" --label "dk.repo=$repo" --label "dk.root=$root" --label "dk.issue=$issue" \
       -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e "POSTGRES_DB=$db" \
       -p 127.0.0.1::5432 ${tmpfs[@]+"${tmpfs[@]}"} "$image" >/dev/null \
       || [[ -n "$(running)" ]] || die "docker run failed for $name; a leftover? dk-pg down $issue"
