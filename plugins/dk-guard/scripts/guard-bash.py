@@ -5,8 +5,8 @@ Reads the hook JSON on stdin and answers with a permission decision:
 deny for commands that destroyed shared state before (docker prune, unfiltered
 mass removal, pushes to main, force pushes, git clean of ignored files), ask
 for rewriting the shared pre-main branch or reading a credential file, and
-hints for gh calls that silently drop the issue body and for a Postgres
-`docker run` that dk-pg should start instead. Everything else passes.
+hints for gh calls that silently drop the issue body and for an unlabelled
+Postgres server that dk-pg should start instead. Everything else passes.
 
 This raises the floor against agent mistakes; it is not a security boundary.
 Text inside heredocs is ignored, so a commit message may mention a command.
@@ -191,23 +191,24 @@ def check_docker(cmd):
     return findings
 
 
-POSTGRES_IMAGE = re.compile(r"^(?:[\w.:-]+/)*(?:postgres|postgis/postgis|pgvector/pgvector)(?:[:@]\S*)?$")
+POSTGRES_IMAGE = re.compile(r"^(?:[\w.:-]+/)*(?:postgres|postgis/postgis|pgvector/pgvector|bitnami/postgresql)"
+                            r"(?:[:@]\S*)?$")
 RUN_FLAGS = {"--rm", "--detach", "--interactive", "--tty", "--init", "--privileged", "--publish-all",
              "--read-only", "--no-healthcheck", "--oom-kill-disable", "--quiet"}
 
 
 def run_image(args):
-    """The image of a `docker run` argument list: the first argument that is no option or option value."""
-    it = iter(args)
-    for a in it:
+    """Index of the image in a `docker run` argument list: the first argument that is no option or option value."""
+    i = 0
+    while i < len(args):
+        a = args[i]
         if a.startswith("--"):
-            if "=" not in a and a not in RUN_FLAGS:
-                next(it, None)
+            i += 1 if "=" in a or a in RUN_FLAGS else 2
         elif a.startswith("-") and len(a) > 1:
-            if not set(a[1:]) <= set("ditPq"):
-                next(it, None)
+            # -dit is all flags; -p 5432:5432 takes the next argument; -p5432:5432 carries its value
+            i += 2 if len(a[1:].lstrip("ditPq")) == 1 else 1
         else:
-            return a
+            return i
     return None
 
 
@@ -219,13 +220,17 @@ def check_postgres(cmd):
             args = args[1:]
         if args[:1] != ["run"]:
             continue
-        image = run_image(args[1:])
-        labelled = any("dk.issue=" in a for a in args)
-        if image and POSTGRES_IMAGE.match(image) and "--rm" not in args and not labelled:
-            return [("hint", "This Postgres container outlives the session and carries no issue label. "
-                     "`dk-pg up <issue>` starts a throwaway one on a free port (--rm, tmpfs, labels dk.repo and "
-                     "dk.issue) and prints its URL; `dk-pg url <issue>` reprints it, `dk-pg down <issue>` "
-                     "removes it.")]
+        i = run_image(args[1:])
+        if i is None or not POSTGRES_IMAGE.match(args[1 + i]):
+            continue
+        options = args[1:1 + i]  # what follows the image is the container's command
+        labelled = any("dk.issue=" in a for a in options)
+        detached = any(a == "--detach" or re.fullmatch(r"-[ditPq]*d[ditPq]*", a) for a in options)
+        if not labelled and (detached or "--rm" not in options):
+            return [("hint", "This Postgres server carries no issue label, so nothing ties it to an issue or "
+                     "cleans it up. `dk-pg up <issue>` starts a throwaway one on a free port (--rm, tmpfs, labels "
+                     "dk.repo and dk.issue) and prints its URL; `dk-pg url <issue>` reprints it, "
+                     "`dk-pg down <issue>` removes it.")]
     return []
 
 
