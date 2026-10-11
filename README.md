@@ -84,12 +84,14 @@ passes.
 ```mermaid
 flowchart LR
   subgraph call["Every Bash call"]
-    bash["agent runs Bash"] --> deny["L1 deny rules<br/>settings.json"]
-    deny -- "pass" --> hook["L2 guard-bash<br/>PreToolUse, fails closed"]
-    hook -- "pass" --> auto["L4 auto mode<br/>hard_deny classifier"]
-    auto -- "pass" --> run["command runs"]
-    deny -- "deny" --> d1["docker … prune …<br/>git push … main<br/>Read ~/.sentryclirc"]
-    hook -- "deny, ask or hint" --> d2["bash -c '… prune'<br/>git -C … push main<br/>gh … --comments, piped"]
+    bash["agent runs Bash"] --> hook["L1 guard-bash<br/>PreToolUse, fails closed"]
+    hook -- "pass" --> deny["L2 deny rules<br/>settings.json"]
+    hook -- "deny, ask or hint" --> d1["bash -c '… prune'<br/>git -C … push main<br/>gh … --comments, piped"]
+    deny -- "deny" --> d2["docker … prune …<br/>git push … main<br/>Read ~/.sentryclirc"]
+    deny -- "pass" --> mode{"auto<br/>mode?"}
+    mode -- "other modes" --> run["command runs"]
+    mode -- "auto mode" --> auto["L4 classifier<br/>hard_deny"]
+    auto -- "pass" --> run
     auto -. "may deny" .-> d3["judged destructive"]
   end
   subgraph turn["Every turn end"]
@@ -101,9 +103,11 @@ flowchart LR
   class stop planned
 ```
 
-L1 and L2 are deterministic and ship here, and the L3 Stop gate will join
-them; L4 is a judgement call and only a backstop. Outside the session, repo
-lint and CI are the next layer, and skill text and `AGENTS.md` the last.
+The hook runs before the permission rules, and nothing it returns overrides
+a matching deny rule. L1 and L2 are deterministic and ship here, and the L3
+Stop gate will join them. L4 runs only in auto mode, is a judgement call, and
+is only a backstop. Outside the session, repo lint and CI are the next layer,
+and skill text and `AGENTS.md` the last.
 
 ## Install
 
