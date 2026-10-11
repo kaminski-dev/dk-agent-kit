@@ -9,7 +9,7 @@ This repo's parameters for the sequence in the `dk:issue-flow` skill. The kit di
 ## PRs and merge
 
 - PRs target `main`; the maintainer merges. `Closes #N` closes the issue on merge, so there is no batch PR and no post-deploy check.
-- CI (`.github/workflows/test.yml`) runs the four checks from `AGENTS.md` on every push and PR.
+- CI (`.github/workflows/test.yml`) runs the checks from `AGENTS.md` on every push and PR.
 - A merge reaches the maintainer's sessions after `git -C ~/workspace/dk-agent-kit pull` and `/reload-plugins`: the plugins load from that checkout.
 
 ## Evidence

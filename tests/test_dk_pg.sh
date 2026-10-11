@@ -14,10 +14,11 @@ tmp=$(mktemp -d)
 repo="$tmp/dkpg-test-$$"
 a="t$$a" b="t$$b"
 cleanup() {
-  (cd "$repo" 2>/dev/null && "$dkpg" down "$a" && "$dkpg" down "$b") >/dev/null 2>&1 || true
+  (cd "$repo" 2>/dev/null && { "$dkpg" down "$a"; "$dkpg" down "$b"; }) >/dev/null 2>&1 || true
   rm -rf "$tmp"
 }
 trap cleanup EXIT
+volumes=$(docker volume ls -q | wc -l)
 git init -q "$repo"
 cd "$repo"
 
@@ -25,6 +26,10 @@ url_a=$("$dkpg" up "$a")
 url_b=$("$dkpg" up "$b" --db app)
 [[ "$url_a" =~ ^postgres://postgres:postgres@127\.0\.0\.1:[0-9]+/postgres\?sslmode=disable$ ]] || fail "url a: $url_a"
 [[ "$url_b" =~ ^postgres://postgres:postgres@127\.0\.0\.1:[0-9]+/app\?sslmode=disable$ ]] || fail "url b: $url_b"
+for issue in "$a" "$b"; do
+  fs=$(docker exec "$(docker ps -q --filter "label=dk.issue=$issue")" sh -c 'df -P "$PGDATA" | tail -1 | cut -d" " -f1')
+  [[ "$fs" == tmpfs ]] || fail "issue $issue keeps its data on $fs, not tmpfs"
+done
 port() { sed -E 's/.*:([0-9]+)\/.*/\1/' <<<"$1"; }
 [[ "$(port "$url_a")" != "$(port "$url_b")" ]] || fail "both issues on port $(port "$url_a")"
 
@@ -45,4 +50,5 @@ fi
 "$dkpg" down "$b" >/dev/null
 [[ -z "$(docker ps -aq --filter "label=dk.issue=$b")" ]] || fail "container for b left behind"
 "$dkpg" down "$b" >/dev/null || fail "down twice is not a no-op"
+[[ "$(docker volume ls -q | wc -l)" == "$volumes" ]] || fail "volumes left behind"
 echo "dk-pg: all checks passed"
