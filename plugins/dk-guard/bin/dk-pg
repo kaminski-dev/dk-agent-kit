@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# dk-pg: a throwaway Postgres per issue.
+#
+#   dk-pg up <issue> [--db NAME] [--image IMAGE]   start one, wait until it accepts connections, print its URL
+#   dk-pg url <issue>                              print the URL of the running one
+#   dk-pg down <issue>                             stop it, which removes it
+#
+# The container runs with --rm and tmpfs data on a free 127.0.0.1 port, labelled
+# dk.repo (the checkout's main repo, shared by its worktrees) and dk.issue. Data
+# never survives a stop, so `up` always starts empty and seeding stays the repo's
+# step. A second `up` for a running issue prints its URL instead.
+set -euo pipefail
+
+usage() { sed -n '3,6s/^# \{0,1\}//p' "$0" >&2; exit 2; }
+die() { echo "dk-pg: $*" >&2; exit 1; }
+
+cmd=${1:-}; issue=${2:-}
+[[ -n "$cmd" && -n "$issue" ]] || usage
+shift 2
+[[ "$issue" =~ ^[A-Za-z0-9_.-]+$ ]] || die "issue must be letters, digits, '.', '_' or '-': $issue"
+
+db=postgres image=postgres:16-alpine
+while (($#)); do
+  case "$1" in
+    --db) db=${2:?--db needs a name}; shift 2 ;;
+    --image) image=${2:?--image needs an image}; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+if [[ -n "$common" ]]; then repo=$(basename "$(dirname "$common")"); else repo=$(basename "$PWD"); fi
+repo=$(tr -c 'A-Za-z0-9_.\n-' '-' <<<"$repo")
+name="dk-pg-$repo-$issue"
+filters=(--filter "label=dk.repo=$repo" --filter "label=dk.issue=$issue")
+
+running() { docker ps -q "${filters[@]}"; }
+
+url() {
+  local id port database
+  id=$(running | head -1)
+  [[ -n "$id" ]] || die "no running database for $repo #$issue; start one with: dk-pg up $issue"
+  port=$(docker port "$id" 5432/tcp | head -1)
+  database=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$id" | sed -n 's/^POSTGRES_DB=//p')
+  echo "postgres://postgres:postgres@127.0.0.1:${port##*:}/${database:-postgres}?sslmode=disable"
+}
+
+up() {
+  if [[ -z "$(running)" ]]; then
+    docker run -d --rm --name "$name" --label "dk.repo=$repo" --label "dk.issue=$issue" \
+      -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e "POSTGRES_DB=$db" \
+      -p 127.0.0.1::5432 --tmpfs /var/lib/postgresql "$image" >/dev/null \
+      || [[ -n "$(running)" ]] || die "docker run failed for $name"
+  fi
+  # The image's init server listens on the socket only; TCP answers once the real server is up.
+  local id
+  for _ in $(seq 1 120); do
+    id=$(running | head -1)
+    [[ -n "$id" ]] || die "$name exited during startup; check the image: $image"
+    if docker exec "$id" pg_isready -q -h 127.0.0.1 -U postgres >/dev/null 2>&1; then
+      url
+      return
+    fi
+    sleep 0.5
+  done
+  die "$name did not accept connections within 60 s"
+}
+
+down() {
+  local ids
+  ids=$(docker ps -aq "${filters[@]}")
+  [[ -z "$ids" ]] || docker rm -f $ids >/dev/null
+  echo "dk-pg: $repo #$issue is down"
+}
+
+case "$cmd" in
+  up) up ;;
+  url) url ;;
+  down) down ;;
+  *) usage ;;
+esac
