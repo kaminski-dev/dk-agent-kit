@@ -27,6 +27,71 @@ token out of `~/.sentryclirc`. Rules in prose did not prevent these, so they
 live in a hook now. The hook raises the floor against mistakes; it is not a
 security boundary.
 
+## Workflow
+
+Every issue reaches `ready-for-agent` by one of two paths, then follows the
+same line to deploy. Dashed boxes are planned and not built yet.
+
+```mermaid
+flowchart TD
+  subgraph feature["Big feature"]
+    grill["dk:grill-with-docs"] --> research["dk:research-codebase<br/>fresh session, never sees the ticket"]
+    research --> spec["dk:to-spec<br/>epic issue, label spec"]
+    spec --> tickets["dk:to-tickets<br/>sub-issues"]
+  end
+  subgraph bug["Bug or side finding"]
+    new(["new issue<br/>needs-triage"]) --> triage["dk:triage<br/>agent brief"]
+  end
+  tickets --> ready(["ready-for-agent"])
+  triage --> ready
+  ready --> implement["dk:implement or dk:implement-spec<br/>worktree off origin/pre-main, dk:tdd"]
+  implement -. "side finding" .-> intake{"scope intake"}
+  intake -- "small, same place:<br/>scope amendment" --> implement
+  intake -- "otherwise" --> new
+  implement --> verify["verify<br/>repo verify doc today, dk:verify planned"]
+  verify --> review["dk:code-review<br/>Standards and Spec axes"]
+  review --> pr["dk:pr<br/>PR into pre-main"]
+  pr --> batch(["batch PR pre-main to main<br/>repeats the Closes and Refs lines, deploys"])
+  batch -- "Closes" --> closed(["issue closed"])
+  batch -- "Refs" --> check["post-deploy check<br/>label awaiting-verification"]
+  check --> closed
+  closed -.-> retro["dk:retro, monthly"]
+  retro -. "repeat mistake becomes a check" .-> guard[["dk-guard"]]
+  classDef planned stroke-dasharray: 5 5
+  class verify,check planned
+```
+
+The scope intake decides what a side finding becomes: small work in the same
+place joins the issue as a recorded scope amendment, anything else is a new
+issue. An issue with a `Refs` line stays open until its post-deploy check
+passes.
+
+### Where a command gets stopped
+
+```mermaid
+flowchart LR
+  subgraph call["Every Bash call"]
+    bash["agent runs Bash"] --> deny["L1 deny rules<br/>settings.json"]
+    deny -- "pass" --> hook["L2 guard-bash<br/>PreToolUse, fails closed"]
+    hook -- "pass" --> auto["L4 auto mode<br/>hard_deny classifier"]
+    auto -- "pass" --> run["command runs"]
+    deny -- "deny" --> d1["docker … prune …<br/>git push … main<br/>Read ~/.sentryclirc"]
+    hook -- "deny, ask or hint" --> d2["bash -c '… prune'<br/>git -C … push main<br/>gh … --comments, piped"]
+    auto -. "may deny" .-> d3["judged destructive"]
+  end
+  subgraph turn["Every turn end"]
+    done["agent says done"] --> stop["L3 Stop gate<br/>runs .claude/gate.sh"]
+    stop -- "pass" --> ends["turn ends"]
+    stop -- "fail: errors fed back" --> done
+  end
+  classDef planned stroke-dasharray: 5 5
+  class stop planned
+```
+
+L1 and L2 are deterministic and ship here, and the L3 Stop gate will join
+them; L4 is a judgement call and only a backstop. Outside the session, repo lint and CI are the next layer, and skill
+text and `AGENTS.md` the last.
+
 ## Install
 
 ```sh
