@@ -2,6 +2,8 @@ name: test
 on:
   push:
   pull_request:
+permissions:
+  contents: read
 jobs:
   hooks:
     runs-on: ubuntu-latest
@@ -18,3 +20,5 @@ jobs:
           for f in .claude-plugin/marketplace.json plugins/*/.claude-plugin/plugin.json plugins/*/hooks/hooks.json settings/*.json; do
             jq empty "$f" || exit 1
           done
+      - name: plugin validate
+        run: npx --yes @anthropic-ai/claude-code@2.1.283 plugin validate .

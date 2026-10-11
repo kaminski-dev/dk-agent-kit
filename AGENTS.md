@@ -10,6 +10,10 @@ A Claude Code marketplace with two plugins: `dk-guard` (hooks only, always on) a
 4. **Cross-skill calls name the skill with its `dk:` prefix.** A bare name can resolve to a built-in skill (`/code-review` exists in Claude Code).
 5. **Changes reach `main` through a PR.** The guard blocks direct pushes to `main`.
 
+## Workflow
+
+Issues live in GitHub Issues and move issue → worktree → PR into `main`. The dk skills carry the shared sequence (`dk:issue-flow`); this repo's parameters are in `docs/agents/workflow.md`, tracker commands in `docs/agents/issue-tracker.md`, labels in `docs/agents/triage-labels.md`.
+
 ## Checks
 
 `python3 -I tests/hooks/test_guard_bash.py`, `python3 -I tests/test_skills.py`, `bash tests/test_bootstrap.sh`, `claude plugin validate .` (the only expected warning is the missing `version`, left out on purpose so installs track commits).
