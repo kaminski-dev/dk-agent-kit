@@ -4,8 +4,9 @@
 Reads the hook JSON on stdin and answers with a permission decision:
 deny for commands that destroyed shared state before (docker prune, unfiltered
 mass removal, pushes to main, force pushes, git clean of ignored files), ask
-for rewriting the shared pre-main branch or reading a credential file, and a
-hint for gh calls that silently drop the issue body. Everything else passes.
+for rewriting the shared pre-main branch or reading a credential file, and
+hints for gh calls that silently drop the issue body and for an unlabelled
+Postgres server that dk-pg should start instead. Everything else passes.
 
 This raises the floor against agent mistakes; it is not a security boundary.
 Text inside heredocs is ignored, so a commit message may mention a command.
@@ -190,6 +191,65 @@ def check_docker(cmd):
     return findings
 
 
+POSTGRES_IMAGE = re.compile(r"^(?:[\w.:-]+/)*(?:postgres|postgis/postgis|pgvector/pgvector|bitnami/postgresql)"
+                            r"(?:[:@]\S*)?$")
+RUN_FLAGS = {"--rm", "--detach", "--interactive", "--tty", "--init", "--privileged", "--publish-all",
+             "--read-only", "--no-healthcheck", "--oom-kill-disable", "--quiet"}
+
+
+def run_image(args):
+    """Index of the image in a `docker run` argument list: the first argument that is no option or option value."""
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a.startswith("--"):
+            i += 1 if "=" in a or a in RUN_FLAGS else 2
+        elif a.startswith("-") and len(a) > 1:
+            # -dit is all flags; -p 5432:5432 takes the next argument; -p5432:5432 carries its value
+            i += 2 if len(a[1:].lstrip("ditPq")) == 1 else 1
+        else:
+            return i
+    return None
+
+
+def run_options(options):
+    """Split `docker run` options into flags (`--rm=true` read as `--rm`, `--rm=false` dropped) and label keys."""
+    flags, labels = [], set()
+    it = iter(options)
+    for a in it:
+        if a in ("--label", "-l"):
+            labels.add(next(it, "").partition("=")[0])
+        elif a.startswith("--label="):
+            labels.add(a[len("--label="):].partition("=")[0])
+        elif re.fullmatch(r"--[\w-]+=(?:true|false)", a):
+            name, _, value = a.partition("=")
+            flags += [name] if value == "true" else []
+        else:
+            flags.append(a)
+    return flags, labels
+
+
+def check_postgres(cmd):
+    cmd = cmd.replace("\\\n", " ")
+    for _, tokens in segments(cmd, "docker|podman"):
+        args = tokens[1:]
+        if args[:2] == ["container", "run"]:
+            args = args[1:]
+        if args[:1] != ["run"]:
+            continue
+        i = run_image(args[1:])
+        if i is None or not POSTGRES_IMAGE.match(args[1 + i]):
+            continue
+        flags, labels = run_options(args[1:1 + i])  # what follows the image is the container's command
+        detached = any(a == "--detach" or re.fullmatch(r"-[ditPq]*d[ditPq]*", a) for a in flags)
+        if "dk.issue" not in labels and (detached or "--rm" not in flags):
+            return [("hint", "This Postgres server carries no issue label, so nothing ties it to an issue or "
+                     "cleans it up. `dk-pg up <issue>` starts a throwaway one on a free port (--rm, tmpfs, labels "
+                     "dk.repo and dk.issue) and prints its URL; `dk-pg url <issue>` reprints it, "
+                     "`dk-pg down <issue>` removes it.")]
+    return []
+
+
 def check_gh(cmd):
     for _, tokens in segments(cmd, "gh"):
         if tokens[1:3] in (["issue", "view"], ["pr", "view"]) and "--comments" in tokens \
@@ -210,7 +270,8 @@ def check_credentials(cmd):
 
 def decide(cmd, cwd):
     cmd = strip_heredocs(cmd)
-    findings = check_docker(cmd) + check_git(cmd, cwd) + check_credentials(cmd) + check_gh(cmd)
+    findings = check_docker(cmd) + check_git(cmd, cwd) + check_credentials(cmd) + check_gh(cmd) \
+        + check_postgres(cmd)
     for level in ("deny", "ask"):
         reasons = [r for l, r in findings if l == level]
         if reasons:

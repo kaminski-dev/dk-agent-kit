@@ -1,6 +1,6 @@
 {
   "name": "dk-guard",
-  "description": "Deterministic guardrail hooks for agent sessions. Hooks only, no skills, so it stays on while skills are switched off.",
+  "description": "Deterministic guardrail hooks for agent sessions, plus dk-pg for a throwaway Postgres per issue. No skills, so it stays on while skills are switched off.",
   "author": { "name": "Daniel Kaminski" },
   "license": "MIT"
 }
