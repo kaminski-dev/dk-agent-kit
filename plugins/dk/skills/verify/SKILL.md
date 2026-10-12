@@ -27,7 +27,7 @@ A change no row covers (docs, CI, tooling) owes what the Evidence section of the
 
 ## 2. Start the stack
 
-- **Database**: `dk-pg up <N>` starts a throwaway Postgres on a free port, waits until it accepts connections and prints its URL (`--db NAME` when the repo expects a database name); `dk-pg url <N>` prints it again. Point the stack and the integration suite at that URL. It starts empty every time, so seeding is the repo doc's step.
+- **Database**: the repo doc says whether the stack needs one. For Postgres, `dk-pg up <N>` starts a throwaway Postgres on a free port, waits until it accepts connections and prints its URL (`--db NAME` when the repo expects a database name); `dk-pg url <N>` prints it again. Point the stack and the integration suite at that URL. It starts empty every time, so seeding is the repo doc's step.
 - **Ports**: before starting a process, `lsof -iTCP:<port> -sTCP:LISTEN` shows the port free; a stale process from an earlier run answers with old code. Use the repo doc's way of moving to a free port.
 - **External services**: stub them or leave them absent, as the repo doc says per service. The stack never talks to a production service.
 - **Files**: logs, cookie jars, stub output and builds go in `$SCRATCH/<N>/`.
@@ -36,7 +36,7 @@ Note every process and port you start; step 7 removes them.
 
 ## 3. Log in
 
-The usual shape: a login request sets an HttpOnly session cookie; reads accept the cookie, and writes (POST, PUT, PATCH, DELETE) also need `Authorization: Bearer <access token>`, or they answer 401 (CSRF protection). The seeded user, the password and where the token comes from (a token endpoint, or the cookie's value) are in the repo doc. When a later write gets 401, the token expired: fetch it again.
+The repo doc says whether the API needs a login; an API without one is called without credentials, and this step ends there. The usual shape: a login request sets an HttpOnly session cookie; reads accept the cookie, and writes (POST, PUT, PATCH, DELETE) also need `Authorization: Bearer <access token>`, or they answer 401 (CSRF protection). The seeded user, the password and where the token comes from (a token endpoint, or the cookie's value) are in the repo doc. When a later write gets 401, the token expired: fetch it again.
 
 ## 4. Control run, then the change
 
@@ -57,16 +57,16 @@ Each proof owed in step 1 appears in the PR's Evidence section (`dk:pr`) as a be
 
 ## 7. Tear down
 
-Before reporting, remove what you started: stop every process (its port is free again under `lsof`), `dk-pg down <N>`, `git worktree remove "$SCRATCH/<N>/base"`, and delete cookie jars. Done when `dk-pg url <N>` finds no running database and none of your ports listens.
+Before reporting, remove what you started: stop every process (its port is free again under `lsof`), `dk-pg down <N>` when you started one, `git worktree remove "$SCRATCH/<N>/base"`, and delete cookie jars. Done when none of your ports listens and, with dk-pg, `dk-pg url <N>` finds no running database.
 
 ## The repo's verify doc
 
 `docs/agents/verify.md` holds only the repo's facts; everything this skill says stays out of it:
 
 - **Stack start**: commands, required env, ports and how to move off a taken one, startup gotchas.
-- **Database**: the database name and migration tool, and how to point the stack and the integration suite at the `dk-pg` URL.
+- **Database**: whether the stack needs one; then its name and migration tool, and how to point the stack and the integration suite at the `dk-pg` URL.
 - **Stubs**: per external service, whether absence is enough or which stub to run, and what it must answer.
 - **Seeding**: the scripts or SQL for test data, and their order relative to migrations.
-- **Login**: the seeded user and password, the login endpoint, and where the access token comes from.
+- **Login**: whether the API needs one; then the seeded user and password, the login endpoint, and where the access token comes from.
 - **Endpoints**: route prefixes and the surfaces worth observing.
 - **Browser**: frontend ports, breakpoints, and the harness quirks that look like bugs.
