@@ -13,7 +13,7 @@ Call the Skill tool with `dk:tdd` where possible, at pre-agreed seams.
 
 Run typechecking regularly, single test files regularly, and the full test suite once at the end. Commit after each green step.
 
-When the code is done, prove it: drive the change in a running stack as the repo's verify recipe describes (named in `AGENTS.md`), with a control run that shows the behaviour before the fix. The proof fits the change: a handler answers over HTTP, a UI change is seen in a browser at desktop and phone width, a migration runs down and up. Passing gates are the floor, never the proof.
+When the code is done, call the Skill tool with `dk:verify` and prove the change in a stack you started. Passing gates are the floor, never the proof.
 
 Then call the Skill tool with `dk:code-review` to review the work, and fix what it finds.
 
