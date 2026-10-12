@@ -6,7 +6,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 
 | dk skill | Upstream path | Changes |
 |---|---|---|
-| code-review | skills/engineering/code-review | default `origin/pre-main`; uncommitted and untracked work reviewed too; scope amendments count as requested; baseline gains Defensive Interior, Swallowed Error, Dead Code, Deprecated API, Empty Test; reviewers run as `dk:reviewer` |
+| code-review | skills/engineering/code-review | default `origin/pre-main`; uncommitted and untracked work reviewed too; scope amendments count as requested; baseline gains Defensive Interior, Swallowed Error, Dead Code, Deprecated API, Empty Test; reviewers run as `dk:reviewer`; Comments axis run by `dk:comment-reviewer`; falls back to `origin/main` without `pre-main` |
 | codebase-design | skills/engineering/codebase-design | as-is |
 | domain-modeling | skills/engineering/domain-modeling | glossary change rule from `docs/agents/domain.md` |
 | grill-with-docs | skills/engineering/grill-with-docs | `dk:` references |
@@ -33,6 +33,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 |---|---|---|
 | skills/blast-radius | pstack/skills/blast-radius | model-invoked; shared-modules section; pointers to how/why/arena/unslop dropped |
 | code-review Empty Test, Defensive Interior | pstack/skills/principle-test-behavior-not-implementation, principle-boundary-discipline | condensed into baseline entries |
+| agents/comment-reviewer | pstack/agents/comment-sicko.md | scoped to comments on added lines; Restates, Narrates history, Stale, Commented-out code, Reshape, Suppression findings; repo comment policy overrides the keep list; report only, persona and `/how` `/why` calls dropped |
 
 ## humanlayer/humanlayer (Apache-2.0) @ 99abe67
 
