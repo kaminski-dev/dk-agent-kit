@@ -81,6 +81,43 @@ def case_primary_checkout_names_repo_and_branch(root):
     assert "acme" in first and "main" in first and "primary checkout" in first, out
 
 
+def case_linked_worktree_with_uncommitted_changes(root):
+    repo = make_repo(root, "wt-main")
+    wt = os.path.join(root, "wt-main-19")
+    subprocess.run(["git", "-C", repo, "worktree", "add", "-q", "-b", "feat/19-session-hooks", wt], check=True)
+    with open(os.path.join(wt, "README.md"), "a") as f:
+        f.write("more\n")
+    with open(os.path.join(wt, "new.py"), "w") as f:
+        f.write("x = 1\n")
+    code, out, err = run(wt, make_stubs(root, "wt"))
+    assert code == 0, (code, err)
+    assert "feat/19-session-hooks" in out and f"worktree {wt}" in out and repo in out, out
+    assert "uncommitted: 2 files" in out and "README.md" in out and "new.py" in out, out
+
+
+def case_clean_tree_says_so(root):
+    repo = make_repo(root, "clean")
+    _, out, _ = run(repo, make_stubs(root, "clean"))
+    assert "uncommitted: none" in out, out
+
+
+def case_many_changes_stay_within_15_lines(root):
+    repo = make_repo(root, "busy", "feat/7-busy")
+    for i in range(40):
+        with open(os.path.join(repo, f"f{i:02}.txt"), "w") as f:
+            f.write("x\n")
+    stubs = make_stubs(root, "busy", {
+        "gh pr": json.dumps([{"number": 3, "title": "Busy", "url": "https://x/pull/3"}]),
+        "gh issue": json.dumps({"number": 7, "title": "Busy", "state": "OPEN",
+                                "labels": [{"name": f"label-{i}"} for i in range(30)]}),
+        "docker ps": "".join(f"dk-pg-busy-{i}\t127.0.0.1:{5000 + i}->5432/tcp\n" for i in range(20)),
+    })
+    code, out, err = run(repo, stubs)
+    assert code == 0, (code, err)
+    assert 0 < len(out.splitlines()) <= 15, out
+    assert "uncommitted: 40 files" in out, out
+
+
 def case_outside_a_repo_is_silent(root):
     plain = os.path.join(root, "plain")
     os.makedirs(plain)

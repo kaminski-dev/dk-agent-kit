@@ -14,6 +14,7 @@ import subprocess
 import sys
 
 MAX_LINES = 15
+MAX_FILES = 5
 
 
 def run(cmd, cwd, timeout=5):
@@ -42,7 +43,23 @@ def baseline(cwd):
         where = "primary checkout"
     else:
         where = f"worktree {top} (primary: {primary})"
-    return [f"{os.path.basename(primary)} · {branch} · {where}"]
+    lines = [f"{os.path.basename(primary)} · {branch} · {where}"]
+    lines += changes(top)
+    return lines
+
+
+def changes(top):
+    status = git(top, "status", "--porcelain")
+    if status is None:
+        return []
+    entries = status.splitlines()
+    if not entries:
+        return ["uncommitted: none"]
+    lines = [f"uncommitted: {len(entries)} file{'s' if len(entries) != 1 else ''}"]
+    lines += ["  " + e for e in entries[:MAX_FILES]]
+    if len(entries) > MAX_FILES:
+        lines.append(f"  … {len(entries) - MAX_FILES} more")
+    return lines
 
 
 def main():
