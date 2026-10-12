@@ -187,6 +187,10 @@ out=$("$dkgc" --workspace "$ws" </dev/null)
 has "$out" "Nothing changed."
 [[ "$(state)" == "$before" ]] || fail "an unconfirmed run changed something"
 
+# Only the full --yes skips the question, so the guard's ask on it cannot be sidestepped with --y.
+"$dkgc" --y --workspace "$ws" </dev/null >/dev/null 2>&1 && fail "an abbreviated --yes was accepted"
+[[ "$(state)" == "$before" ]] || fail "an abbreviated --yes changed something"
+
 # After confirmation it removes what it listed, and only that.
 listed=$("$dkgc" --dry-run --workspace "$ws" | grep '^  remove ')
 out=$(echo y | "$dkgc" --workspace "$ws")

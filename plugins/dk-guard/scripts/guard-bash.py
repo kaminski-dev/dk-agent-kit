@@ -4,7 +4,8 @@
 Reads the hook JSON on stdin and answers with a permission decision:
 deny for commands that destroyed shared state before (docker prune, unfiltered
 mass removal, pushes to main, force pushes, git clean of ignored files), ask
-for rewriting the shared pre-main branch or reading a credential file, and
+for rewriting the shared pre-main branch, reading a credential file or
+answering dk-gc's question for the human (--yes, piped input), and
 hints for gh calls that silently drop the issue body and for an unlabelled
 Postgres server that dk-pg should start instead. Everything else passes.
 
@@ -259,6 +260,40 @@ def check_gh(cmd):
     return []
 
 
+DK_GC = re.compile(r"(?:^|(\|\|?|[;&\n({`]|\$\(|\b(?:then|do|else)\s|-c\s+['\"]))\s*" + PREFIX
+                   + r"(?:python3?\s+(?:-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?dk-gc"
+                   + r"(?=$|[\s;&|)`<>]|['\"](?:$|[\s;&|)]))(" + END + ")")
+
+
+def open_quote(cmd, pos):
+    """Index of the quote that `pos` sits inside, or None outside quotes."""
+    quote, start, i = None, None, 0
+    while i < pos:
+        c = cmd[i]
+        if c == "\\" and quote != "'":
+            i += 1
+        elif quote is None and c in "'\"":
+            quote, start = c, i
+        elif c == quote:
+            quote = None
+        i += 1
+    return start if quote else None
+
+
+def check_dk_gc(cmd):
+    for m in DK_GC.finditer(cmd):
+        sep, rest = m.group(1) or "", m.group(2)
+        quoted = open_quote(cmd, m.end(1) if m.group(1) else m.start())
+        if quoted is not None and not re.search(r"-c\s+$", cmd[:quoted]):
+            continue  # a pattern or a string, not a shell command
+        piped = sep == "|" or (sep == "&" and cmd[m.start() - 1:m.start()] == "|")
+        args = rest.split()
+        if "--dry-run" not in args and ("--yes" in args or "<" in rest or piped):
+            return [("ask", "dk-gc removes worktrees, branches and databases after one yes, and that yes is "
+                     "the human's. Run `dk-gc` or `dk-gc --dry-run` and leave the answer to them.")]
+    return []
+
+
 def check_credentials(cmd):
     m = CREDENTIALS.search(cmd)
     if m:
@@ -271,7 +306,7 @@ def check_credentials(cmd):
 def decide(cmd, cwd):
     cmd = strip_heredocs(cmd)
     findings = check_docker(cmd) + check_git(cmd, cwd) + check_credentials(cmd) + check_gh(cmd) \
-        + check_postgres(cmd)
+        + check_postgres(cmd) + check_dk_gc(cmd)
     for level in ("deny", "ask"):
         reasons = [r for l, r in findings if l == level]
         if reasons:
