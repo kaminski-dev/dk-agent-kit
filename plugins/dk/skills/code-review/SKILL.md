@@ -84,7 +84,7 @@ Issue all three sub-agent calls together, in the foreground, and aggregate the r
 
 **Comments sub-agent prompt** should include:
 
-- The diff command and commit list.
+- The diff command and commit list, plus the untracked files from step 1, which it reads in full.
 - The comment policy from step 3 (file and heading), or "no comment policy: use your default keep list".
 
 Its rules live in the agent, so the prompt carries nothing more.
