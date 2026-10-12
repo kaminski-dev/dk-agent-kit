@@ -9,7 +9,8 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DK = ROOT / "plugins" / "dk"
-ORIGINAL = {"issue-flow"}  # written for the kit, no upstream row
+ORIGINAL = {"issue-flow", "verify"}  # written for the kit, no upstream row
+CLIENT_REPOS = ("jetztbar", "clientdata", "kaminski-advies")  # their facts live in their own docs/agents/
 
 errors = []
 
@@ -62,6 +63,9 @@ for path in sorted(DK.rglob("*.md")):
     for ref in re.findall(r"Skill tool with [`\"]dk:([a-z-]+)", text):
         if ref in user_invoked:
             errors.append(f"{rel}: calls user-invoked dk:{ref} through the Skill tool, which cannot reach it")
+    for client in CLIENT_REPOS:
+        if client in text.lower():
+            errors.append(f"{rel}: names the client repo {client}; skills stay repo-neutral")
     for stale in ("setup-matt-pocock-skills", "CONTEXT.md"):
         if stale in text and path.parent.name != "setup":  # setup renames and replaces them
             errors.append(f"{rel}: mentions {stale}")
