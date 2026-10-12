@@ -68,6 +68,17 @@ for path in sorted(DK.rglob("*.md")):
     for bare in re.findall(r"Skill tool with [`\"]([a-z][a-z-]*)[`\"]", text):
         errors.append(f"{rel}: Skill tool call to bare {bare!r}; use dk:{bare}")
 
+WRITE_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+review = skills["code-review"].read_text()
+for ref in sorted(set(re.findall(r'subagent_type: "dk:([a-z][a-z-]*)"', review))):
+    if ref not in agents:
+        continue  # the reference check above reports it
+    tools = frontmatter(agents[ref]).get("tools")
+    if tools is None:
+        errors.append(f"agents/{ref}: code-review spawns it, so it needs a tools list (absent inherits Edit and Write)")
+    elif WRITE_TOOLS & {t.strip() for t in tools.split(",")}:
+        errors.append(f"agents/{ref}: code-review spawns it, so its tools must exclude {sorted(WRITE_TOOLS)}")
+
 upstream = (ROOT / "upstream" / "UPSTREAM.md").read_text()
 for name in skills:
     if name not in ORIGINAL and not re.search(rf"^\| (skills/)?{re.escape(name)} \|", upstream, re.M):
