@@ -33,7 +33,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 |---|---|---|
 | skills/blast-radius | pstack/skills/blast-radius | model-invoked; shared-modules section; pointers to how/why/arena/unslop dropped |
 | code-review Empty Test, Defensive Interior | pstack/skills/principle-test-behavior-not-implementation, principle-boundary-discipline | condensed into baseline entries |
-| agents/comment-reviewer | pstack/agents/comment-sicko.md | scoped to comments on added lines; Restates, Narrates history, Stale, Commented-out code, Reshape, Suppression findings; repo comment policy overrides the keep list; report only, persona and `/how` `/why` calls dropped |
+| agents/comment-reviewer | pstack/agents/comment-sicko.md | scoped to comments on added lines; Restates (Reshape folded in), Narrates history, Stale, Commented-out code findings; Suppression left to Standards; repo comment policy overrides the keep list; report only, persona and `/how` `/why` calls dropped |
 
 ## humanlayer/humanlayer (Apache-2.0) @ 99abe67
 
