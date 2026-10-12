@@ -13,7 +13,7 @@ Call the Skill tool with `dk:tdd` where possible, at pre-agreed seams.
 
 Run typechecking regularly, single test files regularly, and the full test suite once at the end. Commit after each green step.
 
-When the code is done, call the Skill tool with `dk:verify` and prove the change in a stack you started. Passing gates are the floor, never the proof.
+When the code is done, call the Skill tool with `dk:verify` and prove the change.
 
 Then call the Skill tool with `dk:code-review` to review the work, and fix what it finds.
 
