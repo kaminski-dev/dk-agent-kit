@@ -81,8 +81,21 @@ pr() { printf '{"number":%s,"headRefName":"%s","headRefOid":"%s","baseRefName":"
 
 done1=$(worktree app-1 feat/1-done)
 open3=$(worktree app-3 feat/3-open)
-echo "[$(pr 11 feat/1-done "$done1" main)]" >"$fx/acme_app/pr-merged.json"
-echo "[$(pr 13 feat/3-open "$open3" main)]" >"$fx/acme_app/pr-open.json"
+dirty2=$(worktree app-2 feat/2-dirty)
+echo wip >"$ws/app-2/notes.txt"
+again4=$(worktree app-4 feat/4-again)
+ahead5=$(worktree app-5 feat/5-ahead)
+git -C "$ws/app-5" commit -q --allow-empty -m "after the merge"
+assets6=$(worktree app-6 verify-assets/6)
+behind7=$(worktree app-7 feat/7-behind)
+git -C "$ws/app-7" commit -q --allow-empty -m "pushed from elsewhere"
+git -C "$ws/app-7" push -q origin feat/7-behind
+head7=$(git -C "$ws/app-7" rev-parse HEAD)
+git -C "$ws/app-7" reset -q --hard "$behind7"
+echo "[$(pr 11 feat/1-done "$done1" main), $(pr 12 feat/2-dirty "$dirty2" main), $(pr 14 feat/4-again "$again4" main),
+  $(pr 16 feat/5-ahead "$ahead5" main), $(pr 17 verify-assets/6 "$assets6" main), $(pr 18 feat/7-behind "$head7" main)]" \
+  >"$fx/acme_app/pr-merged.json"
+echo "[$(pr 13 feat/3-open "$open3" main), $(pr 15 feat/4-again "$again4" main)]" >"$fx/acme_app/pr-open.json"
 
 state() {
   git -C "$app" worktree list --porcelain
@@ -102,6 +115,15 @@ has "$out" "remove branch feat/1-done "
 has "$out" "PR #11 merged"
 lacks "$out" "feat/3-open"
 lacks "$out" "app-3"
+has "$out" "remove worktree $ws/app-7 "
+has "$out" "keep worktree $ws/app-2 (feat/2-dirty, PR #12 merged; uncommitted changes)"
+has "$out" "keep worktree $ws/app-4 (feat/4-again, PR #14 merged; open PR #15)"
+has "$out" "keep worktree $ws/app-5 (feat/5-ahead, PR #16 merged; commits it did not merge)"
+lacks "$out" "remove worktree $ws/app-6"
+lacks "$out" "verify-assets/6 ("
+lacks "$out" "remove branch feat/2-dirty"
+lacks "$out" "remove branch feat/4-again"
+lacks "$out" "remove branch feat/5-ahead"
 has "$out" "Dry run: nothing changed."
 [[ "$(state)" == "$before" ]] || fail "dry run changed something"
 
@@ -116,8 +138,12 @@ out=$(echo y | "$dkgc" --workspace "$ws")
 [[ "$(grep '^  remove ' <<<"$out")" == "$listed" ]] || fail "confirmed run listed other items than the dry run"
 [[ ! -e "$ws/app-1" ]] || fail "merged worktree app-1 still there"
 git -C "$app" rev-parse -q --verify refs/heads/feat/1-done >/dev/null && fail "branch feat/1-done still there"
-[[ -d "$ws/app-3" ]] || fail "worktree with an open PR removed"
-git -C "$app" rev-parse -q --verify refs/heads/feat/3-open >/dev/null || fail "branch with an open PR removed"
+[[ ! -e "$ws/app-7" ]] || fail "worktree behind its merged PR still there"
+for kept in app-2:feat/2-dirty app-3:feat/3-open app-4:feat/4-again app-5:feat/5-ahead app-6:verify-assets/6; do
+  [[ -d "$ws/${kept%%:*}" ]] || fail "worktree ${kept%%:*} removed"
+  git -C "$app" rev-parse -q --verify "refs/heads/${kept#*:}" >/dev/null || fail "branch ${kept#*:} removed"
+done
+[[ "$(cat "$ws/app-2/notes.txt")" == wip ]] || fail "uncommitted file in app-2 lost"
 [[ "$(git -C "$app" rev-parse --abbrev-ref HEAD)" == main ]] || fail "main checkout moved"
 
 out=$("$dkgc" --dry-run --workspace "$ws")

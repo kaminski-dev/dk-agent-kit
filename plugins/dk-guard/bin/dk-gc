@@ -15,6 +15,9 @@ import re
 import subprocess
 import sys
 
+PROTECTED = {"main", "master", "pre-main"}
+KEPT_PREFIX = "verify-assets/"  # PR bodies embed screenshots from these branches
+
 
 def run(args, cwd=None):
     """stdout of a command, or None when it fails."""
@@ -79,22 +82,39 @@ def worktrees(root):
 class Repo:
     def __init__(self, root):
         self.root, self.name, self.slug = root, os.path.basename(root), slug_of(root)
-        self.items, self.notes = [], []
-        self.merged = {}
-        prs = gh_json("pr", "list", "-R", self.slug, "--state", "merged", "--limit", "1000",
-                      "--json", "number,headRefName,headRefOid,isCrossRepository") if self.slug else None
-        if prs is None:
+        self.items, self.kept, self.notes = [], [], []
+        self.merged, self.open_heads = {}, {}
+        fields = "number,headRefName,headRefOid,baseRefName,isCrossRepository"
+        merged = gh_json("pr", "list", "-R", self.slug, "--state", "merged", "--limit", "1000",
+                         "--json", fields) if self.slug else None
+        opened = gh_json("pr", "list", "-R", self.slug, "--state", "open", "--limit", "1000",
+                         "--json", fields) if merged is not None else None
+        if opened is None:
             self.notes.append("skipped: no GitHub origin or gh failed")
             return
-        for p in prs:
+        for p in merged:
             if not p.get("isCrossRepository"):
                 self.merged.setdefault(p["headRefName"], []).append(p)
+        for p in opened:
+            if not p.get("isCrossRepository"):
+                self.open_heads.setdefault(p["headRefName"], p)
 
     def merged_pr(self, branch, sha):
-        """The merged PR whose head is `sha` or contains it, so nothing local is lost."""
-        for p in self.merged.get(branch, []):
+        """(pr, tied): a merged PR of the branch, tied when its head is `sha` or contains it, so nothing is lost."""
+        prs = self.merged.get(branch, [])
+        for p in prs:
             if p["headRefOid"] == sha or git(self.root, "merge-base", "--is-ancestor", sha, p["headRefOid"]) is not None:
-                return p
+                return p, True
+        return (prs[0], False) if prs else (None, False)
+
+    def blocker(self, branch, sha, tied):
+        """Why a branch with a merged PR stays, or None."""
+        if branch in PROTECTED or branch.startswith(KEPT_PREFIX):
+            return "kept by rule"
+        if branch in self.open_heads:
+            return f"open PR #{self.open_heads[branch]['number']}"
+        if not tied:
+            return "commits it did not merge"
         return None
 
     def scan(self, workspace):
@@ -106,10 +126,16 @@ class Repo:
             if not branch or wt.get("locked") or wt.get("prunable") \
                     or not os.path.join(os.path.realpath(path), "").startswith(inside):
                 continue
-            pr = self.merged_pr(branch, wt["head"])
-            if not pr:
+            pr, tied = self.merged_pr(branch, wt["head"])
+            if not pr or branch.startswith(KEPT_PREFIX):
                 continue
             why = f"PR #{pr['number']} merged"
+            reason = self.blocker(branch, wt["head"], tied)
+            if not reason and git(path, "status", "--porcelain") != "":
+                reason = "uncommitted changes"
+            if reason:
+                self.kept.append(("worktree", f"{path} ({branch}, {why}; {reason})"))
+                continue
             self.items.append(("worktree", f"{path} ({branch}, {why})", wt))
             self.items.append(("branch", f"{branch} ({why})", {"branch": branch, "head": wt["head"]}))
 
@@ -142,7 +168,7 @@ def main():
         repo.scan(args.workspace)
     count = 0
     for repo in repos:
-        if not repo.items and not repo.notes:
+        if not repo.items and not repo.kept and not repo.notes:
             continue
         print(f"{repo.name} ({repo.slug or 'no GitHub origin'})")
         for note in repo.notes:
@@ -150,6 +176,8 @@ def main():
         for kind, label, _ in repo.items:
             print(f"  remove {kind} {label}")
             count += 1
+        for kind, label in repo.kept:
+            print(f"  keep {kind} {label}")
     if not count:
         print("Nothing to remove.")
         return 0
