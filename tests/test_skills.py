@@ -68,6 +68,14 @@ for path in sorted(DK.rglob("*.md")):
     for bare in re.findall(r"Skill tool with [`\"]([a-z][a-z-]*)[`\"]", text):
         errors.append(f"{rel}: Skill tool call to bare {bare!r}; use dk:{bare}")
 
+readme = (ROOT / "README.md").read_text()
+for block in re.findall(r"```mermaid\n(.*?)```", readme, re.S):
+    planned = {i for ids in re.findall(r"^\s*class (\S+) planned$", block, re.M) for i in ids.split(",")}
+    for node, label in re.findall(r"\b([A-Za-z_]\w*)[\[({]+\"([^\"]*)\"", block):
+        for ref in re.findall(r"\bdk:([a-z][a-z-]*)", label):
+            if node in planned and ref in skills:
+                errors.append(f"README.md: dk:{ref} is built but its box '{node}' is still dashed (planned)")
+
 upstream = (ROOT / "upstream" / "UPSTREAM.md").read_text()
 for name in skills:
     if name not in ORIGINAL and not re.search(rf"^\| (skills/)?{re.escape(name)} \|", upstream, re.M):
