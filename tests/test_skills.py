@@ -9,7 +9,8 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DK = ROOT / "plugins" / "dk"
-ORIGINAL = {"issue-flow"}  # written for the kit, no upstream row
+ORIGINAL = {"issue-flow", "post-deploy-check", "verify"}  # written for the kit, no upstream row
+CLIENT_REPOS = ("jetztbar", "clientdata", "kaminski-advies")  # their facts live in their own docs/agents/
 
 errors = []
 
@@ -62,16 +63,44 @@ for path in sorted(DK.rglob("*.md")):
     for ref in re.findall(r"Skill tool with [`\"]dk:([a-z-]+)", text):
         if ref in user_invoked:
             errors.append(f"{rel}: calls user-invoked dk:{ref} through the Skill tool, which cannot reach it")
+    for client in CLIENT_REPOS:
+        if client in text.lower():
+            errors.append(f"{rel}: names the client repo {client}; skills stay repo-neutral")
     for stale in ("setup-matt-pocock-skills", "CONTEXT.md"):
         if stale in text and path.parent.name != "setup":  # setup renames and replaces them
             errors.append(f"{rel}: mentions {stale}")
     for bare in re.findall(r"Skill tool with [`\"]([a-z][a-z-]*)[`\"]", text):
         errors.append(f"{rel}: Skill tool call to bare {bare!r}; use dk:{bare}")
 
+WRITE_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+review = skills["code-review"].read_text()
+for ref in sorted(set(re.findall(r'subagent_type: "dk:([a-z][a-z-]*)"', review))):
+    if ref not in agents:
+        continue  # the reference check above reports it
+    tools = frontmatter(agents[ref]).get("tools")
+    if tools is None:
+        errors.append(f"agents/{ref}: code-review spawns it, so it needs a tools list (absent inherits Edit and Write)")
+    elif WRITE_TOOLS & {t.strip() for t in tools.split(",")}:
+        errors.append(f"agents/{ref}: code-review spawns it, so its tools must exclude {sorted(WRITE_TOOLS)}")
+
+readme = (ROOT / "README.md").read_text()
+for block in re.findall(r"```mermaid\n(.*?)```", readme, re.S):
+    planned = {i for ids in re.findall(r"^\s*class (\S+) planned$", block, re.M) for i in ids.split(",")}
+    for node, label in re.findall(r"\b([A-Za-z_]\w*)[\[({]+\"([^\"]*)\"", block):
+        for ref in re.findall(r"\bdk:([a-z][a-z-]*)", label):
+            if node in planned and ref in skills:
+                errors.append(f"README.md: dk:{ref} is built but its box '{node}' is still dashed (planned)")
+
 upstream = (ROOT / "upstream" / "UPSTREAM.md").read_text()
 for name in skills:
     if name not in ORIGINAL and not re.search(rf"^\| (skills/)?{re.escape(name)} \|", upstream, re.M):
         errors.append(f"skills/{name}: no row in upstream/UPSTREAM.md")
+
+dk_column = " ".join(re.findall(r"^\| ([^|]+) \|", upstream, re.M))
+for name, path in agents.items():
+    m = re.search(r"<!-- Adapted from (\S+(?: \S+)?)@([0-9a-f]+) ", path.read_text())
+    if m and not (re.search(rf"\b{re.escape(name)}\b", dk_column) and f"@ {m.group(2)}" in upstream):
+        errors.append(f"agents/{name}: adapted from {m.group(1)}@{m.group(2)}, but upstream/UPSTREAM.md has no row for it at that commit")
 
 for e in errors:
     print("FAIL", e)

@@ -46,7 +46,7 @@ Each commit is one verifiable unit: the gates from `AGENTS.md` pass on what it t
 
 ## 5. Screenshots and evidence
 
-Evidence goes into the PR, never into the tree. Collect the screenshots in `$SCRATCH/<N>/shots/` first (Playwright MCP saves only under its own roots, so move them there), then push them as an orphan commit on `verify-assets/<N>` and embed them by commit SHA:
+Before calling a change verified, call the Skill tool with `dk:verify`: it says what proof the change needs, and this step is where that proof lands. Evidence goes into the PR, never into the tree. Collect the screenshots in `$SCRATCH/<N>/shots/` first (Playwright MCP saves only under its own roots, so move them there), then push them as an orphan commit on `verify-assets/<N>` and embed them by commit SHA:
 
 ```sh
 tree=$( { for f in "$SCRATCH/<N>"/shots/*.png; do
@@ -71,7 +71,7 @@ When the change is one the customer sees, write the customer reply on the issue 
 ## 7. After the merge
 
 - Batch PR review findings are fixed in a new PR against `pre-main`, so they ride the same batch. A skipped finding gets its reason on the review thread.
-- `Refs #N` issues: once the batch reaches `main`, swap `ready-for-agent` for `awaiting-verification` and comment the exact query and the due date. When the window has passed, run the check and comment the evidence, then drop the label and close. A check that never had a chance to fire is reported as **shipped but not exercised**, which keeps the issue open.
+- `Refs #N` issues: once the batch reaches `main`, swap `ready-for-agent` for `awaiting-verification` and comment the exact query, the deploy time and the due date. When the window has passed, call the Skill tool with `dk:post-deploy-check`: it runs the query and posts the verdict.
 - Declining an issue: comment the reason, add `wontfix`, close.
 - Clean up: `git worktree remove ~/workspace/<prefix>-<N>`, `git branch -D <branch>`. Keep `verify-assets/<N>` (step 5).
 

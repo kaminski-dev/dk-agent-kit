@@ -33,7 +33,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 6. If this changes the **frontier** of available tickets, kick off more **implementer subagents** to work on the new tickets. This allows for maximum concurrency.
 
-7. Once all tickets are complete, prove the whole spec in a running stack (the repo's verify recipe, named in `AGENTS.md`), then call the Skill tool with `dk:code-review` on the integration branch against `origin/pre-main`. Fix all issues raised by the code review in a single **implementer subagent**.
+7. Once all tickets are complete, call the Skill tool with `dk:verify` and prove the whole spec in a running stack, then call the Skill tool with `dk:code-review` on the integration branch against `origin/pre-main`. Fix all issues raised by the code review in a single **implementer subagent**.
 
 8. Open one PR from the integration branch into `pre-main`, body from the `dk:pr` skill, with a `Closes #N` (or `Refs #N`, per `dk:issue-flow`) line for the spec and for every ticket.
 
