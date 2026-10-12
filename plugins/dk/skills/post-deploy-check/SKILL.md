@@ -13,7 +13,7 @@ An `awaiting-verification` issue is merged and deployed; one time-boxed check on
 
 Without an issue number, list the candidates (`gh issue list --state open --label awaiting-verification --json number,title`) and run every issue whose due date has passed.
 
-Done when you hold the query, the deploy time in UTC and the due date. When one is missing, ask for it in a comment and keep the label. Before the due date, a run is a progress report: post it as one, and leave the label and state alone.
+Done when you hold the query, the deploy time in UTC and the due date. A missing deploy time comes from the deploy record: the batch PR's merge and the deploy run that `workflow.md` names (`gh run list --workflow <deploy> --branch main --json headSha,updatedAt,conclusion`). When the query or due date is missing, ask for it in a comment and keep the label. Before the due date, a run is a progress report: post it as one, and leave the label and state alone.
 
 ## 2. Read the source
 
@@ -29,7 +29,7 @@ Before reading the window, show that the query can match at all. Any one of thes
 - the line the fix adds appears at least once since the deploy;
 - the repo's control line (same stream selector, same window, a line that is always there, such as health requests or the startup line) returns lines.
 
-When every control comes back empty, the selector names nothing: a wrong label, a container renamed by a rolling deploy, a datasource or project mix-up, an expired session. That is a **broken check**. Fix the selector against the doc, rerun this step, and keep the original query and its empty result in the evidence.
+When every control comes back empty, the selector names nothing: a wrong label, a container renamed by a rolling deploy, a datasource or project mix-up, an expired session. That is a **broken check**, and the comment names it so whatever follows. Fix the selector against the doc and rerun this step with it; the original query and its empty result stay in the evidence.
 
 ## 4. Read the window
 
