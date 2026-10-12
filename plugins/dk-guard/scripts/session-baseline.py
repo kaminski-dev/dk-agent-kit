@@ -10,14 +10,21 @@ timeout and left out when they fail; any other error prints nothing (fails open)
 """
 import json
 import os
+import re
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 MAX_LINES = 15
 MAX_FILES = 5
+MAX_DBS = 3
+MAX_CHARS = 200
+ISSUE = re.compile(r"^[^/]+/(\d+)(?:-|$)")
+# gh and docker each get this long; the three calls run side by side, inside the hook's timeout.
+TIMEOUT = float(os.environ.get("DK_BASELINE_TIMEOUT", "5"))
 
 
-def run(cmd, cwd, timeout=5):
+def run(cmd, cwd, timeout=TIMEOUT):
     try:
         out = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout,
                              stdin=subprocess.DEVNULL)
@@ -45,7 +52,14 @@ def baseline(cwd):
         where = f"worktree {top} (primary: {primary})"
     lines = [f"{os.path.basename(primary)} · {branch} · {where}"]
     lines += changes(top)
-    return lines
+    match = ISSUE.match(branch)
+    issue = match.group(1) if match else None
+    with ThreadPoolExecutor(3) as pool:
+        pr_lines = pool.submit(pull_request, top, branch)
+        issue_lines = pool.submit(issue_labels, top, issue)
+        db_lines = pool.submit(databases, top, primary, issue)
+        lines += pr_lines.result() + issue_lines.result() + db_lines.result()
+    return [line if len(line) <= MAX_CHARS else line[:MAX_CHARS - 1] + "…" for line in lines]
 
 
 def changes(top):
@@ -59,6 +73,53 @@ def changes(top):
     lines += ["  " + e for e in entries[:MAX_FILES]]
     if len(entries) > MAX_FILES:
         lines.append(f"  … {len(entries) - MAX_FILES} more")
+    return lines
+
+
+def gh_json(top, *args):
+    out = run(["gh", *args], top)
+    if out is None:
+        return None
+    try:
+        return json.loads(out)
+    except ValueError:
+        return None
+
+
+def pull_request(top, branch):
+    prs = gh_json(top, "pr", "list", "--head", branch, "--state", "open", "--json", "number,title,url", "--limit", "1")
+    if not isinstance(prs, list):
+        return []
+    if not prs:
+        return ["PR: none open for this branch"]
+    pr = prs[0]
+    return [f"PR #{pr.get('number')} open: {pr.get('title')} {pr.get('url')}"]
+
+
+def issue_labels(top, issue):
+    if not issue:
+        return []
+    data = gh_json(top, "issue", "view", issue, "--json", "number,title,state,labels")
+    if not isinstance(data, dict):
+        return []
+    labels = ", ".join(label.get("name", "") for label in data.get("labels") or []) or "none"
+    return [f"issue #{issue} ({str(data.get('state', '')).lower()}) {data.get('title')}: labels {labels}"]
+
+
+def databases(top, primary, issue):
+    """The dk-pg containers for this issue: dk-pg labels them with the primary checkout's path."""
+    if not issue:
+        return []
+    out = run(["docker", "ps", "--filter", f"label=dk.root={primary}", "--filter", f"label=dk.issue={issue}",
+               "--format", "{{.Names}}\t{{.Ports}}"], top)
+    if out is None:
+        return []
+    rows = [row.replace("\t", " ") for row in out.splitlines() if row.strip()]
+    if not rows:
+        return [f"dk-pg: none running for #{issue}"]
+    lines = [f"dk-pg #{issue}: {row}" for row in rows[:MAX_DBS]]
+    if len(rows) > MAX_DBS:
+        lines.append(f"dk-pg #{issue}: … {len(rows) - MAX_DBS} more")
     return lines
 
 
