@@ -16,6 +16,7 @@ The dk skills keep the shared process; each repo keeps only its own facts in sma
 | `docs/agents/triage-labels.md` | label strings | triage, to-spec, to-tickets, issue-flow |
 | `docs/agents/domain.md` | glossary and ADR locations, the glossary change rule | domain-modeling, grill-with-docs, triage |
 | `docs/agents/workflow.md` | repo parameters only | issue-flow |
+| `docs/agents/verify.md` | stack start, stubs, seeding, login, endpoints | verify |
 | `GLOSSARY.md` | the domain glossary (Matt's skills look for this name) | all |
 | `CODING_STANDARDS.md` | judgement calls for review | code-review |
 | `.claude/settings.json` | `env.GH_REPO` | the harness |
@@ -32,6 +33,7 @@ Draft every change, then show the user the list with one recommended answer per 
 - **Glossary**: rename `CONTEXT.md` to `GLOSSARY.md` with `git mv`, and update every reference (`git grep -n 'CONTEXT\.md'`, excluding vendored and generated code). Fill [domain.md](domain.md) with the repo's existing glossary change rule, quoted from its docs.
 - **Coding standards**: move the judgement calls from `AGENTS.md` (a "Code defaults" section or similar) into `CODING_STANDARDS.md` per [coding-standards.md](coding-standards.md). Lines that only navigate (where a module lives, which file to read first) stay in `AGENTS.md`.
 - **Workflow**: cut `docs/agents/workflow.md` down to the parameters in [workflow-parameters.md](workflow-parameters.md); the shared sequence lives in the `dk:issue-flow` skill. Keep every repo-specific fact, and drop only lines `dk:issue-flow` states equally.
+- **Verify**: cut the repo's verify recipe down to `docs/agents/verify.md` with the facts the `dk:verify` skill lists under "The repo's verify doc"; the protocol lives in the skill.
 - **AGENTS.md**: the pointer block below, replacing whatever section pointed at the workflow before.
 - **Ignore rules**: a `.gitignore` exception for `docs/research/` when it is ignored.
 
