@@ -17,7 +17,7 @@ Claude Code only for now. Codex and other hosts will follow.
 | `upstream/` | `UPSTREAM.md` records the commit and changes for every adapted file; `sync.sh` shows what mattpocock/skills changed since (pstack and HumanLayer are compared by hand). |
 | `settings/user.fragment.json` | What a plugin cannot ship: permission deny and ask rules, and `autoMode.hard_deny` lines. Merged into `~/.claude/settings.json` by `bootstrap.sh`. |
 | `bootstrap.sh` | Shows the settings diff; `--apply` backs up, merges and installs the plugins from this checkout. |
-| `tests/` | The guard's case matrix (taken from real incidents), the Stop gate's fixture repos, a `dk-pg` run against Docker, a bootstrap merge test, and `replay_history.py` for checking the guard against past transcripts. |
+| `tests/` | The guard's case matrix (taken from real incidents), fixture repos for the Stop gate and the session hooks, a `dk-pg` run against Docker, a bootstrap merge test, and `replay_history.py` for checking the guard against past transcripts. |
 | `THIRD_PARTY/` | Licenses and commits of the projects material is adapted from. |
 
 Every rule traces back to something that went wrong in a real session: a
@@ -106,6 +106,27 @@ ship here. L4 runs only in auto mode, is a judgement call, and is only a
 backstop. CI is the next layer, outside the session, and skill
 text and `AGENTS.md` the last.
 
+## Session hooks
+
+`dk-guard` also opens every session with a baseline of at most 15 lines:
+repo and branch, primary checkout or worktree, uncommitted changes, the open
+PR for the branch, the labels of the issue the branch names
+(`<type>/<issue>-<slug>`) and the `dk-pg` databases running for it. It is
+silent outside a git repo.
+
+A repo can require worktrees with one committed setting in its
+`.claude/settings.json`:
+
+```json
+{ "env": { "DK_REQUIRE_WORKTREE": "1" } }
+```
+
+An Edit or Write to a file in that repo's primary checkout is then denied
+with the worktree command from its `docs/agents/workflow.md`; the same edit in
+a linked worktree goes through. Several sessions share a primary checkout and
+only the branch pointer moves, which is where parallel sessions collided.
+Both hooks fail open: a crash never blocks an edit.
+
 ## Install
 
 ```sh
@@ -130,6 +151,8 @@ nothing is removed, scalars from the fragment win. A second run is a no-op.
 ```sh
 python3 -I tests/hooks/test_guard_bash.py
 python3 -I tests/hooks/test_stop_gate.py
+python3 -I tests/hooks/test_require_worktree.py
+python3 -I tests/hooks/test_session_baseline.py
 python3 -I tests/test_skills.py
 bash tests/test_bootstrap.sh
 bash tests/test_dk_pg.sh      # skips without a Docker daemon
