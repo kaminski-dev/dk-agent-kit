@@ -105,10 +105,16 @@ git -C "$ws/app-11" commit -q --allow-empty -m "pushed after the merge"
 git -C "$ws/app-11" push -q origin feat/11-moved
 git -C "$app" worktree remove "$ws/app-11"
 git -C "$app" branch -q -D feat/11-moved
+# pre-master: an integration branch with a merged PR of its own (a batch) and merged PRs into it.
+git -C "$app" branch pre-master main
+git -C "$app" push -q origin pre-master
 echo "[$(pr 11 feat/1-done "$done1" main), $(pr 12 feat/2-dirty "$dirty2" main), $(pr 14 feat/4-again "$again4" main),
   $(pr 16 feat/5-ahead "$ahead5" main), $(pr 17 verify-assets/6 "$assets6" main), $(pr 18 feat/7-behind "$head7" main),
   $(pr 19 feat/8-loose "$loose8" main), $(pr 20 feat/10-base "$main" main), $(pr 22 pre-main "$main" main),
-  $(pr 23 feat/11-moved "$moved11" main)]" >"$fx/acme_app/pr-merged.json"
+  $(pr 23 feat/11-moved "$moved11" main), $(pr 24 pre-master "$main" main), $(pr 25 feat/13-batched "$main" pre-master)]" \
+  >"$fx/acme_app/pr-merged.json"
+# A second checkout of acme/app: its remote branches are the same ones, handled once.
+git clone -q https://github.com/acme/app.git "$ws/app-copy"
 echo "[$(pr 13 feat/3-open "$open3" main), $(pr 15 feat/4-again "$again4" main), $(pr 21 feat/12-next "$main" feat/10-base)]" \
   >"$fx/acme_app/pr-open.json"
 
@@ -170,6 +176,9 @@ lacks "$out" "notes"
 has "$out" "other (acme/other)"$'\n'"  branches skipped: gh could not list its PRs"
 lacks "$out" "other-1"
 lacks "$out" "origin/main"
+has "$out" "keep branch pre-master (PR #24 merged; base of PR #25)"
+has "$out" "keep remote origin/pre-master (PR #24 merged; base of PR #25)"
+[[ "$(grep -c "remove remote origin/feat/1-done " <<<"$out")" == 1 ]] || fail "remote branch listed once per checkout"
 has "$out" "Dry run: nothing changed."
 [[ "$(state)" == "$before" ]] || fail "dry run changed something"
 
@@ -186,6 +195,7 @@ out=$(echo y | "$dkgc" --workspace "$ws")
 git -C "$app" rev-parse -q --verify refs/heads/feat/1-done >/dev/null && fail "branch feat/1-done still there"
 [[ -d "$ws/notes-1" && -d "$ws/other-1" ]] || fail "worktree of a repo without PRs removed"
 [[ ! -e "$ws/app-7" ]] || fail "worktree behind its merged PR still there"
+git -C "$app" rev-parse -q --verify refs/heads/pre-master >/dev/null || fail "integration branch pre-master removed"
 for kept in app-pre-main:pre-main app-2:feat/2-dirty app-3:feat/3-open app-4:feat/4-again app-5:feat/5-ahead app-6:verify-assets/6; do
   [[ -d "$ws/${kept%%:*}" ]] || fail "worktree ${kept%%:*} removed"
   git -C "$app" rev-parse -q --verify "refs/heads/${kept#*:}" >/dev/null || fail "branch ${kept#*:} removed"
@@ -195,7 +205,7 @@ done
 grep -q '^rm -fv c1$' "$fx/docker.log" || fail "container c1 not removed with its volumes"
 git -C "$app" rev-parse -q --verify refs/heads/feat/8-loose >/dev/null && fail "branch feat/8-loose still there"
 remote_heads=$(git -C "$remotes/acme/app.git" for-each-ref --format='%(refname:short)' refs/heads | sort | tr '\n' ' ')
-[[ "$remote_heads" == "feat/10-base feat/11-moved feat/3-open feat/4-again main pre-main verify-assets/6 " ]] \
+[[ "$remote_heads" == "feat/10-base feat/11-moved feat/3-open feat/4-again main pre-main pre-master verify-assets/6 " ]] \
   || fail "remote branches left: $remote_heads"
 [[ "$(git -C "$app" rev-parse --abbrev-ref HEAD)" == main ]] || fail "main checkout moved"
 

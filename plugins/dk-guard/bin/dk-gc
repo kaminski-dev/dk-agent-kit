@@ -13,10 +13,12 @@ databases (dk.issue, dk.root labels) whose issue is closed. Then it asks once
 Nothing goes that cannot be tied to a merged PR (the branch tip is the PR's
 head or behind it) or a closed issue. Never removed: main, master, pre-main,
 the remote's default branch, verify-assets/* (PR bodies embed from them),
-a branch with an open PR, a remote branch an open PR targets, and a worktree
-with uncommitted changes; the last three are listed with "keep". GitHub is
-asked with -R from origin's URL, so a GH_REPO in the environment cannot point
-it at another repo.
+a branch with an open PR, the base of any PR (an integration branch like
+pre-master, even after its own batch PR merged), and a worktree with
+uncommitted changes; the last three are listed with "keep". GitHub is asked
+with -R from origin's URL, so a GH_REPO in the environment cannot point it at
+another repo. Checkouts of one GitHub repo share its remote branches; the
+first one lists them.
 """
 import argparse
 import json
@@ -107,7 +109,7 @@ class Repo:
     def __init__(self, root):
         self.root, self.name, self.slug = root, os.path.basename(root), slug_of(root)
         self.items, self.kept, self.notes = [], [], []
-        self.merged, self.open_heads, self.open_bases = {}, {}, {}
+        self.merged, self.open_heads, self.bases = {}, {}, {}
 
     def load_prs(self):
         """Fetch merged and open PRs; False (with a note) when GitHub cannot say."""
@@ -126,7 +128,9 @@ class Repo:
         for p in opened:
             if not p.get("isCrossRepository"):
                 self.open_heads.setdefault(p["headRefName"], p)
-            self.open_bases.setdefault(p["baseRefName"], p)
+        for kind, prs in (("open PR", opened), ("PR", merged)):  # a PR's base is an integration branch,
+            for p in prs:                                           # even when its own batch PR merged
+                self.bases.setdefault(p["baseRefName"], f"{kind} #{p['number']}")
         return True
 
     def merged_pr(self, branch, sha):
@@ -137,17 +141,17 @@ class Repo:
                 return p, True
         return (prs[0], False) if prs else (None, False)
 
-    def blocker(self, branch, tied, remote=False):
+    def blocker(self, branch, tied):
         """Why a branch with a merged PR stays, or None."""
         if branch in self.open_heads:
             return f"open PR #{self.open_heads[branch]['number']}"
-        if remote and branch in self.open_bases:
-            return f"base of open PR #{self.open_bases[branch]['number']}"
+        if branch in self.bases:
+            return f"base of {self.bases[branch]}"
         if not tied:
             return "commits it did not merge"
         return None
 
-    def consider(self, kind, label, branch, sha, target, remote=False):
+    def consider(self, kind, label, branch, sha, target):
         """Queue a branch tied to a merged PR, or list why it stays; skip it when no merged PR has it."""
         if branch in PROTECTED or branch.startswith(KEPT_PREFIX):
             return
@@ -155,13 +159,13 @@ class Repo:
         if not pr:
             return
         why = f"PR #{pr['number']} merged"
-        reason = self.blocker(branch, tied, remote)
+        reason = self.blocker(branch, tied)
         if reason:
             self.kept.append((kind, f"{label} ({why}; {reason})"))
         else:
             self.items.append((kind, f"{label} ({why})", target))
 
-    def scan(self, workspace):
+    def scan(self, workspace, remote):
         if not self.load_prs():
             return
         inside = os.path.join(os.path.realpath(workspace), "")
@@ -189,7 +193,8 @@ class Repo:
             branch, sha = line.split("\t")
             if branch not in checked_out:
                 self.consider("branch", branch, branch, sha, {"branch": branch, "head": sha})
-        self.scan_remote()
+        if remote:
+            self.scan_remote()
 
     def scan_remote(self):
         out = git(self.root, "ls-remote", "--symref", "origin", "HEAD", "refs/heads/*")
@@ -205,7 +210,7 @@ class Repo:
                 heads[name[len("refs/heads/"):]] = ref
         for branch, sha in sorted(heads.items()):
             if branch != default:
-                self.consider("remote", f"origin/{branch}", branch, sha, {"branch": branch, "head": sha}, remote=True)
+                self.consider("remote", f"origin/{branch}", branch, sha, {"branch": branch, "head": sha})
 
     def consider_database(self, container):
         cid, name, issue = container
@@ -253,8 +258,10 @@ def main():
         sys.exit(f"dk-gc: no workspace at {args.workspace}")
 
     repos = [Repo(root) for root in main_roots(args.workspace)]
-    for repo in repos:
-        repo.scan(args.workspace)
+    slugs = set()
+    for repo in repos:  # checkouts of one GitHub repo share its remote branches; the first one handles them
+        repo.scan(args.workspace, remote=repo.slug not in slugs)
+        slugs.add(repo.slug)
     containers = databases()
     if containers is None:
         print("databases skipped: docker did not answer")
