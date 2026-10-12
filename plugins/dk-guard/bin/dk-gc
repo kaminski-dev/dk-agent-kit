@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""dk-gc: remove what finished work left behind.
+
+  dk-gc [--dry-run] [--yes] [--workspace DIR]
+
+Lists, grouped by repo, the worktrees under the workspace (default ~/workspace)
+whose branch's PR has merged and those local branches, then asks once (y on
+stdin) and removes exactly what it listed. --dry-run lists and stops; --yes
+skips the question. Nothing is removed that cannot be tied to a merged PR.
+"""
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+
+
+def run(args, cwd=None):
+    """stdout of a command, or None when it fails."""
+    try:
+        out = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+    except OSError:
+        return None
+    return out.stdout if out.returncode == 0 else None
+
+
+def git(path, *args):
+    return run(["git", "-C", path, *args])
+
+
+def gh_json(*args):
+    out = run(["gh", *args])
+    try:
+        return json.loads(out) if out is not None else None
+    except ValueError:
+        return None
+
+
+def slug_of(root):
+    """owner/repo of origin on GitHub, from the configured URL (before any insteadOf)."""
+    url = (git(root, "config", "--get", "remote.origin.url") or "").strip()
+    m = re.search(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", url)
+    return m.group(1) if m else None
+
+
+def main_roots(workspace):
+    """The main checkouts of every repo with a checkout directly under the workspace."""
+    roots = []
+    for entry in sorted(os.listdir(workspace)):
+        path = os.path.join(workspace, entry)
+        if not os.path.isdir(path) or not os.path.exists(os.path.join(path, ".git")):
+            continue
+        common = (git(path, "rev-parse", "--path-format=absolute", "--git-common-dir") or "").strip()
+        if os.path.basename(common) == ".git":
+            root = os.path.dirname(common)
+            if root not in roots:
+                roots.append(root)
+    return roots
+
+
+def worktrees(root):
+    """[{path, head, branch, locked, prunable}] from `git worktree list --porcelain`; the main one first."""
+    out, cur = [], None
+    for line in (git(root, "worktree", "list", "--porcelain") or "").splitlines():
+        key, _, value = line.partition(" ")
+        if key == "worktree":
+            cur = {"path": value, "head": None, "branch": None}
+            out.append(cur)
+        elif key == "HEAD":
+            cur["head"] = value
+        elif key == "branch":
+            cur["branch"] = value[len("refs/heads/"):]
+        elif key in ("locked", "prunable", "bare"):
+            cur[key] = True
+    return out
+
+
+class Repo:
+    def __init__(self, root):
+        self.root, self.name, self.slug = root, os.path.basename(root), slug_of(root)
+        self.items, self.notes = [], []
+        self.merged = {}
+        prs = gh_json("pr", "list", "-R", self.slug, "--state", "merged", "--limit", "1000",
+                      "--json", "number,headRefName,headRefOid,isCrossRepository") if self.slug else None
+        if prs is None:
+            self.notes.append("skipped: no GitHub origin or gh failed")
+            return
+        for p in prs:
+            if not p.get("isCrossRepository"):
+                self.merged.setdefault(p["headRefName"], []).append(p)
+
+    def merged_pr(self, branch, sha):
+        """The merged PR whose head is `sha` or contains it, so nothing local is lost."""
+        for p in self.merged.get(branch, []):
+            if p["headRefOid"] == sha or git(self.root, "merge-base", "--is-ancestor", sha, p["headRefOid"]) is not None:
+                return p
+        return None
+
+    def scan(self, workspace):
+        if self.notes:
+            return
+        inside = os.path.join(os.path.realpath(workspace), "")
+        for wt in worktrees(self.root)[1:]:
+            branch, path = wt["branch"], wt["path"]
+            if not branch or wt.get("locked") or wt.get("prunable") \
+                    or not os.path.join(os.path.realpath(path), "").startswith(inside):
+                continue
+            pr = self.merged_pr(branch, wt["head"])
+            if not pr:
+                continue
+            why = f"PR #{pr['number']} merged"
+            self.items.append(("worktree", f"{path} ({branch}, {why})", wt))
+            self.items.append(("branch", f"{branch} ({why})", {"branch": branch, "head": wt["head"]}))
+
+    def remove(self, kind, target):
+        if kind == "worktree":
+            if (git(target["path"], "rev-parse", "HEAD") or "").strip() != target["head"]:
+                return "its branch moved since the listing"
+            if git(self.root, "worktree", "remove", target["path"]) is None:
+                return "git worktree remove refused"
+        elif kind == "branch":
+            if (git(self.root, "rev-parse", "-q", "--verify", f"refs/heads/{target['branch']}") or "").strip() \
+                    != target["head"]:
+                return "it moved since the listing"
+            if git(self.root, "branch", "-D", target["branch"]) is None:
+                return "git branch -D refused"
+        return None
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="dk-gc", description="Remove worktrees and branches of merged PRs.")
+    ap.add_argument("--dry-run", action="store_true", help="list, change nothing")
+    ap.add_argument("--yes", action="store_true", help="remove without asking")
+    ap.add_argument("--workspace", default=os.path.expanduser("~/workspace"))
+    args = ap.parse_args()
+    if not os.path.isdir(args.workspace):
+        sys.exit(f"dk-gc: no workspace at {args.workspace}")
+
+    repos = [Repo(root) for root in main_roots(args.workspace)]
+    for repo in repos:
+        repo.scan(args.workspace)
+    count = 0
+    for repo in repos:
+        if not repo.items and not repo.notes:
+            continue
+        print(f"{repo.name} ({repo.slug or 'no GitHub origin'})")
+        for note in repo.notes:
+            print(f"  {note}")
+        for kind, label, _ in repo.items:
+            print(f"  remove {kind} {label}")
+            count += 1
+    if not count:
+        print("Nothing to remove.")
+        return 0
+    if args.dry_run:
+        print(f"{count} to remove. Dry run: nothing changed.")
+        return 0
+    if not args.yes:
+        print(f"Remove these {count}? [y/N] ", end="", flush=True)
+        if sys.stdin.readline().strip().lower() not in ("y", "yes"):
+            print("Nothing changed.")
+            return 0
+    failed = 0
+    for repo in repos:
+        for kind, label, target in repo.items:
+            error = repo.remove(kind, target)
+            if error:
+                failed += 1
+                print(f"kept {kind} {label}: {error}", file=sys.stderr)
+    print(f"Removed {count - failed} of {count}.")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
