@@ -13,7 +13,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 | grilling | skills/productivity/grilling | as-is |
 | handoff | skills/productivity/handoff | as-is |
 | implement | skills/engineering/implement | `dk:issue-flow`, commit per green step, `dk:verify` before review, `dk:pr` |
-| implement-spec | skills/engineering/implement-spec | integration branch off `origin/pre-main`, implementer worktrees from it, scratch per agent, one PR into `pre-main` |
+| implement-spec | skills/engineering/implement-spec | integration branch off `origin/pre-main`, implementer worktrees from it, scratch per agent, `dk:verify` on the whole spec, one PR into `pre-main` |
 | improve-codebase-architecture | skills/engineering/improve-codebase-architecture | `dk:` references; glossary edits by the context and the `domain.md` rule |
 | pr | skills/engineering/pr | Also in this PR, Deviations, `Closes`/`Refs` (repeated on the batch PR), evidence on `verify-assets`, `dk:blast-radius` for one-way doors |
 | prototype | skills/engineering/prototype | tracking issue, tracked paths, pushed `proto/` branch, versioned artifact titles; production never renders a variant |
