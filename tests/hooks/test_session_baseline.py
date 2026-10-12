@@ -99,6 +99,16 @@ def case_linked_worktree_with_uncommitted_changes(root):
     assert "uncommitted: 2 files" in out and "README.md" in out and "new.py" in out, out
 
 
+def case_long_worktree_paths_are_kept_whole(root):
+    deep = os.path.join(root, "a-rather-long-directory-name-" * 4)
+    os.makedirs(deep)
+    repo = make_repo(deep, "deep-main")
+    wt = os.path.join(deep, "deep-main-19")
+    subprocess.run(["git", "-C", repo, "worktree", "add", "-q", "-b", "feat/19-deep", wt], check=True)
+    _, out, _ = run(wt, make_stubs(root, "deep"))
+    assert f"worktree {wt}" in out and f"primary: {repo}" in out, out
+
+
 def case_clean_tree_says_so(root):
     repo = make_repo(root, "clean")
     _, out, _ = run(repo, make_stubs(root, "clean"))

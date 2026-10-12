@@ -50,8 +50,8 @@ def baseline(cwd):
         where = "primary checkout"
     else:
         where = f"worktree {top} (primary: {primary})"
-    lines = [f"{os.path.basename(primary)} · {branch} · {where}"]
-    lines += changes(top)
+    head = f"{os.path.basename(primary)} · {branch} · {where}"
+    lines = changes(top)
     match = ISSUE.match(branch)
     issue = match.group(1) if match else None
     with ThreadPoolExecutor(3) as pool:
@@ -59,7 +59,8 @@ def baseline(cwd):
         issue_lines = pool.submit(issue_labels, top, issue)
         db_lines = pool.submit(databases, top, primary, issue)
         lines += pr_lines.result() + issue_lines.result() + db_lines.result()
-    return [line if len(line) <= MAX_CHARS else line[:MAX_CHARS - 1] + "…" for line in lines]
+    # The head keeps its paths whole; titles, labels and file names are cut.
+    return [head] + [line if len(line) <= MAX_CHARS else line[:MAX_CHARS - 1] + "…" for line in lines]
 
 
 def changes(top):
