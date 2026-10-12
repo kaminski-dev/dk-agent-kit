@@ -92,10 +92,25 @@ git -C "$ws/app-7" commit -q --allow-empty -m "pushed from elsewhere"
 git -C "$ws/app-7" push -q origin feat/7-behind
 head7=$(git -C "$ws/app-7" rev-parse HEAD)
 git -C "$ws/app-7" reset -q --hard "$behind7"
+# feat/8-loose: a local branch whose worktree is gone and whose remote GitHub deleted.
+loose8=$(worktree app-8 feat/8-loose)
+git -C "$app" worktree remove "$ws/app-8"
+git -C "$app" push -q origin --delete feat/8-loose
+# Remote-only branches: a base of an open PR, the batch branch, one pushed to after its merge.
+main=$(git -C "$app" rev-parse main)
+git -C "$app" push -q origin main:refs/heads/feat/10-base main:refs/heads/pre-main
+git -C "$app" worktree add -q -b pre-main "$ws/app-pre-main" main
+moved11=$(worktree app-11 feat/11-moved)
+git -C "$ws/app-11" commit -q --allow-empty -m "pushed after the merge"
+git -C "$ws/app-11" push -q origin feat/11-moved
+git -C "$app" worktree remove "$ws/app-11"
+git -C "$app" branch -q -D feat/11-moved
 echo "[$(pr 11 feat/1-done "$done1" main), $(pr 12 feat/2-dirty "$dirty2" main), $(pr 14 feat/4-again "$again4" main),
-  $(pr 16 feat/5-ahead "$ahead5" main), $(pr 17 verify-assets/6 "$assets6" main), $(pr 18 feat/7-behind "$head7" main)]" \
-  >"$fx/acme_app/pr-merged.json"
-echo "[$(pr 13 feat/3-open "$open3" main), $(pr 15 feat/4-again "$again4" main)]" >"$fx/acme_app/pr-open.json"
+  $(pr 16 feat/5-ahead "$ahead5" main), $(pr 17 verify-assets/6 "$assets6" main), $(pr 18 feat/7-behind "$head7" main),
+  $(pr 19 feat/8-loose "$loose8" main), $(pr 20 feat/10-base "$main" main), $(pr 22 pre-main "$main" main),
+  $(pr 23 feat/11-moved "$moved11" main)]" >"$fx/acme_app/pr-merged.json"
+echo "[$(pr 13 feat/3-open "$open3" main), $(pr 15 feat/4-again "$again4" main), $(pr 21 feat/12-next "$main" feat/10-base)]" \
+  >"$fx/acme_app/pr-open.json"
 
 state() {
   git -C "$app" worktree list --porcelain
@@ -124,6 +139,13 @@ lacks "$out" "verify-assets/6 ("
 lacks "$out" "remove branch feat/2-dirty"
 lacks "$out" "remove branch feat/4-again"
 lacks "$out" "remove branch feat/5-ahead"
+has "$out" "remove branch feat/8-loose (PR #19 merged)"
+for gone in feat/1-done feat/2-dirty feat/5-ahead feat/7-behind; do has "$out" "remove remote origin/$gone (PR #"; done
+has "$out" "keep remote origin/feat/4-again (PR #14 merged; open PR #15)"
+has "$out" "keep remote origin/feat/10-base (PR #20 merged; base of open PR #21)"
+has "$out" "keep remote origin/feat/11-moved (PR #23 merged; commits it did not merge)"
+lacks "$out" "pre-main"
+lacks "$out" "origin/main"
 has "$out" "Dry run: nothing changed."
 [[ "$(state)" == "$before" ]] || fail "dry run changed something"
 
@@ -139,11 +161,15 @@ out=$(echo y | "$dkgc" --workspace "$ws")
 [[ ! -e "$ws/app-1" ]] || fail "merged worktree app-1 still there"
 git -C "$app" rev-parse -q --verify refs/heads/feat/1-done >/dev/null && fail "branch feat/1-done still there"
 [[ ! -e "$ws/app-7" ]] || fail "worktree behind its merged PR still there"
-for kept in app-2:feat/2-dirty app-3:feat/3-open app-4:feat/4-again app-5:feat/5-ahead app-6:verify-assets/6; do
+for kept in app-pre-main:pre-main app-2:feat/2-dirty app-3:feat/3-open app-4:feat/4-again app-5:feat/5-ahead app-6:verify-assets/6; do
   [[ -d "$ws/${kept%%:*}" ]] || fail "worktree ${kept%%:*} removed"
   git -C "$app" rev-parse -q --verify "refs/heads/${kept#*:}" >/dev/null || fail "branch ${kept#*:} removed"
 done
 [[ "$(cat "$ws/app-2/notes.txt")" == wip ]] || fail "uncommitted file in app-2 lost"
+git -C "$app" rev-parse -q --verify refs/heads/feat/8-loose >/dev/null && fail "branch feat/8-loose still there"
+remote_heads=$(git -C "$remotes/acme/app.git" for-each-ref --format='%(refname:short)' refs/heads | sort | tr '\n' ' ')
+[[ "$remote_heads" == "feat/10-base feat/11-moved feat/3-open feat/4-again main pre-main verify-assets/6 " ]] \
+  || fail "remote branches left: $remote_heads"
 [[ "$(git -C "$app" rev-parse --abbrev-ref HEAD)" == main ]] || fail "main checkout moved"
 
 out=$("$dkgc" --dry-run --workspace "$ws")

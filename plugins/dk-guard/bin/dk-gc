@@ -83,7 +83,7 @@ class Repo:
     def __init__(self, root):
         self.root, self.name, self.slug = root, os.path.basename(root), slug_of(root)
         self.items, self.kept, self.notes = [], [], []
-        self.merged, self.open_heads = {}, {}
+        self.merged, self.open_heads, self.open_bases = {}, {}, {}
         fields = "number,headRefName,headRefOid,baseRefName,isCrossRepository"
         merged = gh_json("pr", "list", "-R", self.slug, "--state", "merged", "--limit", "1000",
                          "--json", fields) if self.slug else None
@@ -98,6 +98,7 @@ class Repo:
         for p in opened:
             if not p.get("isCrossRepository"):
                 self.open_heads.setdefault(p["headRefName"], p)
+            self.open_bases.setdefault(p["baseRefName"], p)
 
     def merged_pr(self, branch, sha):
         """(pr, tied): a merged PR of the branch, tied when its head is `sha` or contains it, so nothing is lost."""
@@ -107,30 +108,45 @@ class Repo:
                 return p, True
         return (prs[0], False) if prs else (None, False)
 
-    def blocker(self, branch, sha, tied):
+    def blocker(self, branch, tied, remote=False):
         """Why a branch with a merged PR stays, or None."""
-        if branch in PROTECTED or branch.startswith(KEPT_PREFIX):
-            return "kept by rule"
         if branch in self.open_heads:
             return f"open PR #{self.open_heads[branch]['number']}"
+        if remote and branch in self.open_bases:
+            return f"base of open PR #{self.open_bases[branch]['number']}"
         if not tied:
             return "commits it did not merge"
         return None
+
+    def consider(self, kind, label, branch, sha, target, remote=False):
+        """Queue a branch tied to a merged PR, or list why it stays; skip it when no merged PR has it."""
+        if branch in PROTECTED or branch.startswith(KEPT_PREFIX):
+            return
+        pr, tied = self.merged_pr(branch, sha)
+        if not pr:
+            return
+        why = f"PR #{pr['number']} merged"
+        reason = self.blocker(branch, tied, remote)
+        if reason:
+            self.kept.append((kind, f"{label} ({why}; {reason})"))
+        else:
+            self.items.append((kind, f"{label} ({why})", target))
 
     def scan(self, workspace):
         if self.notes:
             return
         inside = os.path.join(os.path.realpath(workspace), "")
-        for wt in worktrees(self.root)[1:]:
+        trees = worktrees(self.root)
+        for wt in trees[1:]:
             branch, path = wt["branch"], wt["path"]
-            if not branch or wt.get("locked") or wt.get("prunable") \
-                    or not os.path.join(os.path.realpath(path), "").startswith(inside):
+            if not branch or branch in PROTECTED or branch.startswith(KEPT_PREFIX) or wt.get("locked") \
+                    or wt.get("prunable") or not os.path.join(os.path.realpath(path), "").startswith(inside):
                 continue
             pr, tied = self.merged_pr(branch, wt["head"])
-            if not pr or branch.startswith(KEPT_PREFIX):
+            if not pr:
                 continue
             why = f"PR #{pr['number']} merged"
-            reason = self.blocker(branch, wt["head"], tied)
+            reason = self.blocker(branch, tied)
             if not reason and git(path, "status", "--porcelain") != "":
                 reason = "uncommitted changes"
             if reason:
@@ -138,6 +154,29 @@ class Repo:
                 continue
             self.items.append(("worktree", f"{path} ({branch}, {why})", wt))
             self.items.append(("branch", f"{branch} ({why})", {"branch": branch, "head": wt["head"]}))
+        checked_out = {wt["branch"] for wt in trees if wt["branch"]}
+        refs = git(self.root, "for-each-ref", "--format=%(refname:short)%09%(objectname)", "refs/heads") or ""
+        for line in refs.splitlines():
+            branch, sha = line.split("\t")
+            if branch not in checked_out:
+                self.consider("branch", branch, branch, sha, {"branch": branch, "head": sha})
+        self.scan_remote()
+
+    def scan_remote(self):
+        out = git(self.root, "ls-remote", "--symref", "origin", "HEAD", "refs/heads/*")
+        if out is None:
+            self.notes.append("remote branches skipped: origin did not answer")
+            return
+        heads, default = {}, None
+        for line in out.splitlines():
+            ref, _, name = line.partition("\t")
+            if ref.startswith("ref: "):
+                default = ref[len("ref: refs/heads/"):]
+            elif name.startswith("refs/heads/"):
+                heads[name[len("refs/heads/"):]] = ref
+        for branch, sha in sorted(heads.items()):
+            if branch != default:
+                self.consider("remote", f"origin/{branch}", branch, sha, {"branch": branch, "head": sha}, remote=True)
 
     def remove(self, kind, target):
         if kind == "worktree":
@@ -151,6 +190,10 @@ class Repo:
                 return "it moved since the listing"
             if git(self.root, "branch", "-D", target["branch"]) is None:
                 return "git branch -D refused"
+        elif kind == "remote":
+            ref = f"refs/heads/{target['branch']}"
+            if git(self.root, "push", "-q", f"--force-with-lease={ref}:{target['head']}", "origin", f":{ref}") is None:
+                return "the push was refused; did it move since the listing?"
         return None
 
 
