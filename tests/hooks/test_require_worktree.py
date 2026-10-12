@@ -69,6 +69,60 @@ def case_edit_in_opted_in_primary_is_denied_with_the_workflow_command(root):
     assert "git worktree add ~/workspace/acme-<issue> -b <type>/<issue>-<slug> origin/pre-main" in reason, reason
 
 
+def case_write_of_a_new_file_in_a_new_directory_is_denied(root):
+    repo = make_repo(root, "acme-new", OPT_IN, WORKFLOW)
+    _, out, _ = run(os.path.join(repo, "src", "feature", "b.ts"), tool="Write", cwd=repo)
+    assert denied(out)[0], out
+
+
+def case_relative_path_resolves_against_cwd(root):
+    repo = make_repo(root, "acme-rel", OPT_IN, WORKFLOW)
+    _, out, _ = run("src/a.ts", cwd=repo)
+    assert denied(out)[0], out
+
+
+def case_without_workflow_doc_the_hint_is_generic(root):
+    repo = make_repo(root, "acme-bare", OPT_IN)
+    _, out, _ = run(os.path.join(repo, "src", "a.ts"))
+    deny, reason = denied(out)
+    assert deny and "git worktree add " in reason, out
+
+
+def case_same_edit_in_a_linked_worktree_goes_through(root):
+    repo = make_repo(root, "acme-wt", OPT_IN, WORKFLOW)
+    wt = add_worktree(repo, os.path.join(root, "acme-wt-1"))
+    assert run(os.path.join(wt, "src", "a.ts")) == (0, None, "")
+    assert run(os.path.join(wt, "src", "c.ts"), tool="Write", cwd=repo) == (0, None, "")
+
+
+def case_repo_that_has_not_opted_in_goes_through(root):
+    repo = make_repo(root, "plain-repo", {"env": {"GH_REPO": "x/y"}}, WORKFLOW)
+    assert run(os.path.join(repo, "src", "a.ts")) == (0, None, "")
+    off = make_repo(root, "off-repo", {"env": {"DK_REQUIRE_WORKTREE": "0"}}, WORKFLOW)
+    assert run(os.path.join(off, "src", "a.ts")) == (0, None, "")
+
+
+def case_path_outside_a_repo_goes_through(root):
+    plain = os.path.join(root, "notes")
+    os.makedirs(plain)
+    assert run(os.path.join(plain, "todo.md"), tool="Write") == (0, None, "")
+
+
+def case_broken_settings_fail_open(root):
+    repo = make_repo(root, "broken-settings", None, WORKFLOW)
+    os.makedirs(os.path.join(repo, ".claude"))
+    with open(os.path.join(repo, ".claude", "settings.json"), "w") as f:
+        f.write("{ not json")
+    assert run(os.path.join(repo, "src", "a.ts")) == (0, None, "")
+
+
+def case_unexpected_payload_fails_open(root):
+    repo = make_repo(root, "acme-payload", OPT_IN, WORKFLOW)
+    assert run(os.path.join(repo, "src", "a.ts"), raw="not json") == (0, None, "")
+    assert run(os.path.join(repo, "src", "a.ts"), raw='["a list"]') == (0, None, "")
+    assert run(os.path.join(repo, "src", "a.ts"), raw='{"tool_input": {"file_path": 3}}') == (0, None, "")
+
+
 CASES = [v for k, v in sorted(globals().items()) if k.startswith("case_")]
 
 
