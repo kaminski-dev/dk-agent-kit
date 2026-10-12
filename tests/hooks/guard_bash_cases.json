@@ -88,5 +88,10 @@
   {"cmd": "docker pull postgres:16-alpine && docker exec verify-1047-pg pg_isready", "expect": "allow"},
   {"cmd": "dk-pg up 1047", "expect": "allow"},
   {"cmd": "export DATABASE_URL=$(dk-pg url 1047) && go test ./...", "expect": "allow"},
-  {"cmd": "dk-pg down 1047", "expect": "allow"}
+  {"cmd": "dk-pg down 1047", "expect": "allow"},
+  {"why": "#17: dk-gc removes only what a merged PR or closed issue ties, containers by dk.issue", "cmd": "dk-gc --dry-run", "expect": "allow"},
+  {"cmd": "dk-gc", "expect": "allow"},
+  {"cmd": "echo y | dk-gc", "expect": "allow"},
+  {"cmd": "dk-gc --yes --workspace ~/workspace", "expect": "allow"},
+  {"cmd": "docker rm -fv $(docker ps -aq --filter label=dk.issue=17)", "expect": "allow"}
 ]
