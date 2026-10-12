@@ -112,8 +112,25 @@ echo "[$(pr 11 feat/1-done "$done1" main), $(pr 12 feat/2-dirty "$dirty2" main),
 echo "[$(pr 13 feat/3-open "$open3" main), $(pr 15 feat/4-again "$again4" main), $(pr 21 feat/12-next "$main" feat/10-base)]" \
   >"$fx/acme_app/pr-open.json"
 
+# A repo without origin, and one whose PRs gh cannot list (no fixture), each with a worktree.
+git init -q "$ws/notes"
+git -C "$ws/notes" commit -q --allow-empty -m init
+git -C "$ws/notes" worktree add -q -b feat/1-done "$ws/notes-1"
+git init -q --bare "$remotes/acme/other.git"
+git init -q "$ws/other"
+git -C "$ws/other" remote add origin git@github.com:acme/other.git
+git -C "$ws/other" commit -q --allow-empty -m init
+git -C "$ws/other" worktree add -q -b feat/1-done "$ws/other-1"
+
+# dk-pg databases: issue 1 closed, issue 3 open, one from a checkout that is gone.
+printf '%s\t%s\t%s\t%s\n' c1 dk-pg-app-1 "$app" 1 c3 dk-pg-app-3 "$app" 3 c9 dk-pg-gone-9 "$tmp/gone" 9 >"$fx/docker-ps"
+echo '{"state":"CLOSED"}' >"$fx/acme_app/issue-1.json"
+echo '{"state":"OPEN"}' >"$fx/acme_app/issue-3.json"
+
 state() {
   git -C "$app" worktree list --porcelain
+  git -C "$ws/notes" worktree list --porcelain
+  git -C "$ws/other" worktree list --porcelain
   git -C "$app" for-each-ref
   git -C "$remotes/acme/app.git" for-each-ref
   cat "$fx/docker-ps"
@@ -145,6 +162,13 @@ has "$out" "keep remote origin/feat/4-again (PR #14 merged; open PR #15)"
 has "$out" "keep remote origin/feat/10-base (PR #20 merged; base of open PR #21)"
 has "$out" "keep remote origin/feat/11-moved (PR #23 merged; commits it did not merge)"
 lacks "$out" "pre-main"
+has "$out" "remove database dk-pg-app-1 (issue #1 closed)"
+lacks "$out" "dk-pg-app-3"
+has "$out" "keep database dk-pg-gone-9 (issue #9; no GitHub checkout at $tmp/gone)"
+[[ "$(grep -c '^app ' <<<"$out")" == 1 ]] || fail "repo app listed in more than one group"
+lacks "$out" "notes"
+has "$out" "other (acme/other)"$'\n'"  branches skipped: gh could not list its PRs"
+lacks "$out" "other-1"
 lacks "$out" "origin/main"
 has "$out" "Dry run: nothing changed."
 [[ "$(state)" == "$before" ]] || fail "dry run changed something"
@@ -160,12 +184,15 @@ out=$(echo y | "$dkgc" --workspace "$ws")
 [[ "$(grep '^  remove ' <<<"$out")" == "$listed" ]] || fail "confirmed run listed other items than the dry run"
 [[ ! -e "$ws/app-1" ]] || fail "merged worktree app-1 still there"
 git -C "$app" rev-parse -q --verify refs/heads/feat/1-done >/dev/null && fail "branch feat/1-done still there"
+[[ -d "$ws/notes-1" && -d "$ws/other-1" ]] || fail "worktree of a repo without PRs removed"
 [[ ! -e "$ws/app-7" ]] || fail "worktree behind its merged PR still there"
 for kept in app-pre-main:pre-main app-2:feat/2-dirty app-3:feat/3-open app-4:feat/4-again app-5:feat/5-ahead app-6:verify-assets/6; do
   [[ -d "$ws/${kept%%:*}" ]] || fail "worktree ${kept%%:*} removed"
   git -C "$app" rev-parse -q --verify "refs/heads/${kept#*:}" >/dev/null || fail "branch ${kept#*:} removed"
 done
 [[ "$(cat "$ws/app-2/notes.txt")" == wip ]] || fail "uncommitted file in app-2 lost"
+[[ "$(cut -f1 "$fx/docker-ps" | tr '\n' ' ')" == "c3 c9 " ]] || fail "containers left: $(cut -f1 "$fx/docker-ps")"
+grep -q '^rm -fv c1$' "$fx/docker.log" || fail "container c1 not removed with its volumes"
 git -C "$app" rev-parse -q --verify refs/heads/feat/8-loose >/dev/null && fail "branch feat/8-loose still there"
 remote_heads=$(git -C "$remotes/acme/app.git" for-each-ref --format='%(refname:short)' refs/heads | sort | tr '\n' ' ')
 [[ "$remote_heads" == "feat/10-base feat/11-moved feat/3-open feat/4-again main pre-main verify-assets/6 " ]] \

@@ -3,10 +3,20 @@
 
   dk-gc [--dry-run] [--yes] [--workspace DIR]
 
-Lists, grouped by repo, the worktrees under the workspace (default ~/workspace)
-whose branch's PR has merged and those local branches, then asks once (y on
-stdin) and removes exactly what it listed. --dry-run lists and stops; --yes
-skips the question. Nothing is removed that cannot be tied to a merged PR.
+Lists, grouped by repo, what finished work left behind: worktrees under the
+workspace (default ~/workspace) whose branch's PR has merged, and those local
+branches; remote branches of merged PRs that GitHub did not delete; dk-pg
+databases (dk.issue, dk.root labels) whose issue is closed. Then it asks once
+(y on stdin) and removes exactly what it listed. --dry-run lists and stops;
+--yes skips the question.
+
+Nothing goes that cannot be tied to a merged PR (the branch tip is the PR's
+head or behind it) or a closed issue. Never removed: main, master, pre-main,
+the remote's default branch, verify-assets/* (PR bodies embed from them),
+a branch with an open PR, a remote branch an open PR targets, and a worktree
+with uncommitted changes; the last three are listed with "keep". GitHub is
+asked with -R from origin's URL, so a GH_REPO in the environment cannot point
+it at another repo.
 """
 import argparse
 import json
@@ -79,19 +89,37 @@ def worktrees(root):
     return out
 
 
+def databases():
+    """[(dk.root, id, name, dk.issue)] of every dk-pg container, running or not; None without docker."""
+    out = run(["docker", "ps", "-a", "--filter", "label=dk.issue", "--format",
+               '{{.ID}}\t{{.Names}}\t{{.Label "dk.root"}}\t{{.Label "dk.issue"}}'])
+    if out is None:
+        return None
+    rows = []
+    for line in out.splitlines():
+        cid, name, root, issue = (line.split("\t") + ["", "", ""])[:4]
+        if cid and root and issue:
+            rows.append((root, cid, name, issue))
+    return rows
+
+
 class Repo:
     def __init__(self, root):
         self.root, self.name, self.slug = root, os.path.basename(root), slug_of(root)
         self.items, self.kept, self.notes = [], [], []
         self.merged, self.open_heads, self.open_bases = {}, {}, {}
+
+    def load_prs(self):
+        """Fetch merged and open PRs; False (with a note) when GitHub cannot say."""
+        if not self.slug:
+            return False
         fields = "number,headRefName,headRefOid,baseRefName,isCrossRepository"
-        merged = gh_json("pr", "list", "-R", self.slug, "--state", "merged", "--limit", "1000",
-                         "--json", fields) if self.slug else None
+        merged = gh_json("pr", "list", "-R", self.slug, "--state", "merged", "--limit", "1000", "--json", fields)
         opened = gh_json("pr", "list", "-R", self.slug, "--state", "open", "--limit", "1000",
                          "--json", fields) if merged is not None else None
         if opened is None:
-            self.notes.append("skipped: no GitHub origin or gh failed")
-            return
+            self.notes.append("branches skipped: gh could not list its PRs")
+            return False
         for p in merged:
             if not p.get("isCrossRepository"):
                 self.merged.setdefault(p["headRefName"], []).append(p)
@@ -99,6 +127,7 @@ class Repo:
             if not p.get("isCrossRepository"):
                 self.open_heads.setdefault(p["headRefName"], p)
             self.open_bases.setdefault(p["baseRefName"], p)
+        return True
 
     def merged_pr(self, branch, sha):
         """(pr, tied): a merged PR of the branch, tied when its head is `sha` or contains it, so nothing is lost."""
@@ -133,7 +162,7 @@ class Repo:
             self.items.append((kind, f"{label} ({why})", target))
 
     def scan(self, workspace):
-        if self.notes:
+        if not self.load_prs():
             return
         inside = os.path.join(os.path.realpath(workspace), "")
         trees = worktrees(self.root)
@@ -178,6 +207,20 @@ class Repo:
             if branch != default:
                 self.consider("remote", f"origin/{branch}", branch, sha, {"branch": branch, "head": sha}, remote=True)
 
+    def consider_database(self, container):
+        cid, name, issue = container
+        if not self.slug:
+            self.kept.append(("database", f"{name} (issue #{issue}; no GitHub checkout at {self.root})"))
+            return
+        if not issue.isdigit():
+            self.kept.append(("database", f"{name} (issue {issue} is no issue number)"))
+            return
+        found = gh_json("issue", "view", issue, "-R", self.slug, "--json", "state")
+        if not found:
+            self.kept.append(("database", f"{name} (issue #{issue}; gh could not read it)"))
+        elif found.get("state") == "CLOSED":
+            self.items.append(("database", f"{name} (issue #{issue} closed)", {"id": cid}))
+
     def remove(self, kind, target):
         if kind == "worktree":
             if (git(target["path"], "rev-parse", "HEAD") or "").strip() != target["head"]:
@@ -194,11 +237,14 @@ class Repo:
             ref = f"refs/heads/{target['branch']}"
             if git(self.root, "push", "-q", f"--force-with-lease={ref}:{target['head']}", "origin", f":{ref}") is None:
                 return "the push was refused; did it move since the listing?"
+        elif kind == "database":
+            if run(["docker", "rm", "-fv", target["id"]]) is None:
+                return "docker rm failed"
         return None
 
 
 def main():
-    ap = argparse.ArgumentParser(prog="dk-gc", description="Remove worktrees and branches of merged PRs.")
+    ap = argparse.ArgumentParser(prog="dk-gc", description="Remove worktrees, branches and dk-pg databases of finished work.")
     ap.add_argument("--dry-run", action="store_true", help="list, change nothing")
     ap.add_argument("--yes", action="store_true", help="remove without asking")
     ap.add_argument("--workspace", default=os.path.expanduser("~/workspace"))
@@ -209,6 +255,15 @@ def main():
     repos = [Repo(root) for root in main_roots(args.workspace)]
     for repo in repos:
         repo.scan(args.workspace)
+    containers = databases()
+    if containers is None:
+        print("databases skipped: docker did not answer")
+    for root, cid, name, issue in containers or []:
+        repo = next((r for r in repos if r.root == root), None)
+        if repo is None:
+            repo = Repo(root)
+            repos.append(repo)
+        repo.consider_database((cid, name, issue))
     count = 0
     for repo in repos:
         if not repo.items and not repo.kept and not repo.notes:
