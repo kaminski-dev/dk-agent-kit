@@ -26,7 +26,7 @@ A part the doc reserves for the maintainer (production database, a logged-in bro
 Before reading the window, show that the query can match at all. Any one of these is the **control**:
 
 - the old-behaviour query returns lines over a window before the deploy; their rate is how many the window would hold without the fix;
-- the line the fix adds appears at least once since the deploy;
+- the line the fix adds appears at least once since the deploy, under the query's own stream selector;
 - the repo's control line (same stream selector, same window, a line that is always there, such as health requests or the startup line) returns lines.
 
 When every control comes back empty, the selector names nothing: a wrong label, a container renamed by a rolling deploy, a datasource or project mix-up, an expired session. That is a **broken check**, and the comment names it so whatever follows. Fix the selector against the doc and rerun this step with it; the original query and its empty result stay in the evidence.
@@ -39,7 +39,7 @@ Run the query from the deploy time to the due date (to now, when that is later).
 
 | Verdict | When | Action |
 |---|---|---|
-| **Pass** | control fired; the old behaviour is absent since the deploy; the new line is present, or the pre-deploy rate would have filled the window; the comment's pass rule holds | comment the evidence, `gh issue edit N --remove-label awaiting-verification`, close |
+| **Pass** | control fired; the old behaviour is absent since the deploy; the new line is present under the query's stream selector, or the pre-deploy rate would have filled the window; the comment's pass rule holds | comment the evidence, `gh issue edit N --remove-label awaiting-verification`, close |
 | **Shipped but not exercised** | control fired, and nothing shows the trigger occurred: no new line, no old behaviour, and no pre-deploy rate that makes zero meaningful; or fewer events than the pass rule needs | comment the evidence and a new due date; the label stays and the issue stays open |
 | **Regressed** | the old behaviour still appears after the deploy | comment the lines as evidence, swap `awaiting-verification` for `needs-triage`; the maintainer decides whether the brief still holds |
 | **Broken check** | every control empty, even after fixing the selector | comment what returned nothing and the corrected query; the label stays and the issue stays open |
