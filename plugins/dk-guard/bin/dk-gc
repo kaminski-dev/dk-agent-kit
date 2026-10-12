@@ -8,7 +8,7 @@ workspace (default ~/workspace) whose branch's PR has merged, and those local
 branches; remote branches of merged PRs that GitHub did not delete; dk-pg
 databases (dk.issue, dk.root labels) whose issue is closed. Then it asks once
 (y on stdin) and removes exactly what it listed. --dry-run lists and stops;
---yes skips the question.
+--yes skips the question (the guard asks the human before an agent passes it).
 
 Nothing goes that cannot be tied to a merged PR (the branch tip is the PR's
 head or behind it) or a closed issue. Never removed: main, master, pre-main,
@@ -21,6 +21,7 @@ another repo. Checkouts of one GitHub repo share its remote branches; the
 first one lists them.
 """
 import argparse
+import dataclasses
 import json
 import os
 import re
@@ -32,7 +33,6 @@ KEPT_PREFIX = "verify-assets/"  # PR bodies embed screenshots from these branche
 
 
 def run(args, cwd=None):
-    """stdout of a command, or None when it fails."""
     try:
         out = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
     except OSError:
@@ -60,7 +60,6 @@ def slug_of(root):
 
 
 def main_roots(workspace):
-    """The main checkouts of every repo with a checkout directly under the workspace."""
     roots = []
     for entry in sorted(os.listdir(workspace)):
         path = os.path.join(workspace, entry)
@@ -105,6 +104,60 @@ def databases():
     return rows
 
 
+@dataclasses.dataclass(frozen=True)
+class Worktree:
+    kind = "worktree"
+    label: str
+    path: str
+    head: str
+
+    def remove(self, root):
+        if (git(self.path, "rev-parse", "HEAD") or "").strip() != self.head:
+            return "its branch moved since the listing"
+        if git(root, "worktree", "remove", self.path) is None:
+            return "git worktree remove refused"
+        return None
+
+
+@dataclasses.dataclass(frozen=True)
+class Branch:
+    kind = "branch"
+    label: str
+    branch: str
+    head: str
+
+    def remove(self, root):
+        if (git(root, "rev-parse", "-q", "--verify", f"refs/heads/{self.branch}") or "").strip() != self.head:
+            return "it moved since the listing"
+        if git(root, "branch", "-D", self.branch) is None:
+            return "git branch -D refused"
+        return None
+
+
+@dataclasses.dataclass(frozen=True)
+class RemoteBranch:
+    kind = "remote"
+    label: str
+    branch: str
+    head: str
+
+    def remove(self, root):
+        ref = f"refs/heads/{self.branch}"
+        if git(root, "push", "-q", f"--force-with-lease={ref}:{self.head}", "origin", f":{ref}") is None:
+            return "the push was refused; did it move since the listing?"
+        return None
+
+
+@dataclasses.dataclass(frozen=True)
+class Database:
+    kind = "database"
+    label: str
+    id: str
+
+    def remove(self, root):
+        return "docker rm failed" if run(["docker", "rm", "-fv", self.id]) is None else None
+
+
 class Repo:
     def __init__(self, root):
         self.root, self.name, self.slug = root, os.path.basename(root), slug_of(root)
@@ -112,7 +165,7 @@ class Repo:
         self.merged, self.open_heads, self.bases = {}, {}, {}
 
     def load_prs(self):
-        """Fetch merged and open PRs; False (with a note) when GitHub cannot say."""
+        """Fetch merged and open PRs; False without a GitHub origin, or with a note when gh cannot list them."""
         if not self.slug:
             return False
         fields = "number,headRefName,headRefOid,baseRefName,isCrossRepository"
@@ -151,8 +204,7 @@ class Repo:
             return "commits it did not merge"
         return None
 
-    def consider(self, kind, label, branch, sha, target):
-        """Queue a branch tied to a merged PR, or list why it stays; skip it when no merged PR has it."""
+    def consider(self, branch, sha, worktree=None, remote=False):
         if branch in PROTECTED or branch.startswith(KEPT_PREFIX):
             return
         pr, tied = self.merged_pr(branch, sha)
@@ -160,10 +212,16 @@ class Repo:
             return
         why = f"PR #{pr['number']} merged"
         reason = self.blocker(branch, tied)
+        if not reason and worktree and git(worktree, "status", "--porcelain") != "":
+            reason = "uncommitted changes"
+        detail = f"{why}; {reason}" if reason else why
+        found = [Worktree(f"{worktree} ({branch}, {detail})", worktree, sha)] if worktree else []
+        found.append(RemoteBranch(f"origin/{branch} ({detail})", branch, sha) if remote
+                     else Branch(f"{branch} ({detail})", branch, sha))
         if reason:
-            self.kept.append((kind, f"{label} ({why}; {reason})"))
+            self.kept.append(found[0])
         else:
-            self.items.append((kind, f"{label} ({why})", target))
+            self.items += found
 
     def scan(self, workspace, remote):
         if not self.load_prs():
@@ -171,28 +229,15 @@ class Repo:
         inside = os.path.join(os.path.realpath(workspace), "")
         trees = worktrees(self.root)
         for wt in trees[1:]:
-            branch, path = wt["branch"], wt["path"]
-            if not branch or branch in PROTECTED or branch.startswith(KEPT_PREFIX) or wt.get("locked") \
-                    or wt.get("prunable") or not os.path.join(os.path.realpath(path), "").startswith(inside):
-                continue
-            pr, tied = self.merged_pr(branch, wt["head"])
-            if not pr:
-                continue
-            why = f"PR #{pr['number']} merged"
-            reason = self.blocker(branch, tied)
-            if not reason and git(path, "status", "--porcelain") != "":
-                reason = "uncommitted changes"
-            if reason:
-                self.kept.append(("worktree", f"{path} ({branch}, {why}; {reason})"))
-                continue
-            self.items.append(("worktree", f"{path} ({branch}, {why})", wt))
-            self.items.append(("branch", f"{branch} ({why})", {"branch": branch, "head": wt["head"]}))
+            if wt["branch"] and not wt.get("locked") and not wt.get("prunable") \
+                    and os.path.join(os.path.realpath(wt["path"]), "").startswith(inside):
+                self.consider(wt["branch"], wt["head"], worktree=wt["path"])
         checked_out = {wt["branch"] for wt in trees if wt["branch"]}
         refs = git(self.root, "for-each-ref", "--format=%(refname:short)%09%(objectname)", "refs/heads") or ""
         for line in refs.splitlines():
             branch, sha = line.split("\t")
             if branch not in checked_out:
-                self.consider("branch", branch, branch, sha, {"branch": branch, "head": sha})
+                self.consider(branch, sha)
         if remote:
             self.scan_remote()
 
@@ -210,46 +255,25 @@ class Repo:
                 heads[name[len("refs/heads/"):]] = ref
         for branch, sha in sorted(heads.items()):
             if branch != default:
-                self.consider("remote", f"origin/{branch}", branch, sha, {"branch": branch, "head": sha})
+                self.consider(branch, sha, remote=True)
 
     def consider_database(self, container):
         cid, name, issue = container
         if not self.slug:
-            self.kept.append(("database", f"{name} (issue #{issue}; no GitHub checkout at {self.root})"))
+            self.kept.append(Database(f"{name} (issue #{issue}; no GitHub checkout at {self.root})", cid))
             return
         if not issue.isdigit():
-            self.kept.append(("database", f"{name} (issue {issue} is no issue number)"))
+            self.kept.append(Database(f"{name} (issue {issue} is no issue number)", cid))
             return
         found = gh_json("issue", "view", issue, "-R", self.slug, "--json", "state")
         if not found:
-            self.kept.append(("database", f"{name} (issue #{issue}; gh could not read it)"))
+            self.kept.append(Database(f"{name} (issue #{issue}; gh could not read it)", cid))
         elif found.get("state") == "CLOSED":
-            self.items.append(("database", f"{name} (issue #{issue} closed)", {"id": cid}))
-
-    def remove(self, kind, target):
-        if kind == "worktree":
-            if (git(target["path"], "rev-parse", "HEAD") or "").strip() != target["head"]:
-                return "its branch moved since the listing"
-            if git(self.root, "worktree", "remove", target["path"]) is None:
-                return "git worktree remove refused"
-        elif kind == "branch":
-            if (git(self.root, "rev-parse", "-q", "--verify", f"refs/heads/{target['branch']}") or "").strip() \
-                    != target["head"]:
-                return "it moved since the listing"
-            if git(self.root, "branch", "-D", target["branch"]) is None:
-                return "git branch -D refused"
-        elif kind == "remote":
-            ref = f"refs/heads/{target['branch']}"
-            if git(self.root, "push", "-q", f"--force-with-lease={ref}:{target['head']}", "origin", f":{ref}") is None:
-                return "the push was refused; did it move since the listing?"
-        elif kind == "database":
-            if run(["docker", "rm", "-fv", target["id"]]) is None:
-                return "docker rm failed"
-        return None
+            self.items.append(Database(f"{name} (issue #{issue} closed)", cid))
 
 
 def main():
-    ap = argparse.ArgumentParser(prog="dk-gc", description="Remove worktrees, branches and dk-pg databases of finished work.")
+    ap = argparse.ArgumentParser(prog="dk-gc", allow_abbrev=False, description="Remove worktrees, branches and dk-pg databases of finished work.")
     ap.add_argument("--dry-run", action="store_true", help="list, change nothing")
     ap.add_argument("--yes", action="store_true", help="remove without asking")
     ap.add_argument("--workspace", default=os.path.expanduser("~/workspace"))
@@ -259,7 +283,7 @@ def main():
 
     repos = [Repo(root) for root in main_roots(args.workspace)]
     slugs = set()
-    for repo in repos:  # checkouts of one GitHub repo share its remote branches; the first one handles them
+    for repo in repos:
         repo.scan(args.workspace, remote=repo.slug not in slugs)
         slugs.add(repo.slug)
     containers = databases()
@@ -278,11 +302,11 @@ def main():
         print(f"{repo.name} ({repo.slug or 'no GitHub origin'})")
         for note in repo.notes:
             print(f"  {note}")
-        for kind, label, _ in repo.items:
-            print(f"  remove {kind} {label}")
+        for item in repo.items:
+            print(f"  remove {item.kind} {item.label}")
             count += 1
-        for kind, label in repo.kept:
-            print(f"  keep {kind} {label}")
+        for item in repo.kept:
+            print(f"  keep {item.kind} {item.label}")
     if not count:
         print("Nothing to remove.")
         return 0
@@ -296,11 +320,11 @@ def main():
             return 0
     failed = 0
     for repo in repos:
-        for kind, label, target in repo.items:
-            error = repo.remove(kind, target)
+        for item in repo.items:
+            error = item.remove(repo.root)
             if error:
                 failed += 1
-                print(f"kept {kind} {label}: {error}", file=sys.stderr)
+                print(f"kept {item.kind} {item.label}: {error}", file=sys.stderr)
     print(f"Removed {count - failed} of {count}.")
     return 1 if failed else 0
 

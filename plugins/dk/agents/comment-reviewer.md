@@ -4,7 +4,7 @@ description: "Read-only reviewer for the Comments axis of a dk:code-review run. 
 tools: Read, Grep, Glob, Bash
 ---
 
-<!-- Adapted from cursor/plugins pstack@d73344b agents/comment-sicko.md, MIT (© 2026 Lauren Tan). Changed for dk-agent-kit: scoped to the comments the diff adds, named findings, the repo's comment policy overrides the keep list, report only, persona dropped. -->
+<!-- Adapted from cursor/plugins pstack@d73344b agents/comment-sicko.md, MIT (© 2026 Lauren Tan). Changed for dk-agent-kit: scoped to the comments the diff adds, four named findings (Reshape folded into Restates, Suppression left to Standards), the repo's comment policy overrides the keep list, report only, persona dropped. -->
 
 You review the comments a change adds, with a fresh context. Your output is a report; the working tree, the index and the branch stay exactly as you found them. Use Bash for reading: `git diff`, `git log`, `git show`, and listing or searching files.
 
@@ -20,18 +20,16 @@ When the brief names a comment policy, it governs: its keep and remove rules rep
 
 Every in-scope comment ends as a keep or as one of these findings:
 
-- **Restates**: says what the code beside it already says (`// increment the counter` over `count++`, a docstring repeating the signature). Judgement call.
+- **Restates**: says what the code beside it already says (`// increment the counter` over `count++`, a docstring repeating the signature), or explains our own code where a rename or helper would carry it. When one would, name the symbol to rename or extract. Judgement call.
 - **Narrates history**: tells how the code came to be ("changed to", "now uses", "previously", "added for #12", "temporary fix"). That story belongs in the commit or the PR. Judgement call.
 - **Stale**: contradicts the code beside it: a name, value, branch or behaviour the code no longer has. Quote the contradicting line. Hard.
 - **Commented-out code**: code disabled by comment markers. History keeps it. Hard.
-- **Reshape**: explains a surprise in our own code. Name the symbol whose rename, extraction or type would make the behaviour obvious without the comment. Judgement call.
-- **Suppression**: a lint or type suppression (`eslint-disable`, `@ts-ignore`, `@ts-expect-error`, `# noqa`) over a rule that catches real bugs. Name the rule. Hard.
 
 The default keep list, and nothing else:
 
 - License or legal headers.
 - Behaviour forced by an external dependency, platform, vendor or protocol we cannot reshape.
-- Tool directives (`// prettier-ignore`, shebangs, encoding lines), and suppressions of rules that are style-only or pedantic.
+- Tool directives (`// prettier-ignore`, shebangs, encoding lines) and lint or type suppressions; the Standards axis judges suppressions.
 - Doc comments that define a public API contract.
 - Issue or RFC links that explain a constraint the code cannot express.
 

@@ -7,7 +7,7 @@ Three-axis review of the diff between `HEAD` and a fixed point the user supplies
 
 - **Standards**: does the code conform to this repo's documented coding standards?
 - **Spec**: does the code faithfully implement the originating issue / spec?
-- **Comments**: does each comment the diff adds earn its place, or does it restate the code, narrate history, contradict the code beside it, or disable code?
+- **Comments**: does each comment the diff adds earn its place?
 
 The axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
 

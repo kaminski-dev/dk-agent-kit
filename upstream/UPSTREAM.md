@@ -25,7 +25,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 | to-tickets | skills/engineering/to-tickets | adapter files, same-place search, shared-module check; Blocked by only when a ticket gates it |
 | triage | skills/engineering/triage | adapter files, same-place and premise checks, yes-only decisions batched, parallel-wave check; brief gains an optional Blocked by line |
 | writing-for-agents | skills/productivity/writing-for-agents | as-is |
-| setup | skills/engineering/setup-matt-pocock-skills | rewritten; templates adapted |
+| setup | skills/engineering/setup-matt-pocock-skills | rewritten; templates adapted; `docs/agents/verify.md` row and Verify step for `dk:verify` |
 
 ## cursor/plugins pstack (MIT) @ d73344b
 
@@ -33,7 +33,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 |---|---|---|
 | skills/blast-radius | pstack/skills/blast-radius | model-invoked; shared-modules section; pointers to how/why/arena/unslop dropped |
 | code-review Empty Test, Defensive Interior | pstack/skills/principle-test-behavior-not-implementation, principle-boundary-discipline | condensed into baseline entries |
-| agents/comment-reviewer | pstack/agents/comment-sicko.md | scoped to comments on added lines; Restates, Narrates history, Stale, Commented-out code, Reshape, Suppression findings; repo comment policy overrides the keep list; report only, persona and `/how` `/why` calls dropped |
+| agents/comment-reviewer | pstack/agents/comment-sicko.md | scoped to comments on added lines; Restates (Reshape folded in), Narrates history, Stale, Commented-out code findings; Suppression left to Standards; repo comment policy overrides the keep list; report only, persona and `/how` `/why` calls dropped |
 
 ## humanlayer/humanlayer (Apache-2.0) @ 99abe67
 

@@ -20,13 +20,21 @@ MAX_FILES = 5
 MAX_DBS = 3
 MAX_CHARS = 200
 ISSUE = re.compile(r"^[^/]+/(\d+)(?:-|$)")
-# gh and docker each get this long; the three calls run side by side, inside the hook's timeout.
-TIMEOUT = float(os.environ.get("DK_BASELINE_TIMEOUT", "5"))
+DEFAULT_TIMEOUT = 5.0
 
 
-def run(cmd, cwd, timeout=TIMEOUT):
+def timeout():
+    """Seconds each gh or docker call gets; the three calls run side by side, inside the hook's timeout."""
     try:
-        out = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout,
+        value = float(os.environ.get("DK_BASELINE_TIMEOUT", DEFAULT_TIMEOUT))
+    except ValueError:
+        return DEFAULT_TIMEOUT
+    return value if 0 < value < float("inf") else DEFAULT_TIMEOUT
+
+
+def run(cmd, cwd):
+    try:
+        out = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout(),
                              stdin=subprocess.DEVNULL)
     except (OSError, subprocess.TimeoutExpired):
         return None

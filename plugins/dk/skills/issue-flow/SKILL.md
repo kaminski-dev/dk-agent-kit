@@ -46,7 +46,7 @@ Each commit is one verifiable unit: the gates from `AGENTS.md` pass on what it t
 
 ## 5. Screenshots and evidence
 
-Before calling a change verified, call the Skill tool with `dk:verify`: it says what proof the change needs, and this step is where that proof lands. Evidence goes into the PR, never into the tree. Collect the screenshots in `$SCRATCH/<N>/shots/` first (Playwright MCP saves only under its own roots, so move them there), then push them as an orphan commit on `verify-assets/<N>` and embed them by commit SHA:
+Call the Skill tool with `dk:verify`; the proof it asks for lands here. Evidence goes into the PR, never into the tree. Collect the screenshots in `$SCRATCH/<N>/shots/` first (Playwright MCP saves only under its own roots, so move them there), then push them as an orphan commit on `verify-assets/<N>` and embed them by commit SHA:
 
 ```sh
 tree=$( { for f in "$SCRATCH/<N>"/shots/*.png; do

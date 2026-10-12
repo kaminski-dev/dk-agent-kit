@@ -1,6 +1,6 @@
 ---
 name: post-deploy-check
-description: "Run the post-deploy check on an issue labelled awaiting-verification and post the verdict with its evidence: close, keep open, or send the work back. Use when an awaiting-verification issue's due date has passed, when asked to verify a deploy, or from dk:issue-flow step 7."
+description: "Run the post-deploy check on an issue labelled awaiting-verification and post the verdict with its evidence: close, keep open, or send the work back. Use when an awaiting-verification issue's due date has passed, or when asked to verify a deploy."
 ---
 
 # Post-deploy check
