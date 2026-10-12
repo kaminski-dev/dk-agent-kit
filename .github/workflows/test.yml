@@ -23,6 +23,8 @@ jobs:
         run: bash tests/test_bootstrap.sh
       - name: dk-pg against Docker
         run: bash tests/test_dk_pg.sh
+      - name: dk-gc against fixture repos
+        run: bash tests/test_dk_gc.sh
       - name: manifests parse
         run: |
           for f in .claude-plugin/marketplace.json plugins/*/.claude-plugin/plugin.json plugins/*/hooks/hooks.json settings/*.json; do
