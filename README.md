@@ -30,7 +30,7 @@ security boundary.
 ## Workflow
 
 Every issue reaches `ready-for-agent` by one of two paths, then follows the
-same line to deploy. Dashed boxes are planned and not built yet.
+same line to deploy.
 
 ```mermaid
 flowchart LR
