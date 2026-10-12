@@ -107,5 +107,12 @@
   {"cmd": "cd ~/workspace && ~/.claude/plugins/dk-guard/bin/dk-gc --yes", "expect": "ask"},
   {"cmd": "python3 plugins/dk-guard/bin/dk-gc --yes", "expect": "ask"},
   {"cmd": "bash -c 'yes | dk-gc'", "expect": "ask"},
+  {"why": "PR #24 review: an output redirection before --yes or < hid them from the dk-gc check", "cmd": "dk-gc 2>&1 --yes", "expect": "ask"},
+  {"cmd": "dk-gc &>/dev/null --yes", "expect": "ask"},
+  {"cmd": "dk-gc >/dev/null 2>&1 --yes", "expect": "ask"},
+  {"cmd": "dk-gc 2>&1 < /tmp/answer", "expect": "ask"},
+  {"cmd": "dk-gc 2>&1 --dry-run", "expect": "allow"},
+  {"cmd": "dk-gc &>/dev/null && echo done", "expect": "allow"},
+  {"cmd": "dk-gc <&3", "expect": "ask"},
   {"cmd": "docker rm -fv $(docker ps -aq --filter label=dk.issue=17)", "expect": "allow"}
 ]
