@@ -9,7 +9,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DK = ROOT / "plugins" / "dk"
-ORIGINAL = {"issue-flow", "verify"}  # written for the kit, no upstream row
+ORIGINAL = {"issue-flow", "post-deploy-check", "verify"}  # written for the kit, no upstream row
 CLIENT_REPOS = ("jetztbar", "clientdata", "kaminski-advies")  # their facts live in their own docs/agents/
 
 errors = []
@@ -82,6 +82,14 @@ for ref in sorted(set(re.findall(r'subagent_type: "dk:([a-z][a-z-]*)"', review))
         errors.append(f"agents/{ref}: code-review spawns it, so it needs a tools list (absent inherits Edit and Write)")
     elif WRITE_TOOLS & {t.strip() for t in tools.split(",")}:
         errors.append(f"agents/{ref}: code-review spawns it, so its tools must exclude {sorted(WRITE_TOOLS)}")
+
+readme = (ROOT / "README.md").read_text()
+for block in re.findall(r"```mermaid\n(.*?)```", readme, re.S):
+    planned = {i for ids in re.findall(r"^\s*class (\S+) planned$", block, re.M) for i in ids.split(",")}
+    for node, label in re.findall(r"\b([A-Za-z_]\w*)[\[({]+\"([^\"]*)\"", block):
+        for ref in re.findall(r"\bdk:([a-z][a-z-]*)", label):
+            if node in planned and ref in skills:
+                errors.append(f"README.md: dk:{ref} is built but its box '{node}' is still dashed (planned)")
 
 upstream = (ROOT / "upstream" / "UPSTREAM.md").read_text()
 for name in skills:
