@@ -13,7 +13,7 @@ An `awaiting-verification` issue is merged and deployed; one time-boxed check on
 
 Without an issue number, list the candidates (`gh issue list --state open --label awaiting-verification --json number,title`) and run every issue whose due date has passed.
 
-Done when you hold the query, the deploy time in UTC and the due date. A missing deploy time comes from the deploy record: the batch PR's merge and the deploy run that `workflow.md` names (`gh run list --workflow <deploy> --branch main --json headSha,updatedAt,conclusion`). When the query or due date is missing, ask for it in a comment and keep the label. Before the due date, a run is a progress report: post it as one, and leave the label and state alone.
+Done when you hold the query, the deploy time in UTC and the due date. A missing deploy time comes from the deploy record: the batch PR's merge and the deploy run that `workflow.md` names (`gh run list --workflow <deploy> --branch main --json headSha,updatedAt,conclusion`). When the query or due date is missing, ask for it in a comment and keep the label. Before the due date, a run is a progress report: run steps 2 to 4, post the result as one, and stop there; the label and state stay as they are, and the verdict waits for the due date.
 
 ## 2. Read the source
 
@@ -39,7 +39,7 @@ Run the query from the deploy time to the due date (to now, when that is later).
 
 | Verdict | When | Action |
 |---|---|---|
-| **Pass** | control fired; the new line is present, or the old behaviour is absent from a window its pre-deploy rate would have filled; the comment's pass rule holds | comment the evidence, `gh issue edit N --remove-label awaiting-verification`, close |
+| **Pass** | control fired; the old behaviour is absent since the deploy; the new line is present, or the pre-deploy rate would have filled the window; the comment's pass rule holds | comment the evidence, `gh issue edit N --remove-label awaiting-verification`, close |
 | **Shipped but not exercised** | control fired, and nothing shows the trigger occurred: no new line, no old behaviour, and no pre-deploy rate that makes zero meaningful; or fewer events than the pass rule needs | comment the evidence and a new due date; the label stays and the issue stays open |
 | **Regressed** | the old behaviour still appears after the deploy | comment the lines as evidence, swap `awaiting-verification` for `needs-triage`; the maintainer decides whether the brief still holds |
 | **Broken check** | every control empty, even after fixing the selector | comment what returned nothing and the corrected query; the label stays and the issue stays open |
