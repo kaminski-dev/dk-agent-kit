@@ -33,7 +33,6 @@ KEPT_PREFIX = "verify-assets/"  # PR bodies embed screenshots from these branche
 
 
 def run(args, cwd=None):
-    """stdout of a command, or None when it fails."""
     try:
         out = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
     except OSError:
@@ -61,7 +60,6 @@ def slug_of(root):
 
 
 def main_roots(workspace):
-    """The main checkouts of every repo with a checkout directly under the workspace."""
     roots = []
     for entry in sorted(os.listdir(workspace)):
         path = os.path.join(workspace, entry)
@@ -167,7 +165,7 @@ class Repo:
         self.merged, self.open_heads, self.bases = {}, {}, {}
 
     def load_prs(self):
-        """Fetch merged and open PRs; False (with a note) when GitHub cannot say."""
+        """Fetch merged and open PRs; False without a GitHub origin, or with a note when gh cannot list them."""
         if not self.slug:
             return False
         fields = "number,headRefName,headRefOid,baseRefName,isCrossRepository"
@@ -207,8 +205,6 @@ class Repo:
         return None
 
     def consider(self, branch, sha, worktree=None, remote=False):
-        """Queue a branch tied to a merged PR, with its worktree or on origin, or list why it stays;
-        skip it when no merged PR has it."""
         if branch in PROTECTED or branch.startswith(KEPT_PREFIX):
             return
         pr, tied = self.merged_pr(branch, sha)
@@ -287,7 +283,7 @@ def main():
 
     repos = [Repo(root) for root in main_roots(args.workspace)]
     slugs = set()
-    for repo in repos:  # checkouts of one GitHub repo share its remote branches; the first one handles them
+    for repo in repos:
         repo.scan(args.workspace, remote=repo.slug not in slugs)
         slugs.add(repo.slug)
     containers = databases()

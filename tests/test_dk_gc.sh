@@ -96,7 +96,8 @@ git -C "$ws/app-7" reset -q --hard "$behind7"
 loose8=$(worktree app-8 feat/8-loose)
 git -C "$app" worktree remove "$ws/app-8"
 git -C "$app" push -q origin --delete feat/8-loose
-# Remote-only branches: a base of an open PR, the batch branch, one pushed to after its merge.
+# On origin only: a base of an open PR, and one pushed to after its merge. pre-main, the batch
+# branch, is on origin and checked out in a worktree.
 main=$(git -C "$app" rev-parse main)
 git -C "$app" push -q origin main:refs/heads/feat/10-base main:refs/heads/pre-main
 git -C "$app" worktree add -q -b pre-main "$ws/app-pre-main" main
