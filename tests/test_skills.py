@@ -9,7 +9,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DK = ROOT / "plugins" / "dk"
-ORIGINAL = {"issue-flow"}  # written for the kit, no upstream row
+ORIGINAL = {"issue-flow", "post-deploy-check"}  # written for the kit, no upstream row
 
 errors = []
 
