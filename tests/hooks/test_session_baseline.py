@@ -17,8 +17,6 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK = os.path.join(HERE, "..", "..", "plugins", "dk-guard", "scripts", "session-baseline.py")
 
-# A stub answers from <tool>.<arg1>-<arg2>.out, else <tool>.<arg1>.out, else exits 1;
-# a matching .sleep file makes it sleep that many seconds first. Calls are logged.
 STUB = """#!/bin/sh
 dir=$(dirname "$0")
 echo "$*" >> "$dir/{name}.calls"
@@ -181,6 +179,14 @@ def case_slow_gh_is_cut_off(root):
     code, out, _ = run(repo, stubs, env={"DK_BASELINE_TIMEOUT": "1"})
     assert time.monotonic() - start < 5, f"hook waited {time.monotonic() - start:.0f} s for gh"
     assert code == 0 and out.startswith("slow · feat/6-slow") and "PR" not in out, out
+
+
+def case_unreadable_timeout_falls_back_to_the_default(root):
+    repo = make_repo(root, "timeout", "feat/8-timeout")
+    stubs = make_stubs(root, "timeout", {"gh pr-list": "[]"})
+    code, out, err = run(repo, stubs, env={"DK_BASELINE_TIMEOUT": "soon"})
+    assert code == 0 and err == "", (code, err)
+    assert out.startswith("timeout · feat/8-timeout") and "PR: none open" in out, out
 
 
 def case_unexpected_payload_is_silent(root):
