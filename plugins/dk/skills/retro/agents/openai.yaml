@@ -1,5 +1,5 @@
 interface:
   display_name: "Retro"
-  short_description: "Conduct a retrospective on a coding session."
+  short_description: "Run a retrospective on a session or a month of sessions, and turn each repeated mistake into a check."
 policy:
   allow_implicit_invocation: false
