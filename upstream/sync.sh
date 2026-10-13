@@ -36,12 +36,12 @@ while read -r repo base paths <&3; do
   clone="$dir/$repo"
   if [[ -d "$clone/.git" ]]; then
     git -C "$clone" fetch -q origin
+    # Fetch neither recreates a missing origin/HEAD (git before 2.48) nor
+    # moves an existing one when upstream changes its default branch.
+    git -C "$clone" remote set-head origin --auto >/dev/null
   else
     git clone -q "https://github.com/$repo" "$clone"
   fi
-  # A reused clone can lack origin/HEAD: git before 2.48 never recreates it on fetch.
-  git -C "$clone" rev-parse -q --verify refs/remotes/origin/HEAD >/dev/null ||
-    git -C "$clone" remote set-head origin --auto >/dev/null
   head=$(git -C "$clone" rev-parse --short refs/remotes/origin/HEAD)
   out=""
   for p in $paths; do

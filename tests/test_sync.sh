@@ -119,4 +119,12 @@ expect "acme/skills $mp_base.."
 expect "mp: review tweak"
 expect "quiet/q $quiet_base.."
 
+# A reused clone follows an upstream whose default branch moved: fetch keeps
+# an existing origin/HEAD pointing at the old branch.
+git -C "$tmp/remotes/quiet/q" checkout -q -b trunk
+commit quiet/q "quiet: kept on trunk" kept.md >/dev/null
+out=$("$sync" "$clones" 2>&1) || fail "sync.sh after a default-branch move exited non-zero: $out"
+expect "=== kept.md"
+expect "quiet: kept on trunk"
+
 echo "sync: all checks passed"
