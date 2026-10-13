@@ -9,7 +9,7 @@ import pathlib
 import re
 import sys
 
-# (ID, module, package, a call path from this repo that reaches it)
+# (ID, package, a call path from this repo that reaches it)
 STDLIB = [("GO-2026-6599", "net/http", "api.main calls http.ListenAndServe"),
           ("GO-2026-6600", "net/http/internal/http2", "api.main calls http.ListenAndServe"),
           ("GO-2026-6603", "crypto/tls", "tunnel.Handler calls http.Client.Post"),
