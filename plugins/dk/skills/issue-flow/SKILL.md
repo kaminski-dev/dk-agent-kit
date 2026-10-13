@@ -40,6 +40,8 @@ Then record it, so review counts it as requested work: comment `Scope amendment:
 
 **Otherwise file it**: a new issue labelled `needs-triage`, opening with `Found while working on #N` and the evidence. Before creating it, search open issues touching the same files (`gh issue list --state open --search "<file or term>" --json number,title`) and add it there as a comment when one fits. When it blocks the current issue, link it as a blocker (tracker doc) and say so on the issue.
 
+**Name each item by number and content.** Every follow-up, side finding or deferred item in your report, the PR body or an issue comment is its issue number plus one line of what it is: `#123: login answers 500 on an empty password`. An item without a number is filed first; a folded-in one carries the number of the issue whose scope amendment records it.
+
 ## 4. Commit per green step
 
 Each commit is one verifiable unit: the gates from `AGENTS.md` pass on what it touches before the next unit starts. For a bug, the failing test lands first and the fix on top, so the history shows red then green. Messages are English, imperative, and name the issue: `Fix X when Y (#N)`.
@@ -63,6 +65,8 @@ Rebase onto the current `origin/pre-main`, push the branch, and open the PR agai
 - Every deviation from the issue, named for the maintainer's OK, and the "Also in this PR" list from scope intake.
 
 When the change is one the customer sees, write the customer reply on the issue as `workflow.md` describes; for a change they never see (toolchain, CI, internal refactor), the PR says so instead. Merging is the maintainer's.
+
+Wait for CI with `gh pr checks <PR> --watch --fail-fast`: it returns once every check has finished, non-zero when one failed. Right after a push it can answer "no checks reported" before CI has registered; run it again. A failed check is fixed on the branch and watched again before you report.
 
 ## 7. After the merge
 
