@@ -540,21 +540,72 @@ def check_push(rest, path):
     return findings
 
 
+PRUNE = ("deny", "docker/podman prune is machine-wide: it deletes other projects' containers, volumes and images. "
+         "Remove only what you started, by name or by label, e.g. `docker rm -f <name>` or "
+         "`docker rm -f $(docker ps -aq --filter label=dk.issue=<n>)`.")
+MASS_REMOVAL = ("deny", "Mass docker removal without a label or name filter hits other projects' resources. Filter "
+                "by a label your session set, e.g. --filter label=dk.issue=<n>.")
+
+
 def check_docker(cmd):
     findings = []
     for _, tokens in segments(cmd, "docker|podman"):
         if "prune" in tokens:
-            findings.append(("deny", "docker/podman prune is machine-wide: it deletes other projects' containers, "
-                             "volumes and images. Remove only what you started, by name or by label, e.g. "
-                             "`docker rm -f <name>` or `docker rm -f $(docker ps -aq --filter label=dk.issue=<n>)`."))
+            findings.append(PRUNE)
     mass = re.finditer(r"\b(?:docker|podman)\s+(?:rm|rmi|stop|kill|(?:container|volume|network|image)\s+rm)\b[^;&|\n]*?"
                        r"\$\(\s*((?:docker|podman)\s+[^)]*)\)", cmd)
     piped = re.finditer(r"\b((?:docker|podman)\s+(?:ps|volume\s+ls|images|image\s+ls|network\s+ls)\b[^|;&\n]*)\|\s*"
                         r"xargs\s+(?:-\S+\s+)*(?:docker|podman)\s+(?:rm|rmi|stop|kill|volume\s+rm)", cmd)
     for m in list(mass) + list(piped):
         if not re.search(r"(?:--filter|-f)[=\s]+[\"']?(?:label|name|ancestor|id)=", m.group(1)):
-            findings.append(("deny", "Mass docker removal without a label or name filter hits other projects' "
-                             "resources. Filter by a label your session set, e.g. --filter label=dk.issue=<n>."))
+            findings.append(MASS_REMOVAL)
+    return findings
+
+
+def is_docker(words):
+    return bool(words) and os.path.basename(words[0]) in ("docker", "podman")
+
+
+def removes(words):
+    return words[1:2] in (["rm"], ["rmi"], ["stop"], ["kill"]) \
+        or (words[1:2] in (["container"], ["volume"], ["network"], ["image"]) and words[2:3] == ["rm"])
+
+
+def lists(words):
+    return words[1:2] in (["ps"], ["images"]) or (words[1:2] in (["volume"], ["image"], ["network"])
+                                                   and words[2:3] == ["ls"])
+
+
+def filtered(words):
+    """True when a docker listing filters by label, name, ancestor or id (`--filter x`, `--filter=x`, `-qf x`)."""
+    it = iter(words)
+    for w in it:
+        if w == "--filter" or re.fullmatch(r"-[a-zA-Z]*f", w):
+            value = next(it, "")
+        elif w.startswith("--filter="):
+            value = w[len("--filter="):]
+        else:
+            continue
+        if re.match(r"(?:label|name|ancestor|id)=", value):
+            return True
+    return False
+
+
+def docker_words(segs):
+    findings = []
+    for seg in segs:
+        _, words = command(seg)
+        if not is_docker(words):
+            continue
+        if "prune" in words:
+            findings.append(PRUNE)
+        if removes(words):
+            findings += [MASS_REMOVAL for sub in seg.subs for inner in sub
+                         if is_docker(command(inner)[1]) and not filtered(command(inner)[1])]
+        if lists(words) and seg.pipe_to is not None and not filtered(words):
+            wrappers, target = command(seg.pipe_to)
+            if "xargs" in wrappers and is_docker(target) and removes(target):
+                findings.append(MASS_REMOVAL)
     return findings
 
 
@@ -737,7 +788,7 @@ def decide(cmd, cwd):
         findings = check_docker(raw) + check_git(raw, cwd) + check_credentials(raw) + check_gh(raw) \
             + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw)
     else:
-        findings = check_docker(raw) + git_words(segs, cwd) + check_credentials(raw) + check_gh(raw) \
+        findings = docker_words(segs) + git_words(segs, cwd) + check_credentials(raw) + check_gh(raw) \
             + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw)
     for level in ("deny", "ask"):
         reasons = [r for l, r in findings if l == level]
