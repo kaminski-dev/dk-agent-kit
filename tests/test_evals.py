@@ -100,6 +100,26 @@ r, pr = acceptance_on(ws, "HEAD")
 check("353 review: the seeded branch still meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr or r.stderr)
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
+# The review fixture with work in progress: the same branch, plus an uncommitted edit and an untracked
+# file, each breaking a documented standard that a review of the commits alone cannot see.
+ws = scaffold("code-review-wip")
+branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+check("wip review: the fix branch is checked out", branch == "fix/353-history-order", branch)
+status = git(ws, "app", "status", "--porcelain").stdout
+check("wip review: one uncommitted edit and one untracked file",
+      status == " M tests/test_audit_store.py\n?? ledger/export.py\n", status)
+committed = git(ws, "app", "diff", "--name-only", "origin/pre-main...HEAD").stdout.split()
+check("wip review: the commits touch neither", "ledger/export.py" not in committed
+      and "test_one_row_per_changed_field" not in git(ws, "app", "diff", "origin/pre-main...HEAD").stdout, committed)
+wip = git(ws, "app", "diff", "HEAD").stdout
+check("wip review: the uncommitted test reads the table directly",
+      'conn.execute("SELECT field_name FROM audit_logs WHERE' in wip, wip[:400])
+export = (ws / "app" / "ledger" / "export.py").read_text()
+check("wip review: the untracked file formats a value into SQL", "entity_type = '%s'\" % entity_type" in export, export)
+tests = run(ws, "python3 -m unittest discover -s tests -q", cwd=ws / "app")
+check("wip review: the tests still pass with the work in progress", tests.returncode == 0, tests.stderr[-500:])
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
 # The triage fixture: #353 as filed, on the pre-fix code.
 ws = scaffold("triage-353")
 issue = json.loads(run(ws, "gh issue view 353 --json labels,comments").stdout)

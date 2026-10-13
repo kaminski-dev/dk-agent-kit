@@ -1,0 +1,39 @@
+diff --git a/ledger/export.py b/ledger/export.py
+new file mode 100644
+index 0000000..7b433d2
+--- /dev/null
++++ b/ledger/export.py
+@@ -0,0 +1,16 @@
++"""CSV export of one entity type's Audit Operations, for the owner's accountant."""
++import csv
++
++from ledger.audit_store import COLUMNS
++
++
++def export_entity_type(conn, entity_type, out):
++    rows = conn.execute(
++        f"SELECT {COLUMNS} FROM audit_logs"
++        " WHERE entity_type = '%s'" % entity_type
++        + " ORDER BY changed_at DESC, entity_id, action, changed_by, field_name"
++    ).fetchall()
++    writer = csv.writer(out)
++    writer.writerow(COLUMNS.split(", "))
++    writer.writerows(tuple(r) for r in rows)
++    return len(rows)
+diff --git a/tests/test_audit_store.py b/tests/test_audit_store.py
+index 46ff099..e0b5452 100644
+--- a/tests/test_audit_store.py
++++ b/tests/test_audit_store.py
+@@ -41,6 +41,12 @@ class EntityHistory(unittest.TestCase):
+                  {"phone": ("a", "b"), "email": ("c", "d"), "city": ("e", "f")})
+         self.assertEqual([r["field_name"] for r in s.list_by_entity("customer", 1)], ["city", "email", "phone"])
+ 
++    def test_one_row_per_changed_field(self):
++        s = store()
++        s.record("customer", 1, "update", "owner", "2026-10-02T10:00:00Z", {"phone": ("a", "b"), "city": ("c", "d")})
++        rows = s.conn.execute("SELECT field_name FROM audit_logs WHERE entity_id = 1").fetchall()
++        self.assertEqual(sorted(r["field_name"] for r in rows), ["city", "phone"])
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
