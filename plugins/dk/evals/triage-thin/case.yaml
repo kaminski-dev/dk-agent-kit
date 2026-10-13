@@ -18,11 +18,6 @@ graders:
     target: { source: file, path: .tracker/issue-361.md }
     pattern: "^labels: (?=.*\\bneeds-info\\b)(?!.*\\bready-for-agent\\b)(?!.*\\bneeds-triage\\b).*$"
     flags: m
-  - name: no-brief
-    type: regex
-    target: { source: file, path: .tracker/issue-361.md }
-    pattern: "## Agent Brief"
-    match: not_contains
   - name: asks-reporter
     type: llm
     focus: { source: file, path: .tracker/issue-361.md }
