@@ -6,17 +6,19 @@ deny for commands that destroyed shared state before (docker prune, unfiltered
 mass removal, pushes to main, force pushes, git clean of ignored files),
 leaked a credential (reading a credential file) or broke the shell (a zsh
 special parameter such as `path` as a loop or read variable), ask for
-rewriting the shared pre-main branch or answering dk-gc's question for the
+rewriting the shared pre-main branch, a push to the current branch when the
+guard cannot tell which branch that is, or answering dk-gc's question for the
 human (--yes, piped input), and
 hints for gh calls that silently drop the issue body and for an unlabelled
 Postgres server that dk-pg should start instead. Everything else passes.
 
 The rules match on words: the command is split once, as the shell reads it,
 into segments of words (quotes, here-docs, redirections, substitutions and
-`<shell> -c` scripts included). Quoted text and quoted here-doc bodies are data,
-so a commit message may mention a command; the substitutions of an unquoted
-here-doc run, so they are checked. A command the splitter cannot read gets the
-older raw-string checks, so a parse failure never lets a command through.
+`<shell> -c` scripts included). Quoted text and quoted here-doc bodies are data
+to the command rules, so a commit message may mention a command; a credential
+path is caught even when quoted. The substitutions of an unquoted here-doc run,
+so they are checked. A command the splitter cannot read gets the raw-string
+checks, so a parse failure never lets a command through.
 
 This raises the floor against agent mistakes; it is not a security boundary.
 """
