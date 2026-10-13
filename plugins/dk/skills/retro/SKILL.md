@@ -12,7 +12,13 @@ The user has asked for a **retrospective**. You are suggesting improvements to t
 
 1. Call the Skill tool with `dk:writing-for-agents` for the writing style guide.
 
-2. Read the primary sources for the window the user names: one session, or a period such as the last month. Without one, take the current session. Transcripts live in `~/.claude/projects/<launch directory with / as ->/*.jsonl`, filed under the directory a session started in, so a repo's sessions can sit under its main checkout, its worktrees, or a parent directory: select them by each record's `cwd`. For a period, extract before reading: the user's **corrections** (prompts that redirect or reject the agent's work), interrupts, rejected tool calls, hook denials and failed checks, plus the repo's reverts, fix-up commits and review comments in the same window.
+2. Read the primary sources for the window the user names: one session, or a period such as the last month. Without one, take the current session. Transcripts live in `~/.claude/projects/<launch directory with / as ->/*.jsonl`, filed under the directory a session started in, so a repo's sessions can sit under its main checkout, its worktrees, or a parent directory: select them by each record's `cwd`. For a period, extract before reading:
+
+   ```sh
+   python3 -I <this skill's base directory>/extract.py SINCE UNTIL "$SCRATCH/retro/events.jsonl"
+   ```
+
+   SINCE and UNTIL are dates (`2026-09-13`), both inclusive. `$SCRATCH` is the session's scratchpad directory, and it is the only place the output goes: the file holds raw prompt text. The script writes one JSON line per follow-up prompt, interrupt, rejected or denied tool call, dk-guard denial, Stop gate feedback and errored tool result (with a coarse `bucket`), and prints the counts by `kind`; `--help` lists the kinds. Keep the lines whose `project` is the repo's main checkout or one of its worktrees, then read the prompts for the user's **corrections** (prompts that redirect or reject the agent's work). Add the repo's reverts, fix-up commits and review comments in the same window.
 
 3. Group the mistakes into **mistake classes**. A class counts once it has happened twice, and keeps its evidence: session and date, or commit. Then look for candidates for improvement in these categories.
 

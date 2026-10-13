@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """Extract a retro's evidence from Claude Code transcripts in a date window.
 
-Usage: python3 -I extract.py SINCE UNTIL OUT.jsonl [--projects-dir DIR]
-
 SINCE and UNTIL are ISO dates, both inclusive, compared with each record's UTC
-timestamp. Reads DIR/*/*.jsonl and their DIR/*/*/subagents/*.jsonl (default
-~/.claude/projects) and writes one JSON line per event to OUT:
+timestamp. Reads PROJECTS_DIR/*/*.jsonl and */*/subagents/*.jsonl under it
+(default ~/.claude/projects) and writes one JSON line per event to OUT:
 
   {"ts", "session", "project", "kind", "text"}, plus "tool" ("Bash: <command>")
   on tool-result events and "bucket" on tool_error.
@@ -191,7 +189,8 @@ def events(path, since, until):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Extract retro evidence from Claude Code transcripts.")
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[1],
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("since", metavar="SINCE", type=iso_date, help="first day, YYYY-MM-DD")
     parser.add_argument("until", metavar="UNTIL", type=iso_date, help="last day, YYYY-MM-DD")
     parser.add_argument("out", metavar="OUT.jsonl")
@@ -202,6 +201,7 @@ def main():
     files = sorted(glob.glob(os.path.join(base, "*", "*.jsonl"))
                    + glob.glob(os.path.join(base, "*", "*", "subagents", "*.jsonl")))
     by_kind, with_events = collections.Counter(), 0
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w") as out:
         for path in files:
             found = False
