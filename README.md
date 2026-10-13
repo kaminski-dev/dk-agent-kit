@@ -70,12 +70,19 @@ flowchart LR
   check --> closed
   closed -.-> retro["dk:retro<br/>monthly"]
   retro -. "repeat mistake" .-> guard[["new dk-guard check"]]
+  closed -.-> vdc["dk:verify-doc-check<br/>monthly"]
+  vdc -. "drifted step" .-> fix(["fix PR or new issue"])
 ```
 
 The scope intake decides what a side finding becomes: small work in the same
 place joins the issue as a recorded scope amendment, anything else is a new
 issue. An issue with a `Refs` line stays open until its post-deploy check
 passes.
+
+Two runs come back every month, started by hand in each repo: `/dk:retro`
+over the month's sessions turns each repeated mistake into a check, and
+`/dk:verify-doc-check` runs the repo's `docs/agents/verify.md` in a fresh
+worktree and fixes or files every step that no longer works.
 
 ### Where a command gets stopped
 
