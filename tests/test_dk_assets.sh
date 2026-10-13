@@ -60,4 +60,31 @@ if err=$("$dkassets" push 31 "$shots/fixed.png" "$shots/missing.png" 2>&1); then
 grep -qxF "dk-assets: no such file: $shots/missing.png" <<<"$err" || fail "error does not name the missing file: $err"
 [[ "$(remote_sha 31)" == "$sha2" ]] || fail "a failed run changed verify-assets/31"
 
+# Files outside the session's scratch directory are refused: one in the repo tree,
+# a symlink in scratch pointing there, another session's scratch, and any file when
+# no session is known.
+printf 'secret' >"$app/config.png"
+ln -s "$app/config.png" "$shots/link.png"
+other="$tmp/claude-501/-proj/another-session/scratchpad/31"
+mkdir -p "$other" && printf 'png o' >"$other/other.png"
+for f in "$app/config.png" "$shots/link.png" "$other/other.png" "$shots/../../../../../../app/config.png"; do
+  if err=$("$dkassets" push 32 "$f" 2>&1); then fail "file outside scratch accepted: $f"; fi
+  grep -qF "dk-assets: outside this session's scratch directory: $f" <<<"$err" || fail "refusal for $f: $err"
+done
+mkdir -p "$shots/again" && printf 'png a2' >"$shots/again/before.png" && printf 'x' >"$shots/a b.png"
+if err=$("$dkassets" push 32 "$shots/before.png" "$shots/again/before.png" 2>&1); then fail "two files named before.png accepted"; fi
+grep -qxF "dk-assets: two files named before.png; the branch holds them flat" <<<"$err" || fail "duplicate name: $err"
+if err=$("$dkassets" push 32 "$shots/a b.png" 2>&1); then fail "a name the URL cannot carry was accepted"; fi
+"$dkassets" push "32:main" "$shots/fixed.png" >/dev/null 2>&1 && fail "an issue that is not a number was accepted"
+if err=$(env -u CLAUDE_CODE_SESSION_ID "$dkassets" push 32 "$shots/fixed.png" 2>&1); then fail "accepted without a session"; fi
+[[ -z "$(remote_sha 32)" ]] || fail "a refused run pushed verify-assets/32"
+
+# A push origin rejects fails with origin's reason and leaves the branch as it was.
+printf '#!/bin/sh\necho "no pushes today" >&2\nexit 1\n' >"$origin/hooks/pre-receive"
+chmod +x "$origin/hooks/pre-receive"
+if err=$("$dkassets" push 31 "$shots/before.png" 2>&1); then fail "rejected push reported success: $err"; fi
+grep -qF "no pushes today" <<<"$err" || fail "origin's reason missing: $err"
+grep -qxF "dk-assets: origin rejected the push to verify-assets/31" <<<"$err" || fail "no rejection line: $err"
+[[ "$(remote_sha 31)" == "$sha2" ]] || fail "a rejected push changed verify-assets/31"
+
 echo "dk-assets: all checks passed"

@@ -6,7 +6,10 @@
 # Builds an orphan commit holding the files flat, by basename, and force-pushes
 # it to origin's verify-assets/<issue>, so a rerun replaces the branch. Prints
 # the commit SHA, then one embeddable URL per file (by SHA, so the images stay
-# put after a rerun). Run it from a checkout whose origin is on GitHub.
+# put after a rerun). Run it from a checkout whose origin is on GitHub. It
+# takes only files under this session's scratch directory (a path containing
+# <CLAUDE_CODE_SESSION_ID>/scratchpad/), so nothing from a repo tree lands on
+# the branch, and checks every file before pushing anything.
 set -euo pipefail
 
 usage() { sed -n '3,4s/^# \{0,1\}//p' "$0" >&2; exit 2; }
@@ -15,13 +18,22 @@ die() { echo "dk-assets: $*" >&2; exit 1; }
 cmd=${1:-}; issue=${2:-}
 [[ "$cmd" == push && -n "$issue" && $# -ge 3 ]] || usage
 shift 2
+[[ "$issue" =~ ^[0-9]+$ ]] || die "issue must be a number: $issue"
 
 url=$(git config --get remote.origin.url) || die "no origin remote in $PWD"
 slug=$(sed -E 's#^(https://|ssh://)?([^@/]+@)?github\.com[:/]##; s#\.git$##; s#/$##' <<<"$url")
 [[ "$slug" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && "$slug" != "$url" ]] || die "origin is not a GitHub repo: $url"
 
+session=${CLAUDE_CODE_SESSION_ID:-} seen=
+[[ -n "$session" ]] || die "CLAUDE_CODE_SESSION_ID is unset; run it from the Claude Code session whose scratch directory holds the files"
 for f; do
   [[ -f "$f" ]] || die "no such file: $f"
+  real="$(cd "$(dirname "$f")" && pwd -P)/$(basename "$f")"
+  [[ ! -L "$f" && "$real" == */"$session"/scratchpad/* ]] || die "outside this session's scratch directory: $f"
+  name=$(basename "$f")
+  [[ "$name" =~ ^[A-Za-z0-9_.-]+$ ]] || die "file name must be letters, digits, '.', '_' or '-', so the URL needs no escaping: $name"
+  [[ " $seen " != *" $name "* ]] || die "two files named $name; the branch holds them flat"
+  seen+=" $name"
 done
 
 entries= names=()
@@ -33,7 +45,7 @@ for f; do
 done
 tree=$(printf %s "$entries" | git mktree)
 commit=$(git commit-tree "$tree" -m "verify assets for #$issue")
-git push -q -f origin "$commit:refs/heads/verify-assets/$issue"
+git push -q -f origin "$commit:refs/heads/verify-assets/$issue" || die "origin rejected the push to verify-assets/$issue"
 
 echo "$commit"
 for name in "${names[@]}"; do
