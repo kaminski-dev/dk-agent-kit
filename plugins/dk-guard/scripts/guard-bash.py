@@ -355,9 +355,8 @@ def check_credentials(cmd):
               if not in_code_span(cmd, m) and not only_checks_file(scan, m.start())), None)
     if m:
         return [("deny", f"This reads {m.group(0)}, which holds a credential. Sentry event details come from "
-                 "the repo's Sentry helper, named in its docs/agents/observability.md (jetztbar-platform: "
-                 "`bun scripts/agents/sentry-events.ts <issue ID>`); anything else goes through the CLI that "
-                 "owns the credential (sentry-cli, aws, gh, ssh-add).")]
+                 "the repo's Sentry helper, named in its docs/agents/observability.md; anything else goes "
+                 "through the CLI that owns the credential (sentry-cli, aws, gh, ssh-add).")]
     return []
 
 
