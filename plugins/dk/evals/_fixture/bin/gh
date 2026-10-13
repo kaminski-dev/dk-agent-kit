@@ -202,15 +202,18 @@ def acceptance(head):
     if not check.exists():
         return []
     origin = WS / "origin.git"
-    src = pathlib.Path(tempfile.mkdtemp(prefix="pr-", dir=TRACKER))
     archive = subprocess.run(["git", "--git-dir", str(origin), "archive", f"refs/heads/{head}"], capture_output=True)
     if archive.returncode != 0:
         return [f"acceptance: fail (branch {head} is not on origin)"]
-    subprocess.run(["tar", "-x", "-C", str(src)], input=archive.stdout, check=True)
-    unit = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-q"], cwd=src,
-                          capture_output=True, text=True)
-    acc = subprocess.run([sys.executable, str(check), str(src)], capture_output=True, text=True)
-    shutil.rmtree(src, ignore_errors=True)
+    src = pathlib.Path(tempfile.mkdtemp(prefix="pr-", dir=TRACKER))
+    try:
+        if subprocess.run(["tar", "-x", "-C", str(src)], input=archive.stdout, capture_output=True).returncode != 0:
+            return [f"acceptance: fail (could not extract {head})"]
+        unit = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-q"], cwd=src,
+                              capture_output=True, text=True)
+        acc = subprocess.run([sys.executable, str(check), str(src)], capture_output=True, text=True)
+    finally:
+        shutil.rmtree(src, ignore_errors=True)
     return [f"unit tests: {'pass' if unit.returncode == 0 else 'fail'}",
             f"acceptance: {'pass' if acc.returncode == 0 else 'fail'}",
             (acc.stdout + acc.stderr).strip()]

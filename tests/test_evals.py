@@ -76,6 +76,18 @@ git(ws, "app", "commit", "-qam", "reference")
 r, pr = acceptance_on(ws, "reference")
 check("353: acceptance passes on the reference fix", "acceptance: pass" in pr and "unit tests: pass" in pr, pr or r.stderr)
 
+# A head that cannot be extracted still gets a PR and an acceptance line, and leaves no checkout behind.
+broken = ws.parent / "broken-tar"
+broken.mkdir()
+(broken / "tar").write_text("#!/bin/sh\nexit 2\n")
+(broken / "tar").chmod(0o755)
+(ws / ".tracker" / "pr.md").unlink()
+r = run(ws, f"PATH='{broken}':$PATH gh pr create --base pre-main --head fix/353-check --title t --body b", cwd=ws / "app")
+pr = (ws / ".tracker" / "pr.md").read_text() if (ws / ".tracker" / "pr.md").exists() else ""
+check("353: a failed extraction reports acceptance: fail", r.returncode == 0 and "acceptance: fail" in pr, pr or r.stderr)
+left = sorted(p.name for p in (ws / ".tracker").glob("pr-*"))
+check("353: a failed extraction leaves no checkout in .tracker", left == [], left)
+
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
 # The review fixture: a branch that fixes #353 correctly but breaks one documented standard.
