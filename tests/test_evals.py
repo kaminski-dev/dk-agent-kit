@@ -100,6 +100,59 @@ r, pr = acceptance_on(ws, "HEAD")
 check("353 review: the seeded branch still meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr or r.stderr)
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
+# The review fixture with work in progress: the same branch, plus an uncommitted edit and an untracked
+# file, each breaking a documented standard that a review of the commits alone cannot see.
+ws = scaffold("code-review-wip")
+branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+check("wip review: the fix branch is checked out", branch == "fix/353-history-order", branch)
+status = git(ws, "app", "status", "--porcelain").stdout
+check("wip review: one uncommitted edit and one untracked file",
+      status == " M ledger/__main__.py\n?? ledger/export.py\n", status)
+committed = git(ws, "app", "diff", "--name-only", "origin/pre-main...HEAD").stdout.split()
+check("wip review: the commits touch neither", committed == ["ledger/audit_store.py", "tests/test_audit_store.py"], committed)
+wip = git(ws, "app", "diff", "HEAD").stdout
+check("wip review: the uncommitted edit formats a value into SQL",
+      "WHERE entity_type = '{a.entity_type}'\"" in wip, wip[:400])
+export = (ws / "app" / "ledger" / "export.py").read_text()
+check("wip review: the untracked file formats a value into SQL", "entity_type = '%s'\" % entity_type" in export, export)
+tests = run(ws, "python3 -m unittest discover -s tests -q", cwd=ws / "app")
+check("wip review: the tests still pass with the work in progress", tests.returncode == 0, tests.stderr[-500:])
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
+# The verify fixture: a clean #353 fix in a repo whose verify doc says there is no database to start.
+ws = scaffold("verify-no-db")
+branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+check("verify: the clean fix branch is checked out", branch == "fix/353-ordered", branch)
+diff = git(ws, "app", "diff", "origin/pre-main...HEAD", "--", "ledger").stdout
+check("verify: the fix changes the ORDER BY alone",
+      [l for l in diff.splitlines() if l[:1] in "+-" and l[:3] not in ("+++", "---")]
+      == ['-            " ORDER BY changed_at DESC"', '+            " ORDER BY changed_at DESC, action, changed_by, field_name"'], diff)
+doc = (ws / "app" / "docs" / "agents" / "verify.md").read_text()
+check("verify: the verify doc says the stack needs no database", "- **Database**: none." in doc, doc)
+log = ws / ".tracker" / "postgres.log"
+check("verify: the Postgres log starts empty", log.exists() and log.read_text() == "", log.exists())
+for cmd in ("dk-pg up 353", "docker run -d postgres:17", "pg_ctl -D db start", "initdb -D db", "postgres -D db"):
+    r = run(ws, cmd, cwd=ws / "app")
+    check(f"verify: `{cmd}` reaches the stand-in and fails", r.returncode != 0 and log.read_text().endswith(cmd + "\n"),
+          (r.returncode, log.read_text()))
+
+
+def history(ref):
+    """Field order of the 2026-10-02 edit in `ledger history`, on a fresh seeded database at ref."""
+    tree = ws.parent / f"tree-{ref.replace('/', '-')}"
+    git(ws, "app", "worktree", "add", "-q", "--detach", str(tree), ref)
+    db = ws.parent / f"{tree.name}.db"
+    run(ws, f"python3 -m ledger seed --db '{db}'", cwd=tree)
+    out = run(ws, f"python3 -m ledger history customer 7 --db '{db}'", cwd=tree).stdout
+    git(ws, "app", "worktree", "remove", "--force", str(tree))
+    return [l.split()[3] for l in out.splitlines() if "2026-10-02" in l]
+
+
+before, after = history("origin/pre-main"), history("HEAD")
+check("verify: the control run on pre-main shows the old order", before == ["phone", "email", "city"], before)
+check("verify: the branch shows the fields by name", after == ["city", "email", "phone"], after)
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
 # The triage fixture: #353 as filed, on the pre-fix code.
 ws = scaffold("triage-353")
 issue = json.loads(run(ws, "gh issue view 353 --json labels,comments").stdout)
@@ -109,6 +162,20 @@ check("353 triage: list_by_entity still orders by changed_at alone", '" ORDER BY
 r = run(ws, "gh issue edit 353 --add-label bug --add-label ready-for-agent --remove-label needs-triage")
 md = (ws / ".tracker" / "issue-353.md").read_text() if (ws / ".tracker" / "issue-353.md").exists() else ""
 check("353 triage: a label edit reaches the file the graders read", "labels: bug, ready-for-agent\n" in md, md or r.stderr)
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
+# The thin-issue fixture: #361 says something is wrong and nothing that would let a brief be written.
+ws = scaffold("triage-thin")
+issue = json.loads(run(ws, "gh issue view 361 --json title,body,labels,comments").stdout)
+check("361 triage: the tracker holds the untriaged issue",
+      issue["labels"] == [{"name": "needs-triage"}] and issue["comments"] == [], issue)
+check("361 triage: the issue names no entity, field, value or steps",
+      len(issue["body"]) < 120 and not any(c.isdigit() for c in issue["body"]), issue["body"])
+others = [i["number"] for i in json.loads(run(ws, "gh issue list --state all --json number").stdout)]
+check("361 triage: no other issue to match it against", others == [361], others)
+store = (ws / "app" / "ledger" / "audit_store.py").read_text()
+check("361 triage: the Audit Log list it names already defines its order",
+      '" ORDER BY changed_at DESC, entity_type, entity_id, action, changed_by, field_name"' in store, store[-900:])
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
 # --- #1091 fixture: govulncheck red on go1.27.1 and x/net v0.59.0 --------------------------------

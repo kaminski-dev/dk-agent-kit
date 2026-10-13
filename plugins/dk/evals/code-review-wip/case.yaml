@@ -1,0 +1,36 @@
+schema_version: "1.1"
+name: code-review-wip
+description: >
+  The #353 fix branch with work in progress on top: an uncommitted `count` command and an untracked
+  export module, each formatting a value into its SQL against the repo's standard. dk:code-review
+  reviews the uncommitted and untracked work too, not only the commits.
+tags: [code-review]
+runs: 1
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 60
+  timeout_seconds: 1200
+  allowed_tools: [Read, Glob, Grep, Skill, Agent, TodoWrite, Bash]
+graders:
+  - name: reviews-uncommitted
+    type: llm
+    criteria: >
+      The review reports that the new `count` command in ledger/__main__.py (an uncommitted edit)
+      puts the `entity_type` argument into the SQL text with an f-string instead of passing it
+      through a `?` parameter, against the repo's rule that SQL takes its values as parameters
+      (CODING_STANDARDS.md rule 1). The axis it appears under does not matter. PASS when the report
+      carries this finding for the `count` command; FAIL when that command is not mentioned, or
+      only the committed f-string in `list_by_entity` is reported.
+  - name: reviews-untracked
+    type: llm
+    criteria: >
+      The review reports that `export_entity_type` in ledger/export.py (a new, untracked file) puts
+      the `entity_type` value into the SQL text with `%` formatting instead of passing it through a
+      `?` parameter, against the repo's rule that SQL takes its values as parameters
+      (CODING_STANDARDS.md rule 1). The axis it appears under does not matter. PASS when the report
+      carries this finding for ledger/export.py; FAIL when that file is not mentioned, or only the
+      committed f-string in `list_by_entity` is reported.
+  - name: three-axes
+    type: regex
+    pattern: "## Standards[\\s\\S]*## Spec[\\s\\S]*## Comments"
