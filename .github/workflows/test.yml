@@ -21,6 +21,8 @@ jobs:
         run: python3 -I tests/test_skills.py
       - name: skill-eval fixtures
         run: python3 -I tests/test_evals.py
+      - name: retro extraction against fixture transcripts
+        run: python3 -I tests/test_retro_extract.py
       - name: bootstrap merge
         run: bash tests/test_bootstrap.sh
       - name: dk-pg against Docker
