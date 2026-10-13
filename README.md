@@ -16,7 +16,7 @@ Claude Code only for now. Codex and other hosts will follow.
 | `plugins/dk` | The skills, called as `/dk:<name>`. You start: `triage`, `implement`, `implement-spec`, `to-spec`, `to-tickets`, `research-codebase`, `grill-with-docs`, `improve-codebase-architecture`, `teach`, `prototype`, `retro`, `verify-doc-check`, `handoff`, `setup`. Other skills call: `issue-flow`, `verify`, `post-deploy-check`, `tdd`, `code-review`, `pr`, `blast-radius`, `research`, `grilling`, `domain-modeling`, `codebase-design`, `writing-for-agents`. Agents: the read-only reviewers `reviewer` and `comment-reviewer`, and HumanLayer's `codebase-locator`, `codebase-analyzer`, `codebase-pattern-finder`. Each repo supplies its facts in adapter files that `/dk:setup` writes. |
 | `upstream/` | `UPSTREAM.md` records the commit and changes for every adapted file; `sync.sh` shows what mattpocock/skills, pstack and HumanLayer changed since in those files. |
 | `settings/user.fragment.json` | What a plugin cannot ship: permission deny and ask rules, and `autoMode.hard_deny` lines. Merged into `~/.claude/settings.json` by `bootstrap.sh`. |
-| `bootstrap.sh` | Shows the settings diff; `--apply` backs up, merges and installs the plugins from this checkout. |
+| `bootstrap.sh` | Shows the settings diff and the zsh options block for `~/.zshenv`; `--apply` backs both files up, writes them and installs the plugins from this checkout. |
 | `tests/` | The guard's case matrix (taken from real incidents), fixture repos for the Stop gate and the session hooks, a `dk-pg` run against Docker, a `dk-gc` run against fixture repos with stubbed `gh` and `docker`, a bootstrap merge test, an `upstream/sync.sh` run against fixture upstream repos, a check of the skill-eval fixtures, and `replay_history.py` for checking the guard against past transcripts. |
 | `THIRD_PARTY/` | Licenses and commits of the projects material is adapted from. |
 
@@ -152,6 +152,13 @@ bootstrap merges that file last, and it never enters this repo.
 
 Merge rules: objects merge key by key, arrays gain the entries they lack and
 nothing is removed, scalars from the fragment win. A second run is a no-op.
+
+The Bash tool runs zsh, and agents write bash. Bootstrap appends a marked
+block to `~/.zshenv` (`$ZDOTDIR/.zshenv` when set) with `setopt NO_NOMATCH`
+(an unmatched glob such as `--include=*.go` passes through literally) and
+`unsetopt EQUALS` (`echo ====` is not expanded to a command path). The rest
+of the file stays as it is. A file that already has the marker, or sets both
+options by hand, is left alone.
 
 ## Test
 
