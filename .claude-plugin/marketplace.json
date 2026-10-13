@@ -8,7 +8,7 @@
     {
       "name": "dk-guard",
       "source": "./plugins/dk-guard",
-      "description": "Guardrail hooks: blocks docker prune, unfiltered mass removal, pushes to main, plain force pushes and git clean -x; asks before rewriting pre-main, reading credential files or answering dk-gc's question; denies edits in the primary checkout of a repo that requires worktrees; opens each session with its repo, branch, PR, issue labels and databases; runs the repo's .claude/gate.sh before a turn with changes ends. Ships dk-pg, a throwaway Postgres per issue, and dk-gc, which removes what merged work left behind."
+      "description": "Guardrail hooks: blocks docker prune, unfiltered mass removal, pushes to main, plain force pushes, git clean -x, reading credential files and zsh special parameters such as path as loop or read variables; asks before rewriting pre-main or answering dk-gc's question; denies edits in the primary checkout of a repo that requires worktrees; opens each session with its repo, branch, PR, issue labels and databases; runs the repo's .claude/gate.sh before a turn with changes ends. Ships dk-pg, a throwaway Postgres per issue, and dk-gc, which removes what merged work left behind."
     },
     {
       "name": "dk",

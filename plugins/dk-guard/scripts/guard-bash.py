@@ -3,9 +3,11 @@
 
 Reads the hook JSON on stdin and answers with a permission decision:
 deny for commands that destroyed shared state before (docker prune, unfiltered
-mass removal, pushes to main, force pushes, git clean of ignored files), ask
-for rewriting the shared pre-main branch, reading a credential file or
-answering dk-gc's question for the human (--yes, piped input), and
+mass removal, pushes to main, force pushes, git clean of ignored files),
+leaked a credential (reading a credential file) or broke the shell (a zsh
+special parameter such as `path` as a loop or read variable), ask for
+rewriting the shared pre-main branch or answering dk-gc's question for the
+human (--yes, piped input), and
 hints for gh calls that silently drop the issue body and for an unlabelled
 Postgres server that dk-pg should start instead. Everything else passes.
 
@@ -26,7 +28,8 @@ CREDENTIALS = re.compile(r"\.sentryclirc|\.aws/credentials|(?<![\w.])\.netrc\b|\
 
 # Where a command can start: line start, after a control operator, inside $( or
 # backticks, after a shell keyword, or at the opening quote of `bash -c '...'`.
-START = r"(?:^|[;&|\n({`]|\$\(|\b(?:then|do|else)\s|-c\s+['\"])\s*"
+OPENERS = r"[;&|\n({`]|\$\(|\b(?:then|do|else|while|until|if)\s|-c\s+['\"]"
+START = r"(?:^|" + OPENERS + r")\s*"
 PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:(?:sudo|command|exec|nohup|time|env|nice|xargs(?:\s+-\S+)*|g?timeout\s+\S+)\s+)*"
 END = r"[^;&|\n)`]*"
 
@@ -260,7 +263,7 @@ def check_gh(cmd):
     return []
 
 
-DK_GC = re.compile(r"(?:^|(\|\|?|[;&\n({`]|\$\(|\b(?:then|do|else)\s|-c\s+['\"]))\s*" + PREFIX
+DK_GC = re.compile(r"(?:^|(\|\|?|" + OPENERS + r"))\s*" + PREFIX
                    + r"(?:python3?\s+(?:-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?dk-gc"
                    + r"(?=$|[\s;&|)`<>]|['\"](?:$|[\s;&|)]))(" + END + ")")
 OUTPUT_REDIRECT = re.compile(r"\d*>>?&(?:\d+|-)?|&>>?")
@@ -281,14 +284,19 @@ def open_quote(cmd, pos):
     return start if quote else None
 
 
+def quoted_text(cmd, pos, shell=""):
+    """True when `pos` sits in a quoted string that is data, not the script of `<shell> -c '...'`."""
+    quote = open_quote(cmd, pos)
+    return quote is not None and not re.search(shell + r"-c\s+$", cmd[:quote])
+
+
 def check_dk_gc(cmd):
     # `2>&1` and `&>` would end the match at their `&` and hide a later --yes or `<`; `<&3` stays as input
     cmd = OUTPUT_REDIRECT.sub(lambda r: " " * len(r.group()), cmd)
     for m in DK_GC.finditer(cmd):
         sep, rest = m.group(1) or "", m.group(2)
-        quoted = open_quote(cmd, m.end(1) if m.group(1) else m.start())
-        if quoted is not None and not re.search(r"-c\s+$", cmd[:quoted]):
-            continue  # a pattern or a string, not a shell command
+        if quoted_text(cmd, m.end(1) if m.group(1) else m.start()):
+            continue
         piped = sep == "|" or (sep == "&" and cmd[m.start() - 1:m.start()] == "|")
         args = rest.split()
         if "--dry-run" not in args and ("--yes" in args or "<" in rest or piped):
@@ -297,19 +305,64 @@ def check_dk_gc(cmd):
     return []
 
 
+# zsh names that break the shell when assigned: `path` is tied to PATH (later commands are "not found"), the
+# others are read-only or special arrays. The Bash tool runs zsh, so a loop or `read` on them breaks the call.
+ZSH_SPECIAL = {"path", "PATH", "fpath", "module_path", "cdpath", "manpath", "status", "pipestatus", "argv",
+               "commands", "functions", "aliases", "options", "parameters", "history"}
+LOOP = re.compile(START + r"(?:for|foreach|select)\s+((?:[A-Za-z_]\w*\s+)*?[A-Za-z_]\w*)\b(?=\s+in\b|\s*[(;\n]|\s*$)")
+
+
+def check_zsh_names(cmd):
+    targets = [(m.start(1), m.group(1).split()) for m in LOOP.finditer(cmd)]
+    targets += [(offset, [t.partition("?")[0] for t in tokens[1:] if not t.startswith("-")])
+                for offset, tokens in segments(cmd, "read")]
+    for offset, names in targets:
+        if quoted_text(cmd, offset, shell=r"\bzsh\s+"):
+            continue
+        hit = next((n for n in names if n in ZSH_SPECIAL), None)
+        if hit:
+            return [("deny", f"`{hit}` is a special parameter in zsh, the shell this runs in (`path` is tied to "
+                     "PATH, so every later command is \"command not found\"; `status`, `argv` and the like are "
+                     "read-only or special). Name the loop or read variable something else, e.g. `p` or `file`.")]
+    return []
+
+
+FILE_CHECKS = {"ls", "stat", "test", "[", "[["}
+
+
+def in_code_span(cmd, m):
+    # a real backtick substitution of the bare path would run the file, not read it
+    return bool(re.search(r"`[\w~/${}.-]*$", cmd[:m.start()]) and re.match(r"[\w./-]*\\?`", cmd[m.end():]))
+
+
+def only_checks_file(cmd, pos):
+    start = None
+    for start in re.finditer(START, cmd[:pos]):
+        pass
+    opener = cmd[start.start():start.end()].strip() if start else ""
+    if opener in ("$(", "`") or (opener == "(" and start.start() > 0 and cmd[start.start() - 1] in "<>"):
+        return False  # its output is substituted into another command
+    words = re.sub("^" + PREFIX, "", cmd[start.end() if start else 0:pos]).split()
+    end = re.search(r"[;&|\n)`]", cmd[pos:])
+    piped = end and end.group() == "|" and cmd[pos + end.end():pos + end.end() + 1] != "|"
+    return bool(words) and words[0] in FILE_CHECKS and not piped
+
+
 def check_credentials(cmd):
-    m = CREDENTIALS.search(cmd)
+    scan = OUTPUT_REDIRECT.sub(lambda r: " " * len(r.group()), cmd)  # `2>&1 | xargs cat` still pipes
+    m = next((m for m in CREDENTIALS.finditer(cmd)
+              if not in_code_span(cmd, m) and not only_checks_file(scan, m.start())), None)
     if m:
-        # ask, not deny, until a helper covers Sentry event details (retro #10)
-        return [("ask", f"This reads {m.group(0)}, which holds a credential. Prefer the CLI that owns it "
-                 "(sentry-cli, aws, gh); approve only if no CLI command covers it.")]
+        return [("deny", f"This reads {m.group(0)}, which holds a credential. Sentry event details come from "
+                 "the repo's Sentry helper, named in its docs/agents/observability.md; anything else goes "
+                 "through the CLI that owns the credential (sentry-cli, aws, gh, ssh-add).")]
     return []
 
 
 def decide(cmd, cwd):
     cmd = strip_heredocs(cmd)
     findings = check_docker(cmd) + check_git(cmd, cwd) + check_credentials(cmd) + check_gh(cmd) \
-        + check_postgres(cmd) + check_dk_gc(cmd)
+        + check_postgres(cmd) + check_dk_gc(cmd) + check_zsh_names(cmd)
     for level in ("deny", "ask"):
         reasons = [r for l, r in findings if l == level]
         if reasons:
