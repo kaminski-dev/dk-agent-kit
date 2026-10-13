@@ -71,10 +71,12 @@ for f in "$app/config.png" "$shots/link.png" "$other/other.png" "$shots/../../..
   if err=$("$dkassets" push 32 "$f" 2>&1); then fail "file outside scratch accepted: $f"; fi
   grep -qF "dk-assets: outside this session's scratch directory: $f" <<<"$err" || fail "refusal for $f: $err"
 done
-mkdir -p "$shots/again" && printf 'png a2' >"$shots/again/before.png" && printf 'x' >"$shots/a b.png"
+mkdir -p "$shots/again" && printf 'png a2' >"$shots/again/before.png" && printf 'x' >"$shots/before (1).png"
 if err=$("$dkassets" push 32 "$shots/before.png" "$shots/again/before.png" 2>&1); then fail "two files named before.png accepted"; fi
 grep -qxF "dk-assets: two files named before.png; the branch holds them flat" <<<"$err" || fail "duplicate name: $err"
-if err=$("$dkassets" push 32 "$shots/a b.png" 2>&1); then fail "a name the URL cannot carry was accepted"; fi
+# A name the URL cannot carry is refused with the characters allowed and what to do.
+if err=$("$dkassets" push 32 "$shots/before (1).png" 2>&1); then fail "a name the URL cannot carry was accepted"; fi
+grep -qxF "dk-assets: rename 'before (1).png': a file name takes only letters, digits, '.', '_' and '-', so its URL needs no escaping" <<<"$err" || fail "name refusal: $err"
 "$dkassets" push "32:main" "$shots/fixed.png" >/dev/null 2>&1 && fail "an issue that is not a number was accepted"
 if err=$(env -u CLAUDE_CODE_SESSION_ID "$dkassets" push 32 "$shots/fixed.png" 2>&1); then fail "accepted without a session"; fi
 [[ -z "$(remote_sha 32)" ]] || fail "a refused run pushed verify-assets/32"
