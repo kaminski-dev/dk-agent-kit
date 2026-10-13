@@ -19,7 +19,9 @@ private=${DK_PRIVATE_SETTINGS:-$HOME/.config/dk-agent-kit/private.json}
 plugins=(dk-guard dk)
 
 command -v jq >/dev/null || { echo "bootstrap: jq is required" >&2; exit 1; }
-[[ -f "$settings" ]] || echo '{}' > "$settings"
+# a missing settings file merges as {}; only --apply writes it
+current='{}'
+[[ -f "$settings" ]] && current=$(cat "$settings")
 
 layers=("$repo/settings/user.fragment.json")
 [[ -f "$private" ]] && layers+=("$private")
@@ -33,9 +35,9 @@ merged=$(jq -s '
     elif $b == null then $a
     else $b end;
   reduce .[1:][] as $layer (.[0]; merge(.; $layer))
-' "$settings" "${layers[@]}")
+' <(printf '%s\n' "$current") "${layers[@]}")
 
-if diff -u --label "$settings" --label "$settings (merged)" "$settings" <(printf '%s\n' "$merged"); then
+if diff -u --label "$settings" --label "$settings (merged)" <(printf '%s\n' "$current") <(printf '%s\n' "$merged"); then
   echo "bootstrap: settings already up to date"
   changed=0
 else
@@ -60,7 +62,8 @@ if grep -qxF '# >>> dk-agent-kit zsh options >>>' <<<"$zsh_current" ||
   echo "bootstrap: zsh options already in $zshenv"
   zsh_changed=0
 else
-  zsh_merged=$(printf '%s\n\n%s' "$zsh_current" "$zsh_block")
+  zsh_merged=$zsh_block
+  [[ -n "$zsh_current" ]] && zsh_merged=$(printf '%s\n\n%s' "$zsh_current" "$zsh_block")
   diff -u --label "$zshenv" --label "$zshenv (merged)" \
     <(printf '%s\n' "$zsh_current") <(printf '%s\n' "$zsh_merged") || true
   zsh_changed=1
@@ -75,10 +78,13 @@ if [[ "${1:-}" != "--apply" ]]; then
 fi
 
 if ((changed)); then
-  backup="$settings.bak-$(date +%Y%m%d-%H%M%S)"
-  cp "$settings" "$backup"
+  backup=
+  if [[ -f "$settings" ]]; then
+    backup="$settings.bak-$(date +%Y%m%d-%H%M%S)"
+    cp "$settings" "$backup"
+  fi
   printf '%s\n' "$merged" > "$settings"
-  echo "bootstrap: wrote $settings (backup: $backup)"
+  echo "bootstrap: wrote $settings${backup:+ (backup: $backup)}"
 fi
 
 if ((zsh_changed)); then
