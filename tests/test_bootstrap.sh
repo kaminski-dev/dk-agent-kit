@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # bootstrap.sh against fixture settings: merge keeps existing values, adds
 # missing array entries once, never duplicates, and a second run is a no-op.
-# A stubbed claude CLI stands in for the plugin registry and the user-scope
-# playwright MCP server, so no run reaches the real claude or ~/.claude.json.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 tmp=$(mktemp -d)
@@ -26,8 +24,10 @@ cp "$tmp/home/.zshenv" "$tmp/zshenv.orig"
 unset ZDOTDIR
 export HOME="$tmp/home" CLAUDE_SETTINGS="$tmp/settings.json" DK_PRIVATE_SETTINGS="$tmp/private.json"
 
-# The stub logs every call and keeps the playwright server in $tmp/mcp.json:
-# `mcp get` prints it the way claude 2.1 does, `remove` and `add-json` change it.
+# A claude stub on PATH for every run, so none reaches the real claude CLI or
+# ~/.claude.json. It logs each call and keeps the playwright server in
+# $tmp/mcp.json: `mcp get` prints it the way claude 2.1 does, `remove` and
+# `add-json` change it.
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/claude" <<EOF
 #!/usr/bin/env bash
@@ -36,7 +36,7 @@ state="$tmp/mcp.json"
 case "\$1 \$2" in
   "mcp get")
     [[ -f "\$state" ]] || { echo "No MCP server named \\"\$3\\"."; exit 1; }
-    jq -r '"\(.name):", "  Scope: User config (available in all your projects)", "  Status: ✔ Connected",
+    jq -r '"\(.name):", "  Scope: \(.scope // "User config (available in all your projects)")", "  Status: ✔ Connected",
       "  Type: stdio", "  Command: \(.command)", "  Args: \(.args | join(" "))", "  Environment:",
       (.env // {} | to_entries[] | "    \(.key)=\(.value)"), "",
       "To remove this server, run: claude mcp remove \(.name) -s user"' "\$state" ;;
@@ -92,6 +92,13 @@ grep -q "playwright already runs with --isolated" <<<"$out" || fail "second run 
 cp "$z" "$tmp/zshenv.applied"
 "$root/bootstrap.sh" --apply >/dev/null
 [[ "$(mcp_writes)" == 0 ]] || fail "second run changed the MCP server: $(cat "$tmp/claude.log")"
+
+# a local-scope server shadows the user one: left as is
+echo '{"name":"playwright","scope":"Local config (private to you in this project)","command":"npx","args":["-y","@playwright/mcp@latest"]}' > "$tmp/mcp.json"
+: > "$tmp/claude.log"
+out=$("$root/bootstrap.sh" --apply)
+grep -q "not a user-scope stdio server, left as is" <<<"$out" || fail "local-scope run does not say so: $out"
+[[ "$(mcp_writes)" == 0 ]] || fail "local-scope run changed the MCP server: $(cat "$tmp/claude.log")"
 cmp -s "$z" "$tmp/zshenv.applied" || fail "second --apply changed .zshenv"
 [[ "$(jq -c .permissions.allow "$s")" == "$allow" ]] || fail "second --apply changed the allow rules"
 
