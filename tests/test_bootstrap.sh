@@ -61,10 +61,19 @@ PATH="$tmp/bin:$PATH" "$root/bootstrap.sh" --apply >/dev/null
 cmp -s "$z" "$tmp/zshenv.applied" || fail "second --apply changed .zshenv"
 [[ "$(jq -c .permissions.allow "$s")" == "$allow" ]] || fail "second --apply changed the allow rules"
 
-# a hand-written block without the marker (written before the bootstrap had this step)
+# a hand-written block without the marker
 mkdir -p "$tmp/home2"
 printf '# Agent-friendly zsh\nsetopt NO_NOMATCH\nunsetopt EQUALS\n' > "$tmp/home2/.zshenv"
 cp "$tmp/home2/.zshenv" "$tmp/zshenv2.orig"
 HOME="$tmp/home2" PATH="$tmp/bin:$PATH" "$root/bootstrap.sh" --apply >/dev/null
 cmp -s "$tmp/home2/.zshenv" "$tmp/zshenv2.orig" || fail "hand-written zsh options duplicated"
+# neither file yet: the dry run writes nothing, --apply creates both, the block at the top of .zshenv
+mkdir -p "$tmp/home3/.claude"
+s3="$tmp/home3/.claude/settings.json"
+HOME="$tmp/home3" CLAUDE_SETTINGS="$s3" "$root/bootstrap.sh" >/dev/null
+[[ ! -e "$s3" ]] || fail "dry run created the settings file"
+[[ ! -e "$tmp/home3/.zshenv" ]] || fail "dry run created .zshenv"
+HOME="$tmp/home3" CLAUDE_SETTINGS="$s3" PATH="$tmp/bin:$PATH" "$root/bootstrap.sh" --apply >/dev/null
+jq -e '.permissions.deny | index("Bash(docker container prune *)")' "$s3" >/dev/null || fail "--apply did not create the settings"
+[[ "$(head -1 "$tmp/home3/.zshenv")" == '# >>> dk-agent-kit zsh options >>>' ]] || fail "new .zshenv does not start with the block: $(head -3 "$tmp/home3/.zshenv")"
 echo "bootstrap: all checks passed"
