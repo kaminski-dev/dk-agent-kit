@@ -773,11 +773,38 @@ def check_zsh_names(cmd):
     for offset, names in targets:
         if quoted_text(cmd, offset, shell=r"\bzsh\s+(?:(?:[-+]o\s+\w+|[-+][a-zA-Z]+)\s+)*"):
             continue
-        hit = next((n for n in names if n in ZSH_SPECIAL), None)
-        if hit:
-            return [("deny", f"`{hit}` is a special parameter in zsh, the shell this runs in (`path` is tied to "
-                     "PATH, so every later command is \"command not found\"; `status`, `argv` and the like are "
-                     "read-only or special). Name the loop or read variable something else, e.g. `p` or `file`.")]
+        findings = zsh_name_findings(names)
+        if findings:
+            return findings
+    return []
+
+
+def zsh_name_findings(names):
+    hit = next((n for n in names if n in ZSH_SPECIAL), None)
+    if hit:
+        return [("deny", f"`{hit}` is a special parameter in zsh, the shell this runs in (`path` is tied to "
+                 "PATH, so every later command is \"command not found\"; `status`, `argv` and the like are "
+                 "read-only or special). Name the loop or read variable something else, e.g. `p` or `file`.")]
+    return []
+
+
+def zsh_name_words(segs):
+    for seg in (seg for seg in segs if seg.shell == "zsh"):
+        words, names = seg.words, []
+        while words and words[0] in LEAD:
+            words = words[1:]
+        if words[:1] in (["for"], ["foreach"], ["select"]):
+            for w in words[1:]:
+                if w == "in" or w.startswith("("):
+                    break
+                names.append(w)
+        else:
+            _, words = command(seg)
+            if words[:1] == ["read"]:
+                names = [w.partition("?")[0] for w in words[1:] if not w.startswith("-")]
+        findings = zsh_name_findings(names)
+        if findings:
+            return findings
     return []
 
 
@@ -829,7 +856,7 @@ def decide(cmd, cwd):
             + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw)
     else:
         findings = docker_words(segs) + git_words(segs, cwd) + check_credentials(raw) + gh_words(segs) \
-            + postgres_words(segs) + dk_gc_words(segs) + check_zsh_names(raw)
+            + postgres_words(segs) + dk_gc_words(segs) + zsh_name_words(segs)
     for level in ("deny", "ask"):
         reasons = [r for l, r in findings if l == level]
         if reasons:
