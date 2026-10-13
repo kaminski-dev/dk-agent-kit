@@ -1,28 +1,68 @@
 #!/usr/bin/env bash
-# Shows what mattpocock/skills changed in each vendored skill since the
-# commit recorded in UPSTREAM.md. Read-only: it prints diffs, never edits.
-#   upstream/sync.sh [path-to-clone]   (default: a fresh clone in a temp dir)
+# Shows what each upstream source changed in the files the kit adapted, since
+# the commit recorded for it in UPSTREAM.md. Read-only: it prints, never edits.
+#   upstream/sync.sh [clones-dir]   (default: fresh clones in a temp dir)
+# A clones dir keeps <owner>/<repo> clones between runs: missing ones are
+# cloned, present ones fetched.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-base=$(grep -m1 -oE 'mattpocock/skills \(MIT\) @ [0-9a-f]+' "$here/UPSTREAM.md" | awk '{print $4}')
-clone=${1:-}
-if [[ -z "$clone" ]]; then
-  clone=$(mktemp -d)
-  trap 'rm -rf "$clone"' EXIT
-  git clone -q https://github.com/mattpocock/skills "$clone"
+dir=${1:-}
+if [[ -z "$dir" ]]; then
+  dir=$(mktemp -d)
+  trap 'rm -rf "$dir"' EXIT
 fi
-git -C "$clone" fetch -q origin
-head=$(git -C "$clone" rev-parse --short origin/main)
-echo "mattpocock/skills $base..$head"
-paths=$(sed -n '/^## mattpocock/,/^## /p' "$here/UPSTREAM.md" | grep -oE 'skills/(engineering|productivity)/[a-z-]+' | sort -u)
-changed=0
-for p in $paths; do
-  if ! git -C "$clone" diff --quiet "$base" origin/main -- "$p"; then
-    changed=1
-    echo; echo "=== $p"
-    git -C "$clone" log --oneline "$base..origin/main" -- "$p"
-    git -C "$clone" diff --stat "$base" origin/main -- "$p"
+
+# One line per source: "<owner/repo> <commit> <path>...", from each
+# "## <owner>/<repo> ... @ <commit>" heading and the Upstream path column
+# (comma-separated, each listed once) of the table under it.
+sources() {
+  awk '
+    function flush() { if (repo != "" && paths != "") print repo, commit, paths }
+    /^## / {
+      flush(); repo = ""; paths = ""; rows = 0; split("", seen)
+      if (match($0, / @ [0-9a-f]+$/)) { repo = $2; commit = substr($0, RSTART + 3) }
+      next
+    }
+    repo != "" && /^\|/ {
+      if (++rows <= 2) next
+      split($0, cell, "|"); n = split(cell[3], p, ",")
+      for (i = 1; i <= n; i++) { gsub(/[ `]/, "", p[i]); if (p[i] != "" && !seen[p[i]]++) paths = paths " " p[i] }
+    }
+    END { flush() }
+  ' "$here/UPSTREAM.md"
+}
+
+while read -r repo base paths <&3; do
+  clone="$dir/$repo"
+  if [[ -d "$clone/.git" ]]; then
+    git -C "$clone" fetch -q origin
+    # Fetch neither recreates a missing origin/HEAD (git before 2.48) nor
+    # moves an existing one when upstream changes its default branch.
+    git -C "$clone" remote set-head origin --auto >/dev/null
+  else
+    git clone -q "https://github.com/$repo" "$clone"
   fi
-done
-((changed)) || echo "no mattpocock/skills changes to vendored skills (pstack and HumanLayer ports: compare by hand, see UPSTREAM.md)"
-echo; echo "Full diff of one skill: git -C <clone> diff $base origin/main -- <path>"
+  head=$(git -C "$clone" rev-parse --short refs/remotes/origin/HEAD)
+  out=""
+  for p in $paths; do
+    if ! git -C "$clone" cat-file -e "$base:$p" 2>/dev/null; then
+      out+=$'\n'"$p: not found at $base"$'\n'
+      continue
+    fi
+    git -C "$clone" diff --quiet "$base" "$head" -- "$p" && continue
+    out+=$'\n'"=== $p"$'\n'
+    out+=$(git -C "$clone" log --oneline "$base..$head" -- "$p")$'\n'
+    out+=$(git -C "$clone" diff --stat "$base" "$head" -- "$p")$'\n'
+  done
+  if [[ -z "$out" ]]; then
+    echo "$repo $base..$head: no changes to adapted files"
+  else
+    echo "$repo $base..$head"
+    printf '%s\n' "$out"
+  fi
+done 3< <(sources)
+if [[ -n "${1:-}" ]]; then
+  echo "Full diff of one path: git -C $dir/<owner>/<repo> diff <recorded> origin/HEAD -- <path>"
+else
+  echo "Full diff of one path: rerun as upstream/sync.sh <clones-dir> to keep the clones, then git -C <clones-dir>/<owner>/<repo> diff <recorded> origin/HEAD -- <path>"
+fi

@@ -1,0 +1,290 @@
+#!/usr/bin/env python3
+"""Stand-in for the GitHub CLI inside an eval workspace: nothing leaves the machine.
+
+State lives in <workspace>/.tracker/state.json. Every call is logged to
+.tracker/calls.log; what the graders read is written as plain text:
+.tracker/issue-<N>.md (labels, state and every comment) and .tracker/pr.md
+(the last PR opened, with the acceptance result for its head branch).
+"""
+import json
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import tempfile
+
+WS = pathlib.Path(__file__).resolve().parent.parent
+TRACKER = WS / ".tracker"
+STATE = TRACKER / "state.json"
+NOW = "2026-10-13T09:00:00Z"
+
+
+def load():
+    return json.loads(STATE.read_text())
+
+
+def save(state):
+    STATE.write_text(json.dumps(state, indent=2))
+    for num, issue in state["issues"].items():
+        lines = [f"# #{num} {issue['title']}", f"state: {issue['state']}",
+                 "labels: " + ", ".join(issue["labels"]), ""]
+        for c in issue["comments"]:
+            lines += [f"--- comment by {c['author']}", c["body"], ""]
+        (TRACKER / f"issue-{num}.md").write_text("\n".join(lines))
+
+
+def fail(msg, code=1):
+    print(msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def opts(args, flags_with_value, multi=()):
+    """Split args into positionals and {flag: value}; flags in multi collect lists."""
+    pos, out = [], {}
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a.startswith("-"):
+            key, eq, val = a.partition("=")
+            if key in flags_with_value:
+                if not eq:
+                    i += 1
+                    val = args[i] if i < len(args) else ""
+                if key in multi:
+                    out.setdefault(key, []).append(val)
+                else:
+                    out[key] = val
+            else:
+                out[key] = True
+        else:
+            pos.append(a)
+        i += 1
+    return pos, out
+
+
+def body_of(o):
+    if "--body-file" in o or "-F" in o:
+        src = o.get("--body-file") or o.get("-F")
+        return sys.stdin.read() if src == "-" else pathlib.Path(src).read_text()
+    return o.get("--body") or o.get("-b") or ""
+
+
+def emit(value, o):
+    """Print JSON, through jq when --jq is given (as gh does)."""
+    text = json.dumps(value, indent=2)
+    if "--jq" in o or "-q" in o:
+        expr = o.get("--jq") or o.get("-q")
+        r = subprocess.run(["jq", "-r", expr], input=text, capture_output=True, text=True)
+        sys.stdout.write(r.stdout)
+        sys.stderr.write(r.stderr)
+        sys.exit(r.returncode)
+    print(text)
+
+
+def issue_json(state, num):
+    i = state["issues"][num]
+    return {
+        "number": int(num), "title": i["title"], "body": i["body"], "state": i["state"].upper(),
+        "labels": [{"name": n} for n in i["labels"]],
+        "comments": [{"author": {"login": c["author"]}, "body": c["body"], "createdAt": NOW} for c in i["comments"]],
+        "author": {"login": i.get("author", "owner")}, "createdAt": i.get("createdAt", NOW),
+        "url": f"https://github.com/{state['repo']}/issues/{num}",
+    }
+
+
+def pick(d, o):
+    fields = o.get("--json")
+    if not fields or fields is True:
+        return d
+    return {k: d.get(k) for k in fields.split(",")}
+
+
+def issue_number(pos, state):
+    if not pos:
+        fail("issue number required")
+    num = pos[0].lstrip("#").rsplit("/", 1)[-1]
+    if num not in state["issues"]:
+        fail(f"GraphQL: Could not resolve to an issue or pull request with the number of {num}.")
+    return num
+
+
+VALUE_FLAGS = {"--json", "--jq", "-q", "--body", "-b", "--body-file", "-F", "--add-label", "--remove-label",
+               "--label", "-l", "--state", "-s", "--search", "-S", "--limit", "-L", "--title", "-t", "--base", "-B",
+               "--head", "-H", "--repo", "-R", "--comment", "-c", "--reason", "-r", "--assignee", "-a", "--parent",
+               "--add-sub-issue", "--method", "-X", "--field", "-f", "--raw-field", "--milestone", "-m",
+               "--template", "-T", "--color", "--description", "-d"}
+MULTI = {"--add-label", "--remove-label", "--label", "-l", "--field", "-f", "--raw-field"}
+
+
+def labels_from(values):
+    return [l.strip() for v in values or [] for l in v.split(",") if l.strip()]
+
+
+def cmd_issue(sub, args, state):
+    pos, o = opts(args, VALUE_FLAGS, MULTI)
+    if sub == "view":
+        num = issue_number(pos, state)
+        d = issue_json(state, num)
+        if "--json" in o:
+            emit(pick(d, o), o)
+        else:
+            print(f"{d['title']} #{num}\n{d['state']} • labels: {', '.join(state['issues'][num]['labels'])}\n\n{d['body']}")
+            if "--comments" in o:
+                for c in d["comments"]:
+                    print(f"\n--- {c['author']['login']}\n{c['body']}")
+    elif sub == "list":
+        want_state = (o.get("--state") or o.get("-s") or "open").lower()
+        want_labels = labels_from(o.get("--label") or o.get("-l"))
+        rows = []
+        for num, i in state["issues"].items():
+            if want_state != "all" and i["state"] != want_state:
+                continue
+            if any(l not in i["labels"] for l in want_labels):
+                continue
+            rows.append(issue_json(state, num))
+        if "--json" in o:
+            emit([pick(r, o) for r in rows], o)
+        else:
+            for r in rows:
+                print(f"{r['number']}\t{r['state']}\t{r['title']}")
+    elif sub == "comment":
+        num = issue_number(pos, state)
+        body = body_of(o)
+        if not body.strip():
+            fail("body cannot be blank")
+        state["issues"][num]["comments"].append({"author": "agent", "body": body})
+        save(state)
+        print(f"https://github.com/{state['repo']}/issues/{num}#issuecomment-{len(state['issues'][num]['comments'])}")
+    elif sub == "edit":
+        num = issue_number(pos, state)
+        i = state["issues"][num]
+        for l in labels_from(o.get("--remove-label")):
+            if l in i["labels"]:
+                i["labels"].remove(l)
+        for l in labels_from(o.get("--add-label")):
+            if l not in state["labels"]:
+                fail(f"could not add label: '{l}' not found")
+            if l not in i["labels"]:
+                i["labels"].append(l)
+        if "--title" in o:
+            i["title"] = o["--title"]
+        if "--body" in o or "--body-file" in o:
+            i["body"] = body_of(o)
+        save(state)
+        print(f"https://github.com/{state['repo']}/issues/{num}")
+    elif sub in ("close", "reopen"):
+        num = issue_number(pos, state)
+        i = state["issues"][num]
+        if o.get("--comment") or o.get("-c"):
+            i["comments"].append({"author": "agent", "body": o.get("--comment") or o.get("-c")})
+        i["state"] = "closed" if sub == "close" else "open"
+        save(state)
+    elif sub == "create":
+        num = str(max(int(n) for n in state["issues"]) + 1)
+        state["issues"][num] = {"title": o.get("--title") or o.get("-t") or "", "body": body_of(o), "state": "open",
+                                "labels": labels_from(o.get("--label") or o.get("-l")), "comments": [],
+                                "author": "agent"}
+        save(state)
+        print(f"https://github.com/{state['repo']}/issues/{num}")
+    else:
+        fail(f"gh issue {sub}: not supported by this repo's tracker stand-in")
+
+
+def current_branch(cwd):
+    r = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd, capture_output=True, text=True)
+    return r.stdout.strip()
+
+
+def acceptance(head):
+    """Check out head from the workspace's origin and run the repo's tests and the hidden acceptance check."""
+    check = TRACKER / "acceptance.py"
+    if not check.exists():
+        return []
+    origin = WS / "origin.git"
+    archive = subprocess.run(["git", "--git-dir", str(origin), "archive", f"refs/heads/{head}"], capture_output=True)
+    if archive.returncode != 0:
+        return [f"acceptance: fail (branch {head} is not on origin)"]
+    src = pathlib.Path(tempfile.mkdtemp(prefix="pr-", dir=TRACKER))
+    try:
+        if subprocess.run(["tar", "-x", "-C", str(src)], input=archive.stdout, capture_output=True).returncode != 0:
+            return [f"acceptance: fail (could not extract {head})"]
+        unit = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-q"], cwd=src,
+                              capture_output=True, text=True)
+        acc = subprocess.run([sys.executable, str(check), str(src)], capture_output=True, text=True)
+    finally:
+        shutil.rmtree(src, ignore_errors=True)
+    return [f"unit tests: {'pass' if unit.returncode == 0 else 'fail'}",
+            f"acceptance: {'pass' if acc.returncode == 0 else 'fail'}",
+            (acc.stdout + acc.stderr).strip()]
+
+
+def cmd_pr(sub, args, state):
+    pos, o = opts(args, VALUE_FLAGS, MULTI)
+    if sub == "create":
+        head = o.get("--head") or o.get("-H") or current_branch(os.getcwd())
+        base = o.get("--base") or o.get("-B") or "main"
+        num = len(state["prs"]) + 1
+        pr = {"number": num, "title": o.get("--title") or o.get("-t") or "", "body": body_of(o),
+              "base": base, "head": head, "state": "OPEN"}
+        state["prs"].append(pr)
+        save(state)
+        lines = [f"# PR #{num} {pr['title']}", f"base: {base}", f"head: {head}"] + acceptance(head)
+        (TRACKER / "pr.md").write_text("\n".join(lines) + "\n\n## Body\n\n" + pr["body"] + "\n")
+        print(f"https://github.com/{state['repo']}/pull/{num}")
+    elif sub in ("view", "list"):
+        prs = state["prs"]
+        if sub == "view":
+            if pos:
+                prs = [p for p in prs if str(p["number"]) == pos[0].lstrip("#")]
+            else:
+                prs = [p for p in prs if p["head"] == current_branch(os.getcwd())]
+            if not prs:
+                fail("no pull requests found")
+            emit(pick(prs[0], o), o)
+        else:
+            emit([pick(p, o) for p in prs], o)
+    else:
+        fail(f"gh pr {sub}: not supported by this repo's tracker stand-in")
+
+
+def main(argv):
+    with open(TRACKER / "calls.log", "a") as log:
+        log.write(" ".join(argv) + "\n")
+    if not argv:
+        fail("usage: gh <command>")
+    state = load()
+    cmd, rest = argv[0], argv[1:]
+    sub, args = (rest[0], rest[1:]) if rest else ("", [])
+    if cmd == "issue":
+        cmd_issue(sub, args, state)
+    elif cmd == "pr":
+        cmd_pr(sub, args, state)
+    elif cmd == "run" and sub in ("list", "view"):
+        pos, o = opts(args, VALUE_FLAGS | {"--workflow", "-w", "--branch"}, MULTI)
+        runs = state.get("runs", [])
+        if "--branch" in o:
+            runs = [r for r in runs if r["headBranch"] == o["--branch"]]
+        if sub == "view":
+            runs = [r for r in runs if pos and str(r["databaseId"]) == pos[0]]
+            if not runs:
+                fail("run not found")
+            r = runs[0]
+            print(f"X {r['headBranch']} ci-go #{r['databaseId']}\n\nJOBS\n✓ test\n✓ lint\nX Go Vulnerability Check"
+                  if r["conclusion"] == "failure" else f"✓ {r['headBranch']} ci-go #{r['databaseId']}")
+        else:
+            emit([pick(r, o) for r in runs], o)
+    elif cmd == "label" and sub == "list":
+        _, o = opts(args, VALUE_FLAGS, MULTI)
+        emit([{"name": l} for l in state["labels"]], o)
+    elif cmd == "repo" and sub == "view":
+        _, o = opts(args, VALUE_FLAGS, MULTI)
+        emit(pick({"nameWithOwner": state["repo"], "defaultBranchRef": {"name": "main"}}, o), o)
+    elif cmd == "auth" and sub == "status":
+        print("github.com\n  ✓ Logged in to github.com (tracker stand-in)")
+    else:
+        fail(f"gh {cmd} {sub}: not supported by this repo's tracker stand-in")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

@@ -19,12 +19,16 @@ jobs:
         run: python3 -I tests/hooks/test_session_baseline.py
       - name: skills frontmatter, references, provenance
         run: python3 -I tests/test_skills.py
+      - name: skill-eval fixtures
+        run: python3 -I tests/test_evals.py
       - name: bootstrap merge
         run: bash tests/test_bootstrap.sh
       - name: dk-pg against Docker
         run: bash tests/test_dk_pg.sh
       - name: dk-gc against fixture repos
         run: bash tests/test_dk_gc.sh
+      - name: upstream sync against fixture repos
+        run: bash tests/test_sync.sh
       - name: manifests parse
         run: |
           for f in .claude-plugin/marketplace.json plugins/*/.claude-plugin/plugin.json plugins/*/hooks/hooks.json settings/*.json; do

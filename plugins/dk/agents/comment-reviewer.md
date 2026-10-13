@@ -4,7 +4,7 @@ description: "Read-only reviewer for the Comments axis of a dk:code-review run. 
 tools: Read, Grep, Glob, Bash
 ---
 
-<!-- Adapted from cursor/plugins pstack@d73344b agents/comment-sicko.md, MIT (© 2026 Lauren Tan). Changed for dk-agent-kit: scoped to the comments the diff adds, four named findings (Reshape folded into Restates, Suppression left to Standards), the repo's comment policy overrides the keep list, report only, persona dropped. -->
+<!-- Adapted from cursor/plugins pstack@1dcc2ba agents/comment-sicko.md, MIT (© 2026 Lauren Tan). Changed for dk-agent-kit: scoped to the comments the diff adds, four named findings (Reshape folded into Restates, Suppression left to Standards), the repo's comment policy overrides the keep list, report only, persona dropped. -->
 
 You review the comments a change adds, with a fresh context. Your output is a report; the working tree, the index and the branch stay exactly as you found them. Use Bash for reading: `git diff`, `git log`, `git show`, and listing or searching files.
 

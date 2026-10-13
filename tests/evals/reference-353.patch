@@ -1,0 +1,11 @@
+--- a/ledger/audit_store.py	2026-10-13 11:00:58
++++ b/ledger/audit_store.py	2026-10-13 11:00:58
+@@ -47,7 +47,7 @@
+         return self.conn.execute(
+             f"SELECT {COLUMNS} FROM audit_logs"
+             " WHERE entity_type = ? AND entity_id = ?"
+-            " ORDER BY changed_at DESC"
++            " ORDER BY changed_at DESC, action, changed_by, field_name"
+             " LIMIT ?",
+             (entity_type, entity_id, limit),
+         ).fetchall()

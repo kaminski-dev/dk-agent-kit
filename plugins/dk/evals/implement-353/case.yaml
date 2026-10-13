@@ -1,0 +1,52 @@
+schema_version: "1.1"
+name: implement-353
+description: >
+  clientdata #353 (Customer History order), replayed on a stand-in repo: dk:implement takes the
+  triaged ticket to a PR into pre-main with evidence. The tracker is the workspace's gh stand-in,
+  so the PR is a file, never a real one.
+tags: [implement]
+runs: 1
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 150
+  timeout_seconds: 2400
+  allowed_tools: [Read, Glob, Grep, Skill, Agent, TodoWrite, Bash, Write, Edit]
+graders:
+  - name: pr-into-pre-main
+    type: regex
+    target: { source: file, path: .tracker/pr.md }
+    pattern: "^base: pre-main$"
+    flags: m
+  - name: acceptance-passes
+    type: regex
+    target: { source: file, path: .tracker/pr.md }
+    pattern: "^acceptance: pass$"
+    flags: m
+  - name: unit-tests-pass
+    type: regex
+    target: { source: file, path: .tracker/pr.md }
+    pattern: "^unit tests: pass$"
+    flags: m
+  - name: names-the-issue
+    type: regex
+    target: { source: file, path: .tracker/pr.md }
+    pattern: "(Closes|Refs) #353"
+  - name: evidence
+    type: llm
+    focus: { source: file, path: .tracker/pr.md }
+    criteria: >
+      The PR body (after "## Body") has an Evidence section with a before and an after, each backed by
+      captured output rather than a claim: the regression test failing on the pre-fix state and passing
+      on the branch, or `python3 -m ledger history` output before and after in which the three fields of
+      the 2026-10-02 edit go from an arbitrary order (phone, email, city) to field_name order
+      (city, email, phone). PASS when at least one such before/after pair is shown with output; FAIL when
+      the evidence is missing, only described, or shows the after alone.
+  - name: verified
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"dk:verify"'
+  - name: reviewed
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"dk:code-review"'

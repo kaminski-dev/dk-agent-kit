@@ -96,11 +96,40 @@ for name in skills:
     if name not in ORIGINAL and not re.search(rf"^\| (skills/)?{re.escape(name)} \|", upstream, re.M):
         errors.append(f"skills/{name}: no row in upstream/UPSTREAM.md")
 
-dk_column = " ".join(re.findall(r"^\| ([^|]+) \|", upstream, re.M))
-for name, path in agents.items():
-    m = re.search(r"<!-- Adapted from (\S+(?: \S+)?)@([0-9a-f]+) ", path.read_text())
-    if m and not (re.search(rf"\b{re.escape(name)}\b", dk_column) and f"@ {m.group(2)}" in upstream):
-        errors.append(f"agents/{name}: adapted from {m.group(1)}@{m.group(2)}, but upstream/UPSTREAM.md has no row for it at that commit")
+dk_column_by_section_commit = {
+    commit: " ".join(re.findall(r"^\| ([^|]+) \|", rows, re.M))
+    for commit, rows in re.findall(r"^## .*? @ ([0-9a-f]+)\n(.*?)(?=^## |\Z)", upstream, re.M | re.S)
+}
+marked = [("agents", n, p) for n, p in agents.items()] + [("skills", n, p) for n, p in skills.items()]
+for kind, name, path in marked:
+    for source, commit in re.findall(r"<!-- Adapted from (\S+(?: \S+)?)@([0-9a-f]+) ", path.read_text()):
+        if not re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", dk_column_by_section_commit.get(commit, "")):
+            errors.append(f"{kind}/{name}: adapted from {source}@{commit}, but upstream/UPSTREAM.md has no row for it in the section at that commit")
+
+# The shape upstream/sync.sh parses (the format note at the top of UPSTREAM.md).
+# sync.sh skips a section whose heading it cannot read and matches no file
+# against a glob or a shorthand path, so either one hides upstream changes.
+in_section, table_rows = False, 0
+for n, line in enumerate(upstream.splitlines(), 1):
+    where = f"upstream/UPSTREAM.md:{n}"
+    if line.startswith("## "):
+        in_section, table_rows = True, 0
+        if not re.fullmatch(r"## [\w.-]+/[\w.-]+(?: [^()@]+)? \([^()]+\) @ [0-9a-f]{7,40}", line):
+            errors.append(f"{where}: heading is not '## <owner>/<repo> [label] (<license>) @ <commit>'")
+        continue
+    if not (in_section and line.startswith("|")):
+        continue
+    table_rows += 1
+    if table_rows <= 2:  # header and separator
+        continue
+    paths = [p.strip().strip("`") for p in line.split("|")[2].split(",")]
+    for i, path in enumerate(paths):
+        if not path:
+            errors.append(f"{where}: empty upstream path")
+        elif re.search(r"[*?\[\]{}]", path):
+            errors.append(f"{where}: glob in upstream path {path!r}; list each file")
+        elif i and "/" in paths[0] and "/" not in path:
+            errors.append(f"{where}: shorthand upstream path {path!r}; write it from the repo root")
 
 for e in errors:
     print("FAIL", e)
