@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Merges the kit's user-settings fragment into ~/.claude/settings.json, adds
-# the zsh options block to ~/.zshenv and installs the kit's plugins from this
-# checkout. A plugin cannot ship permission rules, autoMode settings or shell
-# options, so those travel this way.
+# the zsh options block to ~/.zshenv, installs the kit's plugins from this
+# checkout and adds --isolated to an existing user-scope playwright MCP server.
+# A plugin cannot ship permission rules, autoMode settings, shell options or
+# MCP arguments, so those travel this way.
 #
-#   ./bootstrap.sh            show the settings and .zshenv diffs, change nothing
-#   ./bootstrap.sh --apply    back up both files, write them, install plugins
+#   ./bootstrap.sh            show the settings, .zshenv and MCP diffs, change nothing
+#   ./bootstrap.sh --apply    back up both files, write them, install plugins,
+#                             re-register the playwright server
 #
 # Objects merge key by key, arrays gain the entries they lack (nothing is
 # removed or reordered), scalars from the fragment win. A private overlay at
@@ -69,11 +71,48 @@ else
   zsh_changed=1
 fi
 
+# Without --isolated, two sessions started from one directory share the
+# Playwright MCP browser profile and the second gets "Browser is already in
+# use". Only an existing user-scope stdio server changes, and only through the
+# claude CLI: remove, then add-json with the same command, args and env.
+# `claude mcp get` joins the args with spaces, so an arg containing a space
+# would split; the playwright args have none.
+mcp_changed=0
+mcp=
+mcp_field() { sed -n "s/^  $1: //p" <<<"$mcp"; }
+mcp_json() {
+  jq -cn --arg cmd "$(mcp_field Command)" --arg args "$1" \
+    --arg env "$(sed -n '/^  Environment:$/,/^$/s/^    //p' <<<"$mcp")" '
+    {type: "stdio", command: $cmd, args: ($args | split(" ") | map(select(. != ""))),
+     env: ([$env | split("\n")[] | select(. != "") | capture("^(?<k>[^=]+)=(?<v>.*)$") | {(.k): .v}] | add // {})}'
+}
+if ! command -v claude >/dev/null; then
+  echo "bootstrap: no claude CLI on PATH, playwright MCP server not checked"
+elif ! mcp=$(claude mcp get playwright 2>/dev/null); then
+  echo "bootstrap: no user-scope playwright MCP server, none added"
+elif ! grep -q '^  Scope: User config' <<<"$mcp" || [[ "$(mcp_field Type)" != stdio ]]; then
+  echo "bootstrap: the playwright MCP server is not a user-scope stdio server, left as is"
+elif mcp_args=$(mcp_field Args); [[ " $mcp_args " =~ \ --isolated[\ =] ]]; then
+  echo "bootstrap: playwright already runs with --isolated"
+else
+  diff -u --label "claude mcp get playwright" --label "claude mcp get playwright (merged)" \
+    <(printf '  Args: %s\n' "$mcp_args") <(printf '  Args: %s\n' "$mcp_args --isolated") || true
+  mcp_old=$(mcp_json "$mcp_args")
+  mcp_new=$(mcp_json "$mcp_args --isolated")
+  mcp_changed=1
+fi
+# single-quotes a printed command's argument, so it can be pasted into a shell
+quote() { local q="'\\''"; printf "'%s'" "${1//\'/$q}"; }
+
 if [[ "${1:-}" != "--apply" ]]; then
   echo
   echo "bootstrap: dry run. --apply writes this and runs:"
   echo "  claude plugin marketplace add $repo"
   for p in "${plugins[@]}"; do echo "  claude plugin install $p@dk-agent-kit"; done
+  if ((mcp_changed)); then
+    echo "  claude mcp remove playwright -s user"
+    echo "  claude mcp add-json -s user playwright $(quote "$mcp_new")"
+  fi
   exit 0
 fi
 
@@ -103,4 +142,12 @@ fi
 for p in "${plugins[@]}"; do
   claude plugin install "$p@dk-agent-kit"
 done
+
+if ((mcp_changed)); then
+  echo "bootstrap: re-registering playwright with --isolated; if the add fails, restore it with"
+  echo "  claude mcp add-json -s user playwright $(quote "$mcp_old")"
+  claude mcp remove playwright -s user
+  claude mcp add-json -s user playwright "$mcp_new"
+  echo "bootstrap: playwright now runs with --isolated in sessions started from now on"
+fi
 echo "bootstrap: done. Run /reload-plugins in open sessions."
