@@ -11,8 +11,14 @@ human (--yes, piped input), and
 hints for gh calls that silently drop the issue body and for an unlabelled
 Postgres server that dk-pg should start instead. Everything else passes.
 
+The rules match on words: the command is split once, as the shell reads it,
+into segments of words (quotes, here-docs, redirections, substitutions and
+`<shell> -c` scripts included). Quoted text and quoted here-doc bodies are data,
+so a commit message may mention a command; the substitutions of an unquoted
+here-doc run, so they are checked. A command the splitter cannot read gets the
+older raw-string checks, so a parse failure never lets a command through.
+
 This raises the floor against agent mistakes; it is not a security boundary.
-Text inside heredocs is ignored, so a commit message may mention a command.
 """
 import json
 import os
@@ -26,6 +32,7 @@ SHARED = {"pre-main"}
 FORCE_OK = re.compile(r"^verify-assets/")
 CREDENTIALS = re.compile(r"\.sentryclirc|\.aws/credentials|(?<![\w.])\.netrc\b|\.ssh/id_[a-z0-9]+\b(?!\.pub)")
 
+# The raw-string checks, for a command the splitter cannot read.
 # Where a command can start: line start, after a control operator, inside $( or
 # backticks, after a shell keyword, or at the opening quote of `bash -c '...'`.
 OPENERS = r"[;&|\n({`]|\$\(|\b(?:then|do|else|while|until|if)\s|-c\s+['\"]"
@@ -494,6 +501,14 @@ def git_findings(tokens, path):
     return findings
 
 
+def git_words(segs, cwd):
+    findings = []
+    for _, words, path in commands(segs, cwd):
+        if words and os.path.basename(words[0]) == "git":
+            findings += git_findings(words, path)
+    return findings
+
+
 def check_push(rest, path):
     force = delete = False
     lease = False
@@ -833,29 +848,38 @@ def check_credentials(cmd):
     scan = OUTPUT_REDIRECT.sub(lambda r: " " * len(r.group()), cmd)  # `2>&1 | xargs cat` still pipes
     m = next((m for m in CREDENTIALS.finditer(cmd)
               if not in_code_span(cmd, m) and not only_checks_file(scan, m.start())), None)
-    if m:
-        return [("deny", f"This reads {m.group(0)}, which holds a credential. Sentry event details come from "
-                 "the repo's Sentry helper, named in its docs/agents/observability.md; anything else goes "
-                 "through the CLI that owns the credential (sentry-cli, aws, gh, ssh-add).")]
+    return credential_findings(m.group(0)) if m else []
+
+
+def credential_findings(path):
+    return [("deny", f"This reads {path}, which holds a credential. Sentry event details come from the repo's "
+             "Sentry helper, named in its docs/agents/observability.md; anything else goes through the CLI that "
+             "owns the credential (sentry-cli, aws, gh, ssh-add).")]
+
+
+def credential_words(segs):
+    for seg in segs:
+        _, words = command(seg)
+        # ls, stat or test read nothing, unless their output feeds a pipe or a substitution
+        if words[:1] and words[0] in FILE_CHECKS and not seg.piped_out and not seg.substituted:
+            continue
+        texts = [w for k, w in enumerate(seg.words) if k not in seg.scripts] + [t for _, t in seg.redirects]
+        for text in texts:
+            for m in CREDENTIALS.finditer(text):
+                # a literal backtick pair around the path is a Markdown code span in text, not a read
+                if not (re.search(r"`[\w~/${}.-]*$", text[:m.start()]) and re.match(r"[\w./-]*`", text[m.end():])):
+                    return credential_findings(m.group(0))
     return []
-
-
-def git_words(segs, cwd):
-    findings = []
-    for _, words, path in commands(segs, cwd):
-        if words and os.path.basename(words[0]) == "git":
-            findings += git_findings(words, path)
-    return findings
 
 
 def decide(cmd, cwd):
     segs = split(cmd)
-    raw = strip_heredocs(cmd)
     if segs is None:  # a command the splitter cannot read gets the raw-string checks, so the guard never fails open
+        raw = strip_heredocs(cmd)
         findings = check_docker(raw) + check_git(raw, cwd) + check_credentials(raw) + check_gh(raw) \
             + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw)
     else:
-        findings = docker_words(segs) + git_words(segs, cwd) + check_credentials(raw) + gh_words(segs) \
+        findings = docker_words(segs) + git_words(segs, cwd) + credential_words(segs) + gh_words(segs) \
             + postgres_words(segs) + dk_gc_words(segs) + zsh_name_words(segs)
     for level in ("deny", "ask"):
         reasons = [r for l, r in findings if l == level]
