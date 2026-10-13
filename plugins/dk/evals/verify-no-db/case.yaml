@@ -1,7 +1,7 @@
 schema_version: "1.1"
 name: verify-no-db
 description: >
-  The #353 fix branch in a repo whose verify doc says there is no database to start (the command
+  A clean #353 fix in a repo whose verify doc says there is no database to start (the command
   line keeps its data in a SQLite file). dk:verify proves the fix with a control run and starts no
   Postgres: dk-pg, docker and the Postgres binaries are stand-ins that log any attempt.
 tags: [verify]
@@ -31,5 +31,6 @@ graders:
       the pre-fix state (origin/pre-main) and a run on the fix branch, each against a freshly seeded
       database. In the control, the three fields of Customer 7's 2026-10-02 edit come in an
       arbitrary order (phone, email, city); on the branch they come by field name (city, email,
-      phone). PASS when both runs are shown with their output and the difference is visible; FAIL
-      when either run is missing, only described, or the control already shows the fixed order.
+      phone). Judge only these two runs: other findings or the overall verdict do not matter. PASS
+      when both runs are shown with their output and the difference is visible; FAIL when either run
+      is missing, only described, or the control already shows the fixed order.

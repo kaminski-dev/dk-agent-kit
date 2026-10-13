@@ -1,8 +1,8 @@
 schema_version: "1.1"
 name: code-review-wip
 description: >
-  The #353 fix branch with work in progress on top: an uncommitted test that reads the audit_logs
-  table directly, and an untracked export module that formats a value into its SQL. dk:code-review
+  The #353 fix branch with work in progress on top: an uncommitted `count` command and an untracked
+  export module, each formatting a value into its SQL against the repo's standard. dk:code-review
   reviews the uncommitted and untracked work too, not only the commits.
 tags: [code-review]
 runs: 1
@@ -16,12 +16,12 @@ graders:
   - name: reviews-uncommitted
     type: llm
     criteria: >
-      The review reports that the test `test_one_row_per_changed_field` in tests/test_audit_store.py
-      (an uncommitted edit) reads the audit_logs table with its own SQL instead of going through
-      AuditStore's methods, against the repo's rule that tests go through `AuditStore`
-      (CODING_STANDARDS.md rule 3). The axis it appears under does not matter. PASS when the report
-      carries this finding; FAIL when that test is not mentioned, or the review says it looked only
-      at the commits.
+      The review reports that the new `count` command in ledger/__main__.py (an uncommitted edit)
+      puts the `entity_type` argument into the SQL text with an f-string instead of passing it
+      through a `?` parameter, against the repo's rule that SQL takes its values as parameters
+      (CODING_STANDARDS.md rule 1). The axis it appears under does not matter. PASS when the report
+      carries this finding for the `count` command; FAIL when that command is not mentioned, or
+      only the committed f-string in `list_by_entity` is reported.
   - name: reviews-untracked
     type: llm
     criteria: >

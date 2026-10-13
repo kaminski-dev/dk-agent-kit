@@ -107,21 +107,26 @@ branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
 check("wip review: the fix branch is checked out", branch == "fix/353-history-order", branch)
 status = git(ws, "app", "status", "--porcelain").stdout
 check("wip review: one uncommitted edit and one untracked file",
-      status == " M tests/test_audit_store.py\n?? ledger/export.py\n", status)
+      status == " M ledger/__main__.py\n?? ledger/export.py\n", status)
 committed = git(ws, "app", "diff", "--name-only", "origin/pre-main...HEAD").stdout.split()
-check("wip review: the commits touch neither", "ledger/export.py" not in committed
-      and "test_one_row_per_changed_field" not in git(ws, "app", "diff", "origin/pre-main...HEAD").stdout, committed)
+check("wip review: the commits touch neither", committed == ["ledger/audit_store.py", "tests/test_audit_store.py"], committed)
 wip = git(ws, "app", "diff", "HEAD").stdout
-check("wip review: the uncommitted test reads the table directly",
-      'conn.execute("SELECT field_name FROM audit_logs WHERE' in wip, wip[:400])
+check("wip review: the uncommitted edit formats a value into SQL",
+      "WHERE entity_type = '{a.entity_type}'\"" in wip, wip[:400])
 export = (ws / "app" / "ledger" / "export.py").read_text()
 check("wip review: the untracked file formats a value into SQL", "entity_type = '%s'\" % entity_type" in export, export)
 tests = run(ws, "python3 -m unittest discover -s tests -q", cwd=ws / "app")
 check("wip review: the tests still pass with the work in progress", tests.returncode == 0, tests.stderr[-500:])
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
-# The verify fixture: the #353 branch in a repo whose verify doc says there is no database to start.
+# The verify fixture: a clean #353 fix in a repo whose verify doc says there is no database to start.
 ws = scaffold("verify-no-db")
+branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+check("verify: the clean fix branch is checked out", branch == "fix/353-ordered", branch)
+diff = git(ws, "app", "diff", "origin/pre-main...HEAD", "--", "ledger").stdout
+check("verify: the fix changes the ORDER BY alone",
+      [l for l in diff.splitlines() if l[:1] in "+-" and l[:3] not in ("+++", "---")]
+      == ['-            " ORDER BY changed_at DESC"', '+            " ORDER BY changed_at DESC, action, changed_by, field_name"'], diff)
 doc = (ws / "app" / "docs" / "agents" / "verify.md").read_text()
 check("verify: the verify doc says the stack needs no database", "- **Database**: none." in doc, doc)
 log = ws / ".tracker" / "postgres.log"
