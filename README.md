@@ -16,8 +16,8 @@ Claude Code only for now. Codex and other hosts will follow.
 | `plugins/dk` | The skills, called as `/dk:<name>`. You start: `triage`, `implement`, `implement-spec`, `to-spec`, `to-tickets`, `research-codebase`, `grill-with-docs`, `improve-codebase-architecture`, `teach`, `prototype`, `retro`, `verify-doc-check`, `handoff`, `setup`. Other skills call: `issue-flow`, `verify`, `post-deploy-check`, `tdd`, `code-review`, `pr`, `blast-radius`, `research`, `grilling`, `domain-modeling`, `codebase-design`, `writing-for-agents`. Agents: the read-only reviewers `reviewer` and `comment-reviewer`, and HumanLayer's `codebase-locator`, `codebase-analyzer`, `codebase-pattern-finder`. Each repo supplies its facts in adapter files that `/dk:setup` writes. |
 | `upstream/` | `UPSTREAM.md` records the commit and changes for every adapted file; `sync.sh` shows what mattpocock/skills, pstack and HumanLayer changed since in those files. |
 | `settings/user.fragment.json` | What a plugin cannot ship: permission deny and ask rules, and `autoMode.hard_deny` lines. Merged into `~/.claude/settings.json` by `bootstrap.sh`. |
-| `bootstrap.sh` | Shows the settings diff and the zsh options block for `~/.zshenv`; `--apply` backs both files up, writes them and installs the plugins from this checkout. |
-| `tests/` | The guard's case matrix (taken from real incidents), fixture repos for the Stop gate and the session hooks, a `dk-pg` run against Docker, a `dk-gc` run against fixture repos with stubbed `gh` and `docker`, a `dk-assets` run against a local origin, a bootstrap merge test, an `upstream/sync.sh` run against fixture upstream repos, a check of the skill-eval fixtures, and `replay_history.py` for checking the guard against past transcripts. |
+| `bootstrap.sh` | Shows the settings diff, the zsh options block for `~/.zshenv` and the `--isolated` change to the `playwright` MCP server; `--apply` backs both files up, writes them, installs the plugins from this checkout and re-registers the server. |
+| `tests/` | The guard's case matrix (taken from real incidents), fixture repos for the Stop gate and the session hooks, a `dk-pg` run against Docker, a `dk-gc` run against fixture repos with stubbed `gh` and `docker`, a `dk-assets` run against a local origin, a bootstrap test with a stubbed `claude`, an `upstream/sync.sh` run against fixture upstream repos, a check of the skill-eval fixtures, and `replay_history.py` for checking the guard against past transcripts. |
 | `THIRD_PARTY/` | Licenses and commits of the projects material is adapted from. |
 
 Every rule traces back to something that went wrong in a real session: a
@@ -159,6 +159,16 @@ block to `~/.zshenv` (`$ZDOTDIR/.zshenv` when set) with `setopt NO_NOMATCH`
 `unsetopt EQUALS` (`echo ====` is not expanded to a command path). The rest
 of the file stays as it is. A file that already has the marker, or sets both
 options by hand, is left alone.
+
+Two sessions started from one directory share the Playwright MCP browser
+profile, and the second gets "Browser is already in use". When a user-scope
+`playwright` MCP server runs without `--isolated` (in-memory profile),
+bootstrap shows the args it would change, and `--apply` re-registers the
+server through the CLI (`claude mcp remove`, then `claude mcp add-json` with
+the same command, args and environment plus `--isolated`), keeping the old
+definition in a private `playwright-mcp.json.bak-*` next to the settings file;
+environment values are never printed. Sessions started afterwards pick it up. A server that already has the flag, or a project- or
+local-scope one, is left alone, and bootstrap never adds one that isn't there.
 
 ## Test
 
