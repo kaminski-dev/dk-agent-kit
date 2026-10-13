@@ -3,6 +3,11 @@
     "mattpocock-skills@claude-plugins-official": false
   },
   "permissions": {
+    "allow": [
+      "Bash(dk-assets push *)",
+      "Bash(git push -u origin HEAD)",
+      "Bash(git push)"
+    ],
     "deny": [
       "Bash(docker system prune *)",
       "Bash(docker container prune *)",
