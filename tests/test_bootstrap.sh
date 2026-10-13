@@ -45,6 +45,11 @@ jq -e '.permissions.deny | index("Bash(docker container prune *)")' "$s" >/dev/n
 [[ "$(jq -c .autoMode.environment "$s")" == '["kept as is","private line"]' ]] || fail "private overlay not merged"
 grep -q "plugin install dk-guard@dk-agent-kit" "$tmp/claude.log" || fail "plugin not installed"
 ls "$tmp"/settings.json.bak-* >/dev/null || fail "no backup written"
+z="$tmp/home/.zshenv"
+head -1 "$z" | grep -q '.bun/bin' || fail "existing .zshenv line lost"
+[[ "$(grep -c '^# >>> dk-agent-kit zsh options >>>$' "$z")" == 1 ]] || fail "zsh block marker not written once"
+grep -qx 'setopt NO_NOMATCH' "$z" && grep -qx 'unsetopt EQUALS' "$z" || fail "zsh options missing"
+cmp -s "$(ls "$z".bak-* | head -1)" "$tmp/zshenv.orig" || fail "no .zshenv backup written"
 
 out=$(PATH="$tmp/bin:$PATH" "$root/bootstrap.sh")
 grep -q "already up to date" <<<"$out" || fail "second run not idempotent"

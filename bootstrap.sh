@@ -70,6 +70,11 @@ if ((changed)); then
   echo "bootstrap: wrote $settings (backup: $backup)"
 fi
 
+zsh_backup="$zshenv.bak-$(date +%Y%m%d-%H%M%S)"
+[[ -f "$zshenv" ]] && cp "$zshenv" "$zsh_backup"
+printf '%s\n' "$zsh_merged" > "$zshenv"
+echo "bootstrap: wrote $zshenv (backup: $zsh_backup)"
+
 if ! claude plugin marketplace list 2>/dev/null | grep -q 'dk-agent-kit'; then
   claude plugin marketplace add "$repo"
 fi
