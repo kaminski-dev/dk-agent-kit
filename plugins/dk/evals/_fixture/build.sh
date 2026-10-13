@@ -4,9 +4,9 @@
 #
 # The workspace gets the repo (main and pre-main, origin a bare repo beside it), the
 # tracker stand-in's state in .tracker/, and .bin/ first on PATH through the temp HOME's
-# shell rc: .bin/gh is the stand-in, so no call reaches GitHub, and .bin/git* call git by
-# absolute path, because the macOS sandbox resolves plain git to the xcrun shim, which
-# cannot run there. With a slug, branch fix/<N>-<slug> carrying patches/<N>-<slug>.patch
+# shell rc: .bin/gh and .bin/govulncheck are stand-ins, so no call reaches GitHub or the
+# vulnerability database, and .bin/git* call git by absolute path, because the macOS
+# sandbox resolves plain git to the xcrun shim, which cannot run there. With a slug, branch fix/<N>-<slug> carrying patches/<N>-<slug>.patch
 # is checked out and pushed.
 set -euo pipefail
 F=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -17,7 +17,7 @@ git=$(command -v git)
 if [ "$(uname)" = Darwin ] && [ "$git" = /usr/bin/git ]; then git=$(xcrun --find git); fi
 exec_path=$("$git" --exec-path)
 mkdir -p .bin .tracker
-cp "$F/bin/gh" .bin/gh
+cp "$F"/bin/* .bin/
 printf '#!/bin/sh\nexec "%s" "$@"\n' "$git" > .bin/git
 for t in git-receive-pack git-upload-pack git-upload-archive; do
   printf '#!/bin/sh\nexec "%s/%s" "$@"\n' "$exec_path" "$t" > ".bin/$t"

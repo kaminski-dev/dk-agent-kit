@@ -257,6 +257,20 @@ def main(argv):
         cmd_issue(sub, args, state)
     elif cmd == "pr":
         cmd_pr(sub, args, state)
+    elif cmd == "run" and sub in ("list", "view"):
+        pos, o = opts(args, VALUE_FLAGS | {"--workflow", "-w", "--branch"}, MULTI)
+        runs = state.get("runs", [])
+        if "--branch" in o:
+            runs = [r for r in runs if r["headBranch"] == o["--branch"]]
+        if sub == "view":
+            runs = [r for r in runs if pos and str(r["databaseId"]) == pos[0]]
+            if not runs:
+                fail("run not found")
+            r = runs[0]
+            print(f"X {r['headBranch']} ci-go #{r['databaseId']}\n\nJOBS\n✓ test\n✓ lint\nX Go Vulnerability Check"
+                  if r["conclusion"] == "failure" else f"✓ {r['headBranch']} ci-go #{r['databaseId']}")
+        else:
+            emit([pick(r, o) for r in runs], o)
     elif cmd == "label" and sub == "list":
         _, o = opts(args, VALUE_FLAGS, MULTI)
         emit([{"name": l} for l in state["labels"]], o)

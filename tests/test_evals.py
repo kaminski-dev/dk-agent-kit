@@ -88,5 +88,22 @@ r, pr = acceptance_on(ws, "HEAD")
 check("353 review: the seeded branch still meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr or r.stderr)
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
+# --- #1091 fixture: govulncheck red on go1.27.1 and x/net v0.59.0 --------------------------------
+
+ws = scaffold("triage-1091")
+vuln = run(ws, "govulncheck ./...", cwd=ws / "api")
+ids = sorted(set(l.split()[2] for l in vuln.stdout.splitlines() if l.startswith("Vulnerability #")))
+check("1091: govulncheck exits 3 on the pinned toolchain", vuln.returncode == 3, vuln.stdout[-300:])
+check("1091: it reports the issue's 12 IDs", len(ids) == 12 and "GO-2026-6617" in ids, ids)
+scans = (ws / ".tracker" / "govulncheck.log").read_text()
+check("1091: the scan is logged for the graders", scans == "./... exit=3\n", scans)
+mod = ws / "api" / "go.mod"
+mod.write_text(mod.read_text().replace("go 1.27.1", "go 1.27.2").replace("x/net v0.59.0", "x/net v0.60.0"))
+vuln = run(ws, "govulncheck ./...", cwd=ws / "api")
+check("1091: govulncheck exits 0 after the bump", vuln.returncode == 0, vuln.stdout[-300:])
+issue = json.loads(run(ws, "gh issue view 1091 --json title,labels").stdout)
+check("1091: the tracker holds the untriaged issue", issue["labels"] == [{"name": "needs-triage"}], issue)
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
 print(f"{len(failures)} failures")
 sys.exit(1 if failures else 0)
