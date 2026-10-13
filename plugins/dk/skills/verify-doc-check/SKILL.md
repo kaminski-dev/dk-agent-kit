@@ -34,10 +34,12 @@ A fix touches only the doc and the harness it names (its scripts, stubs, helpers
 
 ```sh
 git fetch -q origin
-git worktree add --detach "$RUN/tree" origin/pre-main
+base=origin/pre-main
+git ls-remote --exit-code --heads origin pre-main >/dev/null || base=origin/main
+git worktree add --detach "$RUN/tree" "$base"
 ```
 
-When `git ls-remote --heads origin pre-main` prints nothing, base it on `origin/main` and say so in the report. Run the fresh-worktree setup from `workflow.md` in it. No `docs/agents/verify.md` there: stop and point at `/dk:setup`.
+A base of `origin/main` means the remote has no `pre-main`; say so in the report. Run the fresh-worktree setup from `workflow.md` in it. No `docs/agents/verify.md` there: stop and point at `/dk:setup`.
 
 Start `$RUN/run.md`, the **run log**: one line per doc step with the command as run, the result, and its kind when it failed. It stays in `$RUN`, never in the tree.
 
