@@ -14,19 +14,19 @@ fi
 
 # One line per source: "<owner/repo> <commit> <path>...", from each
 # "## <owner>/<repo> ... @ <commit>" heading and the Upstream path column
-# (comma-separated) of the table under it.
+# (comma-separated, each listed once) of the table under it.
 sources() {
   awk '
     function flush() { if (repo != "" && paths != "") print repo, commit, paths }
     /^## / {
-      flush(); repo = ""; paths = ""; rows = 0
+      flush(); repo = ""; paths = ""; rows = 0; split("", seen)
       if (match($0, / @ [0-9a-f]+$/)) { repo = $2; commit = substr($0, RSTART + 3) }
       next
     }
     repo != "" && /^\|/ {
       if (++rows <= 2) next
       split($0, cell, "|"); n = split(cell[3], p, ",")
-      for (i = 1; i <= n; i++) { gsub(/[ `]/, "", p[i]); if (p[i] != "") paths = paths " " p[i] }
+      for (i = 1; i <= n; i++) { gsub(/[ `]/, "", p[i]); if (p[i] != "" && !seen[p[i]]++) paths = paths " " p[i] }
     }
     END { flush() }
   ' "$here/UPSTREAM.md"
@@ -42,6 +42,10 @@ while read -r repo base paths <&3; do
   head=$(git -C "$clone" rev-parse --short refs/remotes/origin/HEAD)
   out=""
   for p in $paths; do
+    if ! git -C "$clone" cat-file -e "$base:$p" 2>/dev/null; then
+      out+=$'\n'"$p: not found at $base"$'\n'
+      continue
+    fi
     git -C "$clone" diff --quiet "$base" "$head" -- "$p" && continue
     out+=$'\n'"=== $p"$'\n'
     out+=$(git -C "$clone" log --oneline "$base..$head" -- "$p")$'\n'
