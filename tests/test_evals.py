@@ -143,9 +143,9 @@ def history(ref):
     return [l.split()[3] for l in out.splitlines() if "2026-10-02" in l]
 
 
-check("verify: the control run on pre-main shows the old order", history("origin/pre-main") == ["phone", "email", "city"],
-      history("origin/pre-main"))
-check("verify: the branch shows the fields by name", history("HEAD") == ["city", "email", "phone"], history("HEAD"))
+before, after = history("origin/pre-main"), history("HEAD")
+check("verify: the control run on pre-main shows the old order", before == ["phone", "email", "city"], before)
+check("verify: the branch shows the fields by name", after == ["city", "email", "phone"], after)
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
 # The triage fixture: #353 as filed, on the pre-fix code.
