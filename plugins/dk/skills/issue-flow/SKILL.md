@@ -48,10 +48,10 @@ Each commit is one verifiable unit: the gates from `AGENTS.md` pass on what it t
 
 ## 5. Screenshots and evidence
 
-Call the Skill tool with `dk:verify`; the proof it asks for lands here. Evidence goes into the PR, never into the tree. Collect the screenshots in `$SCRATCH/<N>/shots/` first (Playwright MCP saves only under its own roots, so move them there), then push them with one command:
+Call the Skill tool with `dk:verify`; the proof it asks for lands here. Evidence goes into the PR, never into the tree. `dk:verify` leaves the screenshots in `$RUN/shots/`, its run directory under the session scratch (`$RUN` stands for the path it printed, written literally); push them with one command:
 
 ```sh
-dk-assets push <N> "$SCRATCH/<N>"/shots/*.png
+dk-assets push <N> "$RUN"/shots/*.png
 ```
 
 It force-pushes an orphan commit with the files to `verify-assets/<N>` and prints the commit SHA, then one embeddable URL per file: paste those URLs into the PR as printed. A rerun replaces the branch. It takes files only from the session's scratch directory, and a non-zero exit (missing file, rejected push) means nothing new was pushed. The branch stays after the merge: it is the only ref that keeps the embedded commit, so deleting it would eventually break the images in the merged PR.
