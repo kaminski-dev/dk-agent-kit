@@ -328,8 +328,18 @@ def check_zsh_names(cmd):
     return []
 
 
+METADATA_ONLY = {"ls", "stat", "test", "[", "[["}
+
+
+def reads_content(cmd, pos):
+    """False when the command holding `pos` only checks the file (`ls`, `stat`, `[ -e`), so nothing is read."""
+    start = max((m.end() for m in re.finditer(START, cmd[:pos])), default=0)
+    words = re.sub("^" + PREFIX, "", cmd[start:pos]).split()
+    return not words or words[0] not in METADATA_ONLY
+
+
 def check_credentials(cmd):
-    m = CREDENTIALS.search(cmd)
+    m = next((m for m in CREDENTIALS.finditer(cmd) if reads_content(cmd, m.start())), None)
     if m:
         return [("deny", f"This reads {m.group(0)}, which holds a credential. Sentry event details come from "
                  "the repo's Sentry helper, named in its docs/agents/observability.md (jetztbar-platform: "
