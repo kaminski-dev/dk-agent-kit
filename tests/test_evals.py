@@ -131,6 +131,20 @@ md = (ws / ".tracker" / "issue-353.md").read_text() if (ws / ".tracker" / "issue
 check("353 triage: a label edit reaches the file the graders read", "labels: bug, ready-for-agent\n" in md, md or r.stderr)
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
+# The thin-issue fixture: #361 says something is wrong and nothing that would let a brief be written.
+ws = scaffold("triage-thin")
+issue = json.loads(run(ws, "gh issue view 361 --json title,body,labels,comments").stdout)
+check("361 triage: the tracker holds the untriaged issue",
+      issue["labels"] == [{"name": "needs-triage"}] and issue["comments"] == [], issue)
+check("361 triage: the issue names no entity, field, value or steps",
+      len(issue["body"]) < 120 and not any(c.isdigit() for c in issue["body"]), issue["body"])
+others = [i["number"] for i in json.loads(run(ws, "gh issue list --state all --json number").stdout)]
+check("361 triage: no other issue to match it against", others == [361], others)
+store = (ws / "app" / "ledger" / "audit_store.py").read_text()
+check("361 triage: the Audit Log list it names already defines its order",
+      '" ORDER BY changed_at DESC, entity_type, entity_id, action, changed_by, field_name"' in store, store[-900:])
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
 # --- #1091 fixture: govulncheck red on go1.27.1 and x/net v0.59.0 --------------------------------
 
 ws = scaffold("triage-1091")
