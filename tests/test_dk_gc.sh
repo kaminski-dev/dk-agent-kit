@@ -102,8 +102,11 @@ loose8=$(worktree app-8 feat/8-loose)
 git -C "$app" worktree remove "$ws/app-8"
 git -C "$app" push -q origin --delete feat/8-loose
 # Ignored files: only regenerable ones (app-16), which go with the worktree.
-regen16=$(worktree app-16 feat/16-regen node_modules/ '*.tsbuildinfo' .env.local dist/ '*.gen.*')
-mkdir -p "$ws/app-16/node_modules/x" "$ws/app-16/frontend/node_modules/y" "$ws/app-16/dist" "$ws/app-16/frontend/src"
+# target/*.jar lists target/app.jar, which only its top-level directory marks as regenerable.
+regen16=$(worktree app-16 feat/16-regen node_modules/ '*.tsbuildinfo' .env.local dist/ '*.gen.*' 'target/*.jar')
+mkdir -p "$ws/app-16/node_modules/x" "$ws/app-16/frontend/node_modules/y" "$ws/app-16/dist" "$ws/app-16/frontend/src" \
+  "$ws/app-16/target"
+echo jar >"$ws/app-16/target/app.jar"
 echo 'module.exports = 1' >"$ws/app-16/node_modules/x/index.js"
 echo 1 >"$ws/app-16/frontend/node_modules/y/index.js"
 echo '{}' >"$ws/app-16/app.tsbuildinfo"

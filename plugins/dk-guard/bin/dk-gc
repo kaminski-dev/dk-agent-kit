@@ -17,10 +17,9 @@ a branch with an open PR, the base of any PR (an integration branch like
 pre-master, even after its own batch PR merged), a worktree with uncommitted
 changes, and a worktree with ignored files outside REGENERABLE (build output,
 dependencies, generated code, .env*), whose "keep" line names them; the last
-four are listed with "keep". GitHub is asked
-with -R from origin's URL, so a GH_REPO in the environment cannot point it at
-another repo. Checkouts of one GitHub repo share its remote branches; the
-first one lists them.
+four are listed with "keep". GitHub is asked with -R from origin's URL, so a
+GH_REPO in the environment cannot point it at another repo. Checkouts of one
+GitHub repo share its remote branches; the first one lists them.
 """
 import argparse
 import dataclasses
@@ -36,7 +35,7 @@ KEPT_PREFIX = "verify-assets/"  # PR bodies embed screenshots from these branche
 # Ignored entries a worktree may lose: build output, dependencies, generated code, local env.
 REGENERABLE = ("node_modules", "dist", "build", ".next", "target", ".venv", "__pycache__",
                "*.tsbuildinfo", "*.gen.*", ".env*")
-NAMED = 5  # ignored entries named in a "keep" line before the rest become a count
+KEEP_LINE_NAMES = 5  # ignored entries a "keep" line names before it counts the rest
 
 
 def run(args, cwd=None):
@@ -112,11 +111,11 @@ def worktree_blocker(path):
     entries = [e for e in out.split("\0") if e]
     if any(not e.startswith("!! ") for e in entries):
         return "uncommitted changes"
-    kept = [e[3:] for e in entries if not regenerable(e[3:])]
-    if not kept:
+    at_risk = [e[3:] for e in entries if not regenerable(e[3:])]
+    if not at_risk:
         return None
-    more = f" and {len(kept) - NAMED} more" if len(kept) > NAMED else ""
-    return f"ignored files outside the regenerable list: {', '.join(kept[:NAMED])}{more}"
+    more = f" and {len(at_risk) - KEEP_LINE_NAMES} more" if len(at_risk) > KEEP_LINE_NAMES else ""
+    return f"ignored files outside the regenerable list: {', '.join(at_risk[:KEEP_LINE_NAMES])}{more}"
 
 
 def databases():
