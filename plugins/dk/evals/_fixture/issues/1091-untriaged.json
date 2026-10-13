@@ -1,0 +1,55 @@
+{
+  "repo": "acme/api",
+  "labels": [
+    "bug",
+    "enhancement",
+    "needs-triage",
+    "needs-info",
+    "ready-for-agent",
+    "ready-for-human",
+    "wontfix",
+    "spec"
+  ],
+  "prs": [],
+  "runs": [
+    {
+      "databaseId": 38126745517,
+      "conclusion": "failure",
+      "createdAt": "2026-10-11T08:40:00Z",
+      "headBranch": "docs/1090-readme"
+    },
+    {
+      "databaseId": 38020011223,
+      "conclusion": "failure",
+      "createdAt": "2026-10-05T07:12:00Z",
+      "headBranch": "pre-main"
+    },
+    {
+      "databaseId": 37980044551,
+      "conclusion": "success",
+      "createdAt": "2026-10-04T16:03:00Z",
+      "headBranch": "pre-main"
+    }
+  ],
+  "issues": {
+    "781": {
+      "title": "Audit Go dependencies before launch",
+      "state": "closed",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": [],
+      "body": "Ran govulncheck@v1.7.0 on pre-main: no vulnerabilities found. Closed."
+    },
+    "1091": {
+      "title": "Go Vulnerability Check fails: go1.27.1 and x/net v0.59.0 have 12 reachable vulnerabilities",
+      "body": "The **Go Vulnerability Check** job (`govulncheck ./...` in `ci-go.yml`) fails on every PR since 2026-10-05, and on `pre-main`. It reports 12 reachable vulnerabilities:\n\n- 11 in the standard library (`net/http`, `net/http/internal/http2`, `crypto/tls`, `html/template`, `mime/multipart`), fixed in **go1.27.2**. `go.mod` pins `go 1.27.1`, which CI's `setup-go` reads.\n- 1 in `golang.org/x/net` v0.59.0 (GO-2026-6617, HTTP/2 server crash from an HPACK encoder race), fixed in **v0.60.0**.\n\nIDs: GO-2026-6599, -6600, -6603, -6605, -6607, -6608, -6609, -6610, -6611, -6612, -6613, -6617.\n\nEvidence: run 38126745517 (PR #1090, docs-only, so not caused by that PR); `gh run list --workflow ci-go.yml --branch pre-main` shows the first failure on 2026-10-05.\n\nEffect: every Go PR carries a red check, which hides real failures, and the production API is built with the vulnerable toolchain (call paths include `cmd/api` serving HTTP and the Sentry tunnel's outbound client).\n",
+      "state": "open",
+      "labels": [
+        "needs-triage"
+      ],
+      "comments": [],
+      "author": "owner"
+    }
+  }
+}

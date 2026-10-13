@@ -17,7 +17,7 @@ Claude Code only for now. Codex and other hosts will follow.
 | `upstream/` | `UPSTREAM.md` records the commit and changes for every adapted file; `sync.sh` shows what mattpocock/skills, pstack and HumanLayer changed since in those files. |
 | `settings/user.fragment.json` | What a plugin cannot ship: permission deny and ask rules, and `autoMode.hard_deny` lines. Merged into `~/.claude/settings.json` by `bootstrap.sh`. |
 | `bootstrap.sh` | Shows the settings diff; `--apply` backs up, merges and installs the plugins from this checkout. |
-| `tests/` | The guard's case matrix (taken from real incidents), fixture repos for the Stop gate and the session hooks, a `dk-pg` run against Docker, a `dk-gc` run against fixture repos with stubbed `gh` and `docker`, a bootstrap merge test, and `replay_history.py` for checking the guard against past transcripts. |
+| `tests/` | The guard's case matrix (taken from real incidents), fixture repos for the Stop gate and the session hooks, a `dk-pg` run against Docker, a `dk-gc` run against fixture repos with stubbed `gh` and `docker`, a bootstrap merge test, a check of the skill-eval fixtures, and `replay_history.py` for checking the guard against past transcripts. |
 | `THIRD_PARTY/` | Licenses and commits of the projects material is adapted from. |
 
 Every rule traces back to something that went wrong in a real session: a
@@ -154,11 +154,16 @@ python3 -I tests/hooks/test_stop_gate.py
 python3 -I tests/hooks/test_require_worktree.py
 python3 -I tests/hooks/test_session_baseline.py
 python3 -I tests/test_skills.py
+python3 -I tests/test_evals.py
 bash tests/test_bootstrap.sh
 bash tests/test_dk_pg.sh      # skips without a Docker daemon
 bash tests/test_dk_gc.sh
 claude plugin validate .
 ```
+
+The evals for `dk:implement`, `dk:triage` and `dk:code-review` live in
+`plugins/dk/evals/` and need a model, so they run by hand (the command is in
+`docs/agents/workflow.md`), not in CI.
 
 `replay_history.py <commands.jsonl>` runs every past Bash command through the
 guard and lists what it would deny, ask or hint, so a new rule can be checked

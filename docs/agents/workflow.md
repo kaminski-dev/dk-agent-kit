@@ -18,6 +18,7 @@ This repo's parameters for the sequence in the `dk:issue-flow` skill. The kit di
 - A Stop gate change shows its case in `tests/hooks/test_stop_gate.py` before and after, and a headless session (`claude -p --plugin-dir plugins/dk-guard`) with and without the change.
 - A session hook change (`require-worktree`, `session-baseline`) shows its fixture case in `tests/hooks/test_require_worktree.py` or `tests/hooks/test_session_baseline.py` before and after, and a headless session (`claude -p --plugin-dir plugins/dk-guard`) with the change.
 - A skill change that alters behaviour shows one run of the skill on a real issue, or says why none was possible.
+- A change to `dk:implement`, `dk:triage` or `dk:code-review` also shows its eval run: `claude plugin eval plugins/dk --case '<skill>-*' --trust-plugin --scaffold --allow-tools Bash Write Edit --ablation none --no-publish`. The cases replay Phase 2 issues on fixture repos in `plugins/dk/evals/`, with stand-ins for `gh` and `govulncheck`, so no run reaches GitHub. They make paid model calls, so CI runs only `tests/test_evals.py`, which checks the fixtures are red before the fix.
 
 ## Customer reply
 

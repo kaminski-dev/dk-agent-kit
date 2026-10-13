@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""Stand-in for govulncheck v1.7.0 in an eval workspace: answers from the module's go.mod.
+
+It reports the findings the real tool reported for go1.27.1 and golang.org/x/net v0.59.0,
+and none once go.mod requires go1.27.2 and x/net v0.60.0 or later. No network, no database.
+Each scan appends "<args> exit=<code>" to <workspace>/.tracker/govulncheck.log for the graders.
+"""
+import pathlib
+import re
+import sys
+
+# (ID, module, package, a call path from this repo that reaches it)
+STDLIB = [("GO-2026-6599", "net/http", "api.main calls http.ListenAndServe"),
+          ("GO-2026-6600", "net/http/internal/http2", "api.main calls http.ListenAndServe"),
+          ("GO-2026-6603", "crypto/tls", "tunnel.Handler calls http.Client.Post"),
+          ("GO-2026-6605", "html/template", "api.main calls http.Error"),
+          ("GO-2026-6607", "mime/multipart", "api.main calls http.ListenAndServe"),
+          ("GO-2026-6608", "net/http", "tunnel.Handler calls http.Client.Post"),
+          ("GO-2026-6609", "net/http/internal/http2", "tunnel.Handler calls http.Client.Post"),
+          ("GO-2026-6610", "crypto/tls", "api.main calls http.ListenAndServe"),
+          ("GO-2026-6611", "net/http", "api.main calls http.ListenAndServe"),
+          ("GO-2026-6612", "html/template", "tunnel.Handler calls http.Error"),
+          ("GO-2026-6613", "mime/multipart", "api.main calls http.ListenAndServe")]
+XNET = ("GO-2026-6617", "golang.org/x/net/http2", "api.main calls h2c.NewHandler")
+
+
+def version(text, pattern):
+    m = re.search(pattern, text, re.M)
+    return tuple(int(p) for p in m.group(1).split(".")) if m else None
+
+
+def main():
+    if "-version" in sys.argv or "--version" in sys.argv:
+        print("Go: go1.27.1\nScanner: govulncheck@v1.7.0\nDB: https://vuln.go.dev")
+        return 0
+    mod = pathlib.Path("go.mod")
+    if not mod.exists():
+        print("govulncheck: no go.mod file", file=sys.stderr)
+        return 1
+    text = mod.read_text()
+    go = version(text, r"^go (\d+\.\d+(?:\.\d+)?)")
+    toolchain = version(text, r"^toolchain go(\d+\.\d+\.\d+)")
+    effective = max(v for v in (go, toolchain) if v)
+    xnet = version(text, r"golang\.org/x/net v(\d+\.\d+\.\d+)")
+    found = []
+    if effective < (1, 27, 2):
+        at = "go" + ".".join(map(str, effective))
+        found += [(vid, "stdlib", pkg, trace, at, "go1.27.2") for vid, pkg, trace in STDLIB]
+    if xnet and xnet < (0, 60, 0):
+        found.append((XNET[0], "golang.org/x/net", XNET[1], XNET[2],
+                      "golang.org/x/net@v" + ".".join(map(str, xnet)), "golang.org/x/net@v0.60.0"))
+    print("=== Symbol Results ===\n")
+    if not found:
+        print("No vulnerabilities found.")
+        return 0
+    for i, (vid, module, pkg, trace, at, fixed) in enumerate(found, 1):
+        print(f"Vulnerability #{i}: {vid}\n    Vulnerability in {pkg}\n"
+              f"  More info: https://pkg.go.dev/vuln/{vid}\n  {'Standard library' if module == 'stdlib' else 'Module: ' + module}\n"
+              f"    Found in: {at}\n    Fixed in: {fixed}\n    Example traces found:\n      #1: {trace}\n")
+    print(f"Your code is affected by {len(found)} vulnerabilities from {len({f[1] for f in found})} modules.")
+    return 3
+
+
+if __name__ == "__main__":
+    code = main()
+    log = pathlib.Path(__file__).resolve().parent.parent / ".tracker" / "govulncheck.log"
+    with open(log, "a") as f:
+        f.write(" ".join(sys.argv[1:]) + f" exit={code}\n")
+    sys.exit(code)
