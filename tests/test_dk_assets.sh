@@ -48,4 +48,16 @@ https://github.com/acme/app/blob/$sha/after.png?raw=true" ]] || fail "URLs: $out
 [[ "$(git -C "$origin" show "$sha:before.png")" == "png a" ]] || fail "before.png content differs"
 [[ "$(git -C "$origin" rev-list --count "$sha")" == 1 ]] || fail "commit is not an orphan"
 
+# A rerun for the same issue replaces the branch: the old files are gone.
+out=$("$dkassets" push 31 "$shots/fixed.png")
+sha2=$(sed -n 1p <<<"$out")
+[[ "$sha2" != "$sha" && "$(remote_sha 31)" == "$sha2" ]] || fail "rerun did not replace verify-assets/31"
+[[ "$(tree_of "$sha2")" == "fixed.png " ]] || fail "rerun tree: $(tree_of "$sha2")"
+[[ "$(git -C "$origin" rev-list --count "$sha2")" == 1 ]] || fail "rerun commit is not an orphan"
+
+# A missing file fails before anything is pushed, and names the file.
+if err=$("$dkassets" push 31 "$shots/fixed.png" "$shots/missing.png" 2>&1); then fail "missing file accepted: $err"; fi
+grep -qxF "dk-assets: no such file: $shots/missing.png" <<<"$err" || fail "error does not name the missing file: $err"
+[[ "$(remote_sha 31)" == "$sha2" ]] || fail "a failed run changed verify-assets/31"
+
 echo "dk-assets: all checks passed"

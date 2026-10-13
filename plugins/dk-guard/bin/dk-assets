@@ -20,10 +20,15 @@ url=$(git config --get remote.origin.url) || die "no origin remote in $PWD"
 slug=$(sed -E 's#^(https://|ssh://)?([^@/]+@)?github\.com[:/]##; s#\.git$##; s#/$##' <<<"$url")
 [[ "$slug" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && "$slug" != "$url" ]] || die "origin is not a GitHub repo: $url"
 
+for f; do
+  [[ -f "$f" ]] || die "no such file: $f"
+done
+
 entries= names=()
 for f; do
   name=$(basename "$f")
-  entries+=$(printf '100644 blob %s\t%s' "$(git hash-object -w -- "$f")" "$name")$'\n'
+  blob=$(git hash-object -w -- "$f")
+  entries+=$(printf '100644 blob %s\t%s' "$blob" "$name")$'\n'
   names+=("$name")
 done
 tree=$(printf %s "$entries" | git mktree)
