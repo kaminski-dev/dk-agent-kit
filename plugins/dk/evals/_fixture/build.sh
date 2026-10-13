@@ -5,10 +5,12 @@
 # The workspace gets the repo (main and pre-main, origin a bare repo beside it), the
 # tracker stand-in's state in .tracker/, and .bin/ first on PATH through the temp HOME's
 # shell rc: .bin/gh and .bin/govulncheck are stand-ins, so no call reaches GitHub or the
-# vulnerability database, and .bin/git* call git by absolute path, because the macOS
-# sandbox resolves plain git to the xcrun shim, which cannot run there. With a slug, branch fix/<N>-<slug> carrying patches/<N>-<slug>.patch
-# is checked out and pushed. With a wip slug, patches/<N>-<wip>.patch is applied on top and left
-# uncommitted: its edits stay unstaged and its new files untracked.
+# vulnerability database; .bin/dk-pg, docker and the Postgres binaries only log the attempt
+# to .tracker/postgres.log; and .bin/git* call git by absolute path, because the macOS
+# sandbox resolves plain git to the xcrun shim, which cannot run there.
+# With a slug, branch fix/<N>-<slug> carrying patches/<N>-<slug>.patch is checked out and
+# pushed. With a wip slug, patches/<N>-<wip>.patch is applied on top and left uncommitted:
+# its edits stay unstaged and its new files untracked.
 set -euo pipefail
 F=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WS=$PWD
@@ -22,6 +24,11 @@ cp "$F"/bin/* .bin/
 printf '#!/bin/sh\nexec "%s" "$@"\n' "$git" > .bin/git
 for t in git-receive-pack git-upload-pack git-upload-archive; do
   printf '#!/bin/sh\nexec "%s/%s" "$@"\n' "$exec_path" "$t" > ".bin/$t"
+done
+: > .tracker/postgres.log
+for t in dk-pg docker podman pg_ctl pg_ctlcluster initdb postgres; do
+  printf '#!/bin/sh\necho "%s $*" >> "%s/.tracker/postgres.log"\necho "%s: no database server in this workspace" >&2\nexit 1\n' \
+    "$t" "$WS" "$t" > ".bin/$t"
 done
 chmod +x .bin/*
 for rc in "$HOME/.bashrc" "$HOME/.zshenv"; do

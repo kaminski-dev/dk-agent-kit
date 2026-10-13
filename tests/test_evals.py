@@ -120,6 +120,34 @@ tests = run(ws, "python3 -m unittest discover -s tests -q", cwd=ws / "app")
 check("wip review: the tests still pass with the work in progress", tests.returncode == 0, tests.stderr[-500:])
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
+# The verify fixture: the #353 branch in a repo whose verify doc says there is no database to start.
+ws = scaffold("verify-no-db")
+doc = (ws / "app" / "docs" / "agents" / "verify.md").read_text()
+check("verify: the verify doc says the stack needs no database", "- **Database**: none." in doc, doc)
+log = ws / ".tracker" / "postgres.log"
+check("verify: the Postgres log starts empty", log.exists() and log.read_text() == "", log.exists())
+for cmd in ("dk-pg up 353", "docker run -d postgres:17", "pg_ctl -D db start", "initdb -D db", "postgres -D db"):
+    r = run(ws, cmd, cwd=ws / "app")
+    check(f"verify: `{cmd}` reaches the stand-in and fails", r.returncode != 0 and log.read_text().endswith(cmd + "\n"),
+          (r.returncode, log.read_text()))
+
+
+def history(ref):
+    """Field order of the 2026-10-02 edit in `ledger history`, on a fresh seeded database at ref."""
+    tree = ws.parent / f"tree-{ref.replace('/', '-')}"
+    git(ws, "app", "worktree", "add", "-q", "--detach", str(tree), ref)
+    db = ws.parent / f"{tree.name}.db"
+    run(ws, f"python3 -m ledger seed --db '{db}'", cwd=tree)
+    out = run(ws, f"python3 -m ledger history customer 7 --db '{db}'", cwd=tree).stdout
+    git(ws, "app", "worktree", "remove", "--force", str(tree))
+    return [l.split()[3] for l in out.splitlines() if "2026-10-02" in l]
+
+
+check("verify: the control run on pre-main shows the old order", history("origin/pre-main") == ["phone", "email", "city"],
+      history("origin/pre-main"))
+check("verify: the branch shows the fields by name", history("HEAD") == ["city", "email", "phone"], history("HEAD"))
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
 # The triage fixture: #353 as filed, on the pre-fix code.
 ws = scaffold("triage-353")
 issue = json.loads(run(ws, "gh issue view 353 --json labels,comments").stdout)
