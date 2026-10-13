@@ -56,4 +56,11 @@ grep -q "already up to date" <<<"$out" || fail "second run not idempotent"
 cp "$z" "$tmp/zshenv.applied"
 PATH="$tmp/bin:$PATH" "$root/bootstrap.sh" --apply >/dev/null
 cmp -s "$z" "$tmp/zshenv.applied" || fail "second --apply changed .zshenv"
+
+# a hand-written block without the marker (written before the bootstrap had this step)
+mkdir -p "$tmp/home2"
+printf '# Agent-friendly zsh\nsetopt NO_NOMATCH\nunsetopt EQUALS\n' > "$tmp/home2/.zshenv"
+cp "$tmp/home2/.zshenv" "$tmp/zshenv2.orig"
+HOME="$tmp/home2" PATH="$tmp/bin:$PATH" "$root/bootstrap.sh" --apply >/dev/null
+cmp -s "$tmp/home2/.zshenv" "$tmp/zshenv2.orig" || fail "hand-written zsh options duplicated"
 echo "bootstrap: all checks passed"

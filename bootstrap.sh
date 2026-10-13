@@ -51,7 +51,11 @@ setopt NO_NOMATCH
 unsetopt EQUALS
 # <<< dk-agent-kit zsh options <<<'
 zsh_current=$(cat "$zshenv" 2>/dev/null || true)
-if grep -qxF '# >>> dk-agent-kit zsh options >>>' <<<"$zsh_current"; then
+# A block written by hand (no marker) counts when it sets both options.
+zsh_opt() { grep -Eiq "^[[:space:]]*($1)[[:space:]]*(#.*)?\$" <<<"$zsh_current"; }
+if grep -qxF '# >>> dk-agent-kit zsh options >>>' <<<"$zsh_current" ||
+  { zsh_opt 'setopt[[:space:]]+no_?nomatch|unsetopt[[:space:]]+nomatch' &&
+    zsh_opt 'unsetopt[[:space:]]+equals|setopt[[:space:]]+no_?equals'; }; then
   echo "bootstrap: zsh options already in $zshenv"
   zsh_changed=0
 else
