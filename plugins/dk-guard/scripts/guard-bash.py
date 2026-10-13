@@ -328,21 +328,31 @@ def check_zsh_names(cmd):
     return []
 
 
-METADATA_ONLY = {"ls", "stat", "test", "[", "[["}
+FILE_CHECKS = {"ls", "stat", "test", "[", "[["}
 
 
-def reads_content(cmd, m):
-    """False when the command only checks the file (`ls`, `stat`, `[ -e`) or prose names it in a code span."""
-    if re.search(r"`[\w~/${}.-]*$", cmd[:m.start()]) and re.match(r"[\w./-]*\\?`", cmd[m.end():]):
-        return False  # `~/.netrc` in a comment or PR body; a real backtick substitution would run the file
-    pos = m.start()
-    start = max((s.end() for s in re.finditer(START, cmd[:pos])), default=0)
-    words = re.sub("^" + PREFIX, "", cmd[start:pos]).split()
-    return not words or words[0] not in METADATA_ONLY
+def in_code_span(cmd, m):
+    # a real backtick substitution of the bare path would run the file, not read it
+    return bool(re.search(r"`[\w~/${}.-]*$", cmd[:m.start()]) and re.match(r"[\w./-]*\\?`", cmd[m.end():]))
+
+
+def only_checks_file(cmd, pos):
+    start = None
+    for start in re.finditer(START, cmd[:pos]):
+        pass
+    opener = cmd[start.start():start.end()].strip() if start else ""
+    if opener in ("$(", "`") or (opener == "(" and start.start() > 0 and cmd[start.start() - 1] in "<>"):
+        return False  # its output is substituted into another command
+    words = re.sub("^" + PREFIX, "", cmd[start.end() if start else 0:pos]).split()
+    end = re.search(r"[;&|\n)`]", cmd[pos:])
+    piped = end and end.group() == "|" and cmd[pos + end.end():pos + end.end() + 1] != "|"
+    return bool(words) and words[0] in FILE_CHECKS and not piped
 
 
 def check_credentials(cmd):
-    m = next((m for m in CREDENTIALS.finditer(cmd) if reads_content(cmd, m)), None)
+    scan = OUTPUT_REDIRECT.sub(lambda r: " " * len(r.group()), cmd)  # `2>&1 | xargs cat` still pipes
+    m = next((m for m in CREDENTIALS.finditer(cmd)
+              if not in_code_span(cmd, m) and not only_checks_file(scan, m.start())), None)
     if m:
         return [("deny", f"This reads {m.group(0)}, which holds a credential. Sentry event details come from "
                  "the repo's Sentry helper, named in its docs/agents/observability.md (jetztbar-platform: "
