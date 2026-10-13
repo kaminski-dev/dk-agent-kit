@@ -279,9 +279,6 @@ def main(argv):
         emit(pick({"nameWithOwner": state["repo"], "defaultBranchRef": {"name": "main"}}, o), o)
     elif cmd == "auth" and sub == "status":
         print("github.com\n  ✓ Logged in to github.com (tracker stand-in)")
-    elif cmd == "api":
-        _, o = opts(args, VALUE_FLAGS, MULTI)
-        emit([], o)
     else:
         fail(f"gh {cmd} {sub}: not supported by this repo's tracker stand-in")
 
