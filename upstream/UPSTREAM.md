@@ -2,7 +2,7 @@
 
 Each vendored or ported file, the commit it was taken from, and how far it was changed. `upstream/sync.sh` reads this file and shows, per source, what changed upstream in the adapted paths since the recorded commit. Merging upstream changes is a manual edit through `dk:writing-for-agents`, recorded by bumping the commit here.
 
-`sync.sh` parses two things, so keep them in this shape:
+`sync.sh` parses two things, so keep them in this shape (`tests/test_skills.py` fails on either one broken):
 
 - **Section heading**: `## <owner>/<repo> [label] (<license>) @ <short commit>`. The first word is the GitHub repo; the commit ends the line. One commit per section: a file taken at another commit of the same repo gets its own section.
 - **Upstream path column** (the second): paths from the repo root, comma-separated, no globs and no shorthand (`pstack/skills/a, pstack/skills/b`, not `pstack/skills/a, b`). A directory covers everything under it. Backticks are ignored.

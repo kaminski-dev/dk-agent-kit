@@ -106,6 +106,31 @@ for kind, name, path in marked:
         if not re.search(rf"\b{re.escape(name)}\b", dk_column_by_section_commit.get(commit, "")):
             errors.append(f"{kind}/{name}: adapted from {source}@{commit}, but upstream/UPSTREAM.md has no row for it in the section at that commit")
 
+# The shape upstream/sync.sh parses (the format note at the top of UPSTREAM.md).
+# sync.sh skips a section whose heading it cannot read and matches no file
+# against a glob or a shorthand path, so either one hides upstream changes.
+in_section, table_rows = False, 0
+for n, line in enumerate(upstream.splitlines(), 1):
+    where = f"upstream/UPSTREAM.md:{n}"
+    if line.startswith("## "):
+        in_section, table_rows = True, 0
+        if not re.fullmatch(r"## [\w.-]+/[\w.-]+(?: [^()@]+)? \([^()]+\) @ [0-9a-f]{7,40}", line):
+            errors.append(f"{where}: heading is not '## <owner>/<repo> [label] (<license>) @ <commit>'")
+        continue
+    if not (in_section and line.startswith("|")):
+        continue
+    table_rows += 1
+    if table_rows <= 2:  # header and separator
+        continue
+    paths = [p.strip().strip("`") for p in line.split("|")[2].split(",")]
+    for i, path in enumerate(paths):
+        if not path:
+            errors.append(f"{where}: empty upstream path")
+        elif re.search(r"[*?\[\]{}]", path):
+            errors.append(f"{where}: glob in upstream path {path!r}; list each file")
+        elif i and "/" in paths[0] and "/" not in path:
+            errors.append(f"{where}: shorthand upstream path {path!r}; write it from the repo root")
+
 for e in errors:
     print("FAIL", e)
 print(f"{len(skills)} skills, {len(agents)} agents, {len(errors)} problems")
