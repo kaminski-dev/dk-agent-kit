@@ -331,9 +331,10 @@ def check_zsh_names(cmd):
 def check_credentials(cmd):
     m = CREDENTIALS.search(cmd)
     if m:
-        # ask, not deny, until a helper covers Sentry event details (retro #10)
-        return [("ask", f"This reads {m.group(0)}, which holds a credential. Prefer the CLI that owns it "
-                 "(sentry-cli, aws, gh); approve only if no CLI command covers it.")]
+        return [("deny", f"This reads {m.group(0)}, which holds a credential. Sentry event details come from "
+                 "the repo's Sentry helper, named in its docs/agents/observability.md (jetztbar-platform: "
+                 "`bun scripts/agents/sentry-events.ts <issue ID>`); anything else goes through the CLI that "
+                 "owns the credential (sentry-cli, aws, gh, ssh-add).")]
     return []
 
 
