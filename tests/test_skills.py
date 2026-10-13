@@ -96,11 +96,14 @@ for name in skills:
     if name not in ORIGINAL and not re.search(rf"^\| (skills/)?{re.escape(name)} \|", upstream, re.M):
         errors.append(f"skills/{name}: no row in upstream/UPSTREAM.md")
 
-dk_column = " ".join(re.findall(r"^\| ([^|]+) \|", upstream, re.M))
-for name, path in agents.items():
-    m = re.search(r"<!-- Adapted from (\S+(?: \S+)?)@([0-9a-f]+) ", path.read_text())
-    if m and not (re.search(rf"\b{re.escape(name)}\b", dk_column) and f"@ {m.group(2)}" in upstream):
-        errors.append(f"agents/{name}: adapted from {m.group(1)}@{m.group(2)}, but upstream/UPSTREAM.md has no row for it at that commit")
+dk_column_at = {}  # upstream commit -> the dk column of the rows under that section's heading
+for heading, body in re.findall(r"^## .*?@ ([0-9a-f]+)\n(.*?)(?=^## |\Z)", upstream, re.M | re.S):
+    dk_column_at[heading] = " ".join(re.findall(r"^\| ([^|]+) \|", body, re.M))
+for kind, files in (("skills", skills), ("agents", agents)):
+    for name, path in files.items():
+        m = re.search(r"<!-- Adapted from (\S+(?: \S+)?)@([0-9a-f]+) ", path.read_text())
+        if m and not re.search(rf"\b{re.escape(name)}\b", dk_column_at.get(m.group(2), "")):
+            errors.append(f"{kind}/{name}: adapted from {m.group(1)}@{m.group(2)}, but upstream/UPSTREAM.md has no row for it at that commit")
 
 for e in errors:
     print("FAIL", e)
