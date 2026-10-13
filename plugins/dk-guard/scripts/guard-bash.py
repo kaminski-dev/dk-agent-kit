@@ -28,7 +28,8 @@ CREDENTIALS = re.compile(r"\.sentryclirc|\.aws/credentials|(?<![\w.])\.netrc\b|\
 
 # Where a command can start: line start, after a control operator, inside $( or
 # backticks, after a shell keyword, or at the opening quote of `bash -c '...'`.
-START = r"(?:^|[;&|\n({`]|\$\(|\b(?:then|do|else)\s|-c\s+['\"])\s*"
+OPENERS = r"[;&|\n({`]|\$\(|\b(?:then|do|else|while|until|if)\s|-c\s+['\"]"
+START = r"(?:^|" + OPENERS + r")\s*"
 PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:(?:sudo|command|exec|nohup|time|env|nice|xargs(?:\s+-\S+)*|g?timeout\s+\S+)\s+)*"
 END = r"[^;&|\n)`]*"
 
@@ -262,7 +263,7 @@ def check_gh(cmd):
     return []
 
 
-DK_GC = re.compile(r"(?:^|(\|\|?|[;&\n({`]|\$\(|\b(?:then|do|else)\s|-c\s+['\"]))\s*" + PREFIX
+DK_GC = re.compile(r"(?:^|(\|\|?|" + OPENERS + r"))\s*" + PREFIX
                    + r"(?:python3?\s+(?:-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?dk-gc"
                    + r"(?=$|[\s;&|)`<>]|['\"](?:$|[\s;&|)]))(" + END + ")")
 OUTPUT_REDIRECT = re.compile(r"\d*>>?&(?:\d+|-)?|&>>?")
@@ -283,14 +284,19 @@ def open_quote(cmd, pos):
     return start if quote else None
 
 
+def quoted_text(cmd, pos, shell=""):
+    """True when `pos` sits in a quoted string that is data, not the script of `<shell> -c '...'`."""
+    quote = open_quote(cmd, pos)
+    return quote is not None and not re.search(shell + r"-c\s+$", cmd[:quote])
+
+
 def check_dk_gc(cmd):
     # `2>&1` and `&>` would end the match at their `&` and hide a later --yes or `<`; `<&3` stays as input
     cmd = OUTPUT_REDIRECT.sub(lambda r: " " * len(r.group()), cmd)
     for m in DK_GC.finditer(cmd):
         sep, rest = m.group(1) or "", m.group(2)
-        quoted = open_quote(cmd, m.end(1) if m.group(1) else m.start())
-        if quoted is not None and not re.search(r"-c\s+$", cmd[:quoted]):
-            continue  # a pattern or a string, not a shell command
+        if quoted_text(cmd, m.end(1) if m.group(1) else m.start()):
+            continue
         piped = sep == "|" or (sep == "&" and cmd[m.start() - 1:m.start()] == "|")
         args = rest.split()
         if "--dry-run" not in args and ("--yes" in args or "<" in rest or piped):
@@ -303,23 +309,16 @@ def check_dk_gc(cmd):
 # others are read-only or special arrays. The Bash tool runs zsh, so a loop or `read` on them breaks the call.
 ZSH_SPECIAL = {"path", "PATH", "fpath", "module_path", "cdpath", "manpath", "status", "pipestatus", "argv",
                "commands", "functions", "aliases", "options", "parameters", "history"}
-LOOP_START = r"(?:^|[;&|\n({`]|\$\(|\b(?:then|do|else|while|until|if)\s|zsh\s+-c\s+['\"])\s*"
-LOOP = re.compile(LOOP_START + r"(?:for|foreach|select)\s+((?:[A-Za-z_]\w*\s+)*?[A-Za-z_]\w*)\b(?=\s+in\b|\s*[(;\n]|\s*$)")
-READ = re.compile(LOOP_START + PREFIX + r"read\b(" + END + ")")
+LOOP = re.compile(START + r"(?:for|foreach|select)\s+((?:[A-Za-z_]\w*\s+)*?[A-Za-z_]\w*)\b(?=\s+in\b|\s*[(;\n]|\s*$)")
 
 
 def check_zsh_names(cmd):
-    targets = [(m, m.group(1).split()) for m in LOOP.finditer(cmd)]
-    for m in READ.finditer(cmd):
-        try:
-            tokens = shlex.split(m.group(1))
-        except ValueError:
-            tokens = m.group(1).split()
-        targets.append((m, [t.partition("?")[0] for t in drop_redirections(tokens) if not t.startswith("-")]))
-    for m, names in targets:
-        quoted = open_quote(cmd, m.start(1))
-        if quoted is not None and not re.search(r"zsh\s+-c\s+$", cmd[:quoted]):
-            continue  # a pattern, or code in another language or shell
+    targets = [(m.start(1), m.group(1).split()) for m in LOOP.finditer(cmd)]
+    targets += [(offset, [t.partition("?")[0] for t in tokens[1:] if not t.startswith("-")])
+                for offset, tokens in segments(cmd, "read")]
+    for offset, names in targets:
+        if quoted_text(cmd, offset, shell=r"\bzsh\s+"):
+            continue
         hit = next((n for n in names if n in ZSH_SPECIAL), None)
         if hit:
             return [("deny", f"`{hit}` is a special parameter in zsh, the shell this runs in (`path` is tied to "

@@ -68,6 +68,8 @@
   {"cmd": "ls ~/.netrc || echo missing", "expect": "allow"},
   {"cmd": "ls ~/.netrc 2>&1 | xargs cat", "expect": "deny"},
   {"cmd": "(ls -la ~/.netrc)", "expect": "allow"},
+  {"why": "PR #25 review: one START for every rule, with while, until and if", "cmd": "if [ -s ~/.netrc ]; then echo set; fi", "expect": "allow"},
+  {"cmd": "until docker system prune -f; do sleep 1; done", "expect": "deny"},
   {"why": "#18 replay: a Markdown code span in a comment body names the file", "cmd": "printf '%s\\n' '```' \"Token occurrences, counted against \\`~/.sentryclirc\\`: 0.\" > /tmp/c.md && gh issue comment 1094 --body-file /tmp/c.md", "expect": "allow"},
   {"cmd": "gh pr comment 5 --body 'The token sits in `~/.netrc`, so use `gh auth token`.'", "expect": "allow"},
   {"why": "#18: the sanctioned way to read Sentry events (jetztbar-platform#1094)", "cmd": "bun scripts/agents/sentry-events.ts JETZTBAR-FRONTEND-4V --limit 2", "expect": "allow"},
