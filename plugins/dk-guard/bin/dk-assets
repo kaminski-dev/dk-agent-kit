@@ -31,7 +31,7 @@ for f; do
   real="$(cd "$(dirname "$f")" && pwd -P)/$(basename "$f")"
   [[ ! -L "$f" && "$real" == */"$session"/scratchpad/* ]] || die "outside this session's scratch directory: $f"
   name=$(basename "$f")
-  [[ "$name" =~ ^[A-Za-z0-9_.-]+$ ]] || die "file name must be letters, digits, '.', '_' or '-', so the URL needs no escaping: $name"
+  [[ "$name" =~ ^[A-Za-z0-9_.-]+$ ]] || die "rename '$name': a file name takes only letters, digits, '.', '_' and '-', so its URL needs no escaping"
   [[ " $seen " != *" $name "* ]] || die "two files named $name; the branch holds them flat"
   seen+=" $name"
 done
