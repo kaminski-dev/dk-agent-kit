@@ -145,6 +145,8 @@
   {"cmd": "zsh -c 'for path in a b; do ls; done'", "expect": "deny"},
   {"why": "#18 review: invocation flags before -c still run the script in zsh", "cmd": "zsh -f -c 'for path in a b; do ls; done'", "expect": "deny"},
   {"cmd": "zsh -f -c 'for p in a b; do ls; done'", "expect": "allow"},
+  {"why": "#18 review: -o takes an option name before -c", "cmd": "zsh -o posixaliases -c 'for path in a b; do ls; done'", "expect": "deny"},
+  {"cmd": "zsh -o posixaliases -c 'for p in a b; do ls; done'", "expect": "allow"},
   {"cmd": "for p in a b; do echo $p; done", "expect": "allow"},
   {"cmd": "for dir in $path; do ls $dir; done", "expect": "allow"},
   {"cmd": "echo $PATH | tr : '\\n'", "expect": "allow"},

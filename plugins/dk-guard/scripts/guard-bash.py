@@ -317,7 +317,7 @@ def check_zsh_names(cmd):
     targets += [(offset, [t.partition("?")[0] for t in tokens[1:] if not t.startswith("-")])
                 for offset, tokens in segments(cmd, "read")]
     for offset, names in targets:
-        if quoted_text(cmd, offset, shell=r"\bzsh\s+(?:-[a-zA-Z]+\s+)*"):
+        if quoted_text(cmd, offset, shell=r"\bzsh\s+(?:(?:[-+]o\s+\w+|[-+][a-zA-Z]+)\s+)*"):
             continue
         hit = next((n for n in names if n in ZSH_SPECIAL), None)
         if hit:
