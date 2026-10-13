@@ -59,6 +59,8 @@
   {"cmd": "stat -f '%Lp' ~/.sentryclirc", "expect": "allow"},
   {"cmd": "test -f ~/.netrc && echo set", "expect": "allow"},
   {"cmd": "ls ~/.sentryclirc 2>/dev/null && grep -c token ~/.sentryclirc", "expect": "deny"},
+  {"why": "#18 replay: a Markdown code span in a comment body names the file", "cmd": "printf '%s\\n' '```' \"Token occurrences, counted against \\`~/.sentryclirc\\`: 0.\" > /tmp/c.md && gh issue comment 1094 --body-file /tmp/c.md", "expect": "allow"},
+  {"cmd": "gh pr comment 5 --body 'The token sits in `~/.netrc`, so use `gh auth token`.'", "expect": "allow"},
   {"why": "#18: the sanctioned way to read Sentry events (jetztbar-platform#1094)", "cmd": "bun scripts/agents/sentry-events.ts JETZTBAR-FRONTEND-4V --limit 2", "expect": "allow"},
   {"cmd": "sentry-cli issues list --org x", "expect": "allow"},
   {"why": "retro #5", "cmd": "gh issue view 1050 --comments", "expect": "hint"},

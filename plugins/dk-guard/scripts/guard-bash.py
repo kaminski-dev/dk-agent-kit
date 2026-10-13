@@ -331,15 +331,18 @@ def check_zsh_names(cmd):
 METADATA_ONLY = {"ls", "stat", "test", "[", "[["}
 
 
-def reads_content(cmd, pos):
-    """False when the command holding `pos` only checks the file (`ls`, `stat`, `[ -e`), so nothing is read."""
-    start = max((m.end() for m in re.finditer(START, cmd[:pos])), default=0)
+def reads_content(cmd, m):
+    """False when the command only checks the file (`ls`, `stat`, `[ -e`) or prose names it in a code span."""
+    if re.search(r"`[\w~/${}.-]*$", cmd[:m.start()]) and re.match(r"[\w./-]*\\?`", cmd[m.end():]):
+        return False  # `~/.netrc` in a comment or PR body; a real backtick substitution would run the file
+    pos = m.start()
+    start = max((s.end() for s in re.finditer(START, cmd[:pos])), default=0)
     words = re.sub("^" + PREFIX, "", cmd[start:pos]).split()
     return not words or words[0] not in METADATA_ONLY
 
 
 def check_credentials(cmd):
-    m = next((m for m in CREDENTIALS.finditer(cmd) if reads_content(cmd, m.start())), None)
+    m = next((m for m in CREDENTIALS.finditer(cmd) if reads_content(cmd, m)), None)
     if m:
         return [("deny", f"This reads {m.group(0)}, which holds a credential. Sentry event details come from "
                  "the repo's Sentry helper, named in its docs/agents/observability.md (jetztbar-platform: "
