@@ -77,5 +77,16 @@ r, pr = acceptance_on(ws, "reference")
 check("353: acceptance passes on the reference fix", "acceptance: pass" in pr and "unit tests: pass" in pr, pr or r.stderr)
 
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
+# The review fixture: a branch that fixes #353 correctly but breaks one documented standard.
+ws = scaffold("code-review-353")
+branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+check("353 review: the fix branch is checked out", branch == "fix/353-history-order", branch)
+diff = git(ws, "app", "diff", "origin/pre-main...HEAD").stdout
+check("353 review: the diff seeds a value interpolated into SQL", "entity_type = '{entity_type}'" in diff, diff[:300])
+r, pr = acceptance_on(ws, "HEAD")
+check("353 review: the seeded branch still meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr or r.stderr)
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
 print(f"{len(failures)} failures")
 sys.exit(1 if failures else 0)

@@ -1,0 +1,35 @@
+schema_version: "1.1"
+name: code-review-353
+description: >
+  Phase 2 case #353 on a stand-in repo: the branch fixes the Customer History order correctly but
+  builds its WHERE clause by interpolating values into the SQL, against the repo's documented
+  standard. dk:code-review finds that seeded violation on the Standards axis.
+tags: [code-review]
+runs: 2
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 60
+  timeout_seconds: 1200
+  allowed_tools: [Read, Glob, Grep, Skill, Agent, TodoWrite, Bash]
+graders:
+  - name: finds-seeded-violation
+    type: llm
+    criteria: >
+      The review reports, as a Standards finding, that `list_by_entity` puts the `entity_type` value
+      (and `entity_id`) into the SQL text with an f-string instead of passing it through a `?`
+      parameter, and ties it to the repo's documented rule that SQL takes its values as parameters
+      (CODING_STANDARDS.md rule 1). PASS only when that finding is present and attributed to the
+      documented standard; a mention only as a smell, a suggestion or under another axis is a FAIL.
+  - name: three-axes
+    type: regex
+    pattern: "## Standards[\\s\\S]*## Spec[\\s\\S]*## Comments"
+  - name: standards-and-spec-reviewers
+    type: tool_used
+    tool: Agent
+    input_match: '"subagent_type"\s*:\s*"dk:reviewer"'
+    min: 2
+  - name: comments-reviewer
+    type: tool_used
+    tool: Agent
+    input_match: '"subagent_type"\s*:\s*"dk:comment-reviewer"'

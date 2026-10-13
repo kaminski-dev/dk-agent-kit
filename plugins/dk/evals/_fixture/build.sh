@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # Builds an eval workspace in the current directory, which `claude plugin eval --scaffold`
-# makes $HOME/cwd. usage: build.sh <repo dir under _fixture> <issues state file> [branch patch]
+# makes $HOME/cwd. usage: build.sh <repo dir under _fixture> <issues state file> [branch slug]
 #
 # The workspace gets the repo (main and pre-main, origin a bare repo beside it), the
 # tracker stand-in's state in .tracker/, and .bin/ first on PATH through the temp HOME's
 # shell rc: .bin/gh is the stand-in, so no call reaches GitHub, and .bin/git* call git by
 # absolute path, because the macOS sandbox resolves plain git to the xcrun shim, which
-# cannot run there. With a patch, a fix/<N>-* branch carrying it is checked out.
+# cannot run there. With a slug, branch fix/<N>-<slug> carrying patches/<N>-<slug>.patch
+# is checked out and pushed.
 set -euo pipefail
 F=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WS=$PWD
-repo=$1 issues=$2 patch=${3:-}
+repo=$1 issues=$2 slug=${3:-}
 
 git=$(command -v git)
 if [ "$(uname)" = Darwin ] && [ "$git" = /usr/bin/git ]; then git=$(xcrun --find git); fi
@@ -43,10 +44,8 @@ git branch pre-main
 git remote add origin ../origin.git
 git push -q origin main pre-main
 git fetch -q origin
-if [ -n "$patch" ]; then
-  git checkout -q -b "fix/$num-${patch%.patch}" origin/pre-main
-  git apply "$F/$patch"
-  git add -A
-  git commit -qm "$(head -1 "$F/$patch.msg")"
+if [ -n "$slug" ]; then
+  git checkout -q -b "fix/$num-$slug" origin/pre-main
+  git am -q "$F/patches/$num-$slug.patch"
   git push -q origin HEAD
 fi
