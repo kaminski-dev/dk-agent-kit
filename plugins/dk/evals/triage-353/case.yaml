@@ -1,7 +1,7 @@
 schema_version: "1.1"
 name: triage-353
 description: >
-  Phase 2 case #353 (Customer History order) on a stand-in repo, before triage: dk:triage reaches
+  clientdata #353 (Customer History order) on a stand-in repo, before triage: dk:triage reaches
   the labels the real triage reached (bug, ready-for-agent) and posts an agent brief of the same shape.
 tags: [triage]
 runs: 2

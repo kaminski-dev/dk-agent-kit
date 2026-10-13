@@ -1,7 +1,7 @@
 schema_version: "1.1"
 name: triage-1091
 description: >
-  Phase 2 case #1091 (govulncheck red on go1.27.1 and x/net v0.59.0) on a stand-in Go repo, before
+  jetztbar #1091 (govulncheck red on go1.27.1 and x/net v0.59.0) on a stand-in Go repo, before
   triage: dk:triage reproduces the report, reaches the labels the real triage reached (bug,
   ready-for-agent) and posts an agent brief of the same shape.
 tags: [triage]

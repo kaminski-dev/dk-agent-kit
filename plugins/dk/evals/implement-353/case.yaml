@@ -1,7 +1,7 @@
 schema_version: "1.1"
 name: implement-353
 description: >
-  Phase 2 case #353 (Customer History order), replayed on a stand-in repo: dk:implement takes the
+  clientdata #353 (Customer History order), replayed on a stand-in repo: dk:implement takes the
   triaged ticket to a PR into pre-main with evidence. The tracker is the workspace's gh stand-in,
   so the PR is a file, never a real one.
 tags: [implement]

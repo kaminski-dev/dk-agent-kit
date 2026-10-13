@@ -1,7 +1,7 @@
 schema_version: "1.1"
 name: code-review-353
 description: >
-  Phase 2 case #353 on a stand-in repo: the branch fixes the Customer History order correctly but
+  clientdata #353 on a stand-in repo: the branch fixes the Customer History order correctly but
   builds its WHERE clause by interpolating values into the SQL, against the repo's documented
   standard. dk:code-review finds that seeded violation on the Standards axis.
 tags: [code-review]
