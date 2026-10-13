@@ -106,6 +106,9 @@ $out"
 # A recorded path that does not exist at the recorded commit is named, not
 # silently counted as unchanged.
 expect "misspelt.md: not found at $hl_base"
+# The temp clones are gone when the run ends, so the full-diff hint asks for a
+# rerun that keeps them instead of naming a directory that no longer exists.
+expect "rerun as upstream/sync.sh <clones-dir>"
 
 # A reused clone that lacks origin/HEAD still gets compared, and the run goes
 # on to the next source. Git before 2.48 never recreates the ref on fetch;
@@ -126,5 +129,8 @@ commit quiet/q "quiet: kept on trunk" kept.md >/dev/null
 out=$("$sync" "$clones" 2>&1) || fail "sync.sh after a default-branch move exited non-zero: $out"
 expect "=== kept.md"
 expect "quiet: kept on trunk"
+# With a clones dir the hint names it, ready to run.
+expect "git -C $clones/<owner>/<repo> diff"
+refuse "rerun as"
 
 echo "sync: all checks passed"

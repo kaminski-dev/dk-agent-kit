@@ -61,4 +61,8 @@ while read -r repo base paths <&3; do
     printf '%s\n' "$out"
   fi
 done 3< <(sources)
-echo "Full diff of one path: git -C <clones-dir>/<owner>/<repo> diff <recorded> origin/HEAD -- <path>"
+if [[ -n "${1:-}" ]]; then
+  echo "Full diff of one path: git -C $dir/<owner>/<repo> diff <recorded> origin/HEAD -- <path>"
+else
+  echo "Full diff of one path: rerun as upstream/sync.sh <clones-dir> to keep the clones, then git -C <clones-dir>/<owner>/<repo> diff <recorded> origin/HEAD -- <path>"
+fi
