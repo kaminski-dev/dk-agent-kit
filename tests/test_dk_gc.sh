@@ -70,9 +70,14 @@ git -C "$app" commit -q --allow-empty -m init
 git -C "$app" push -q origin main
 mkdir -p "$fx/acme_app"
 
-# worktree <dir> <branch>: a pushed worktree with one commit; prints its sha.
+# worktree <dir> <branch> [ignore-pattern...]: a pushed worktree with one commit, which adds a
+# .gitignore of the patterns when there are any; prints its sha.
 worktree() {
   git -C "$app" worktree add -q -b "$2" "$ws/$1" main
+  if (($# > 2)); then
+    printf '%s\n' "${@:3}" >"$ws/$1/.gitignore"
+    git -C "$ws/$1" add .gitignore
+  fi
   git -C "$ws/$1" commit -q --allow-empty -m "work on $2"
   git -C "$ws/$1" push -q origin "$2"
   git -C "$ws/$1" rev-parse HEAD
@@ -96,6 +101,15 @@ git -C "$ws/app-7" reset -q --hard "$behind7"
 loose8=$(worktree app-8 feat/8-loose)
 git -C "$app" worktree remove "$ws/app-8"
 git -C "$app" push -q origin --delete feat/8-loose
+# Ignored files: only regenerable ones (app-16), which go with the worktree.
+regen16=$(worktree app-16 feat/16-regen node_modules/ '*.tsbuildinfo' .env.local dist/ '*.gen.*')
+mkdir -p "$ws/app-16/node_modules/x" "$ws/app-16/frontend/node_modules/y" "$ws/app-16/dist" "$ws/app-16/frontend/src"
+echo 'module.exports = 1' >"$ws/app-16/node_modules/x/index.js"
+echo 1 >"$ws/app-16/frontend/node_modules/y/index.js"
+echo '{}' >"$ws/app-16/app.tsbuildinfo"
+echo 'SECRET=1' >"$ws/app-16/.env.local"
+echo bundle >"$ws/app-16/dist/app.js"
+echo routes >"$ws/app-16/frontend/src/routeTree.gen.ts"
 # On origin only: a base of an open PR, and one pushed to after its merge. pre-main, the batch
 # branch, is on origin and checked out in a worktree.
 main=$(git -C "$app" rev-parse main)
@@ -112,7 +126,8 @@ git -C "$app" push -q origin pre-master
 echo "[$(pr 11 feat/1-done "$done1" main), $(pr 12 feat/2-dirty "$dirty2" main), $(pr 14 feat/4-again "$again4" main),
   $(pr 16 feat/5-ahead "$ahead5" main), $(pr 17 verify-assets/6 "$assets6" main), $(pr 18 feat/7-behind "$head7" main),
   $(pr 19 feat/8-loose "$loose8" main), $(pr 20 feat/10-base "$main" main), $(pr 22 pre-main "$main" main),
-  $(pr 23 feat/11-moved "$moved11" main), $(pr 24 pre-master "$main" main), $(pr 25 feat/13-batched "$main" pre-master)]" \
+  $(pr 23 feat/11-moved "$moved11" main), $(pr 24 pre-master "$main" main), $(pr 25 feat/13-batched "$main" pre-master),
+  $(pr 26 feat/16-regen "$regen16" main)]" \
   >"$fx/acme_app/pr-merged.json"
 # A second checkout of acme/app: its remote branches are the same ones, handled once.
 git clone -q https://github.com/acme/app.git "$ws/app-copy"
@@ -169,6 +184,7 @@ has "$out" "keep remote origin/feat/4-again (PR #14 merged; open PR #15)"
 has "$out" "keep remote origin/feat/10-base (PR #20 merged; base of open PR #21)"
 has "$out" "keep remote origin/feat/11-moved (PR #23 merged; commits it did not merge)"
 lacks "$out" "pre-main"
+has "$out" "remove worktree $ws/app-16 (feat/16-regen, PR #26 merged)"
 has "$out" "remove database dk-pg-app-1 (issue #1 closed)"
 lacks "$out" "dk-pg-app-3"
 has "$out" "keep database dk-pg-gone-9 (issue #9; no GitHub checkout at $tmp/gone)"
@@ -200,6 +216,7 @@ out=$(echo y | "$dkgc" --workspace "$ws")
 git -C "$app" rev-parse -q --verify refs/heads/feat/1-done >/dev/null && fail "branch feat/1-done still there"
 [[ -d "$ws/notes-1" && -d "$ws/other-1" ]] || fail "worktree of a repo without PRs removed"
 [[ ! -e "$ws/app-7" ]] || fail "worktree behind its merged PR still there"
+[[ ! -e "$ws/app-16" ]] || fail "worktree with only regenerable ignored files still there"
 git -C "$app" rev-parse -q --verify refs/heads/pre-master >/dev/null || fail "integration branch pre-master removed"
 for kept in app-pre-main:pre-main app-2:feat/2-dirty app-3:feat/3-open app-4:feat/4-again app-5:feat/5-ahead app-6:verify-assets/6; do
   [[ -d "$ws/${kept%%:*}" ]] || fail "worktree ${kept%%:*} removed"
