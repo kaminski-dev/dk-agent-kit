@@ -23,7 +23,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 | pr | skills/engineering/pr | Also in this PR, Deviations, `Closes`/`Refs` (repeated on the batch PR), evidence on `verify-assets`, `dk:blast-radius` for one-way doors |
 | prototype | skills/engineering/prototype | tracking issue, tracked paths, pushed `proto/` branch, versioned artifact titles; production never renders a variant |
 | research | skills/engineering/research | narrower trigger; notes in `docs/research/` |
-| retro | skills/engineering/retro | `dk:` references |
+| retro | skills/engineering/retro | `dk:` references; a window of sessions; correct step and rule-to-check table from pstack |
 | tdd | skills/engineering/tdd | `dk:` references |
 | teach | skills/productivity/teach | as-is |
 | to-spec | skills/engineering/to-spec | `spec` label instead of `ready-for-agent` |
@@ -37,6 +37,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 | dk file | Upstream path | Changes |
 |---|---|---|
 | skills/blast-radius | pstack/skills/blast-radius | model-invoked; shared-modules section; pointers to how/why/arena/unslop dropped |
+| skills/retro correct step, rule-to-check table | pstack/skills/correct | folded into the retro as a step; proposes fixes instead of making them; table in the retro report, not the instruction file |
 | code-review Empty Test, Defensive Interior | pstack/skills/principle-test-behavior-not-implementation, pstack/skills/principle-boundary-discipline | condensed into baseline entries |
 | agents/comment-reviewer | pstack/agents/comment-sicko.md | scoped to comments on added lines; Restates (Reshape folded in), Narrates history, Stale, Commented-out code findings; Suppression left to Standards; repo comment policy overrides the keep list; report only, persona and `/how` `/why` calls dropped |
 
