@@ -172,6 +172,7 @@ python3 -I tests/test_evals.py
 bash tests/test_bootstrap.sh
 bash tests/test_dk_pg.sh      # skips without a Docker daemon
 bash tests/test_dk_gc.sh
+bash tests/test_dk_assets.sh
 bash tests/test_sync.sh
 claude plugin validate .
 ```
