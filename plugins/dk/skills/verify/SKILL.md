@@ -60,7 +60,7 @@ Check 1280 px, then 390 × 844 (`browser_resize` or `page.setViewportSize`), and
 
 ## 6. Evidence
 
-Each proof owed in step 1 appears in the PR's Evidence section (`dk:pr`) as a before and after: control and change output, test runs, screenshots. The screenshots in `$RUN/shots/` go on `verify-assets/<N>` as `dk:issue-flow` step 5 describes. A proof that runs only in CI waits for it with `gh pr checks <PR> --watch`, as `dk:issue-flow` step 6 says.
+Each proof owed in step 1 appears in the PR's Evidence section (`dk:pr`) as a before and after: control and change output, test runs, screenshots. The screenshots in `$RUN/shots/` go on `verify-assets/<N>` as `dk:issue-flow` step 5 describes. A proof that runs only in CI waits for it as `dk:issue-flow` step 6 says.
 
 ## 7. Tear down
 

@@ -66,7 +66,7 @@ Rebase onto the current `origin/pre-main`, push the branch, and open the PR agai
 
 When the change is one the customer sees, write the customer reply on the issue as `workflow.md` describes; for a change they never see (toolchain, CI, internal refactor), the PR says so instead. Merging is the maintainer's.
 
-Wait for CI with `gh pr checks <PR> --watch --fail-fast`: it returns once every check has finished, non-zero when one failed. Right after a push it can answer "no checks reported" before CI has registered; run it again. A failed check is fixed on the branch and watched again before you report.
+Wait for CI with `gh pr checks <PR> --watch --fail-fast`: it returns non-zero at the first failed check, or zero once every check has passed. Right after a push it can answer "no checks reported" before CI has registered; run it again. A failed check is fixed on the branch and watched again before you report.
 
 ## 7. After the merge
 
