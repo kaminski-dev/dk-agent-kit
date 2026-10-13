@@ -88,6 +88,17 @@ r, pr = acceptance_on(ws, "HEAD")
 check("353 review: the seeded branch still meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr or r.stderr)
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
+# The triage fixture: #353 as filed, on the pre-fix code.
+ws = scaffold("triage-353")
+issue = json.loads(run(ws, "gh issue view 353 --json labels,comments").stdout)
+check("353 triage: the tracker holds the untriaged issue", issue == {"labels": [{"name": "needs-triage"}], "comments": []}, issue)
+store = (ws / "app" / "ledger" / "audit_store.py").read_text()
+check("353 triage: list_by_entity still orders by changed_at alone", '" ORDER BY changed_at DESC"' in store, store[-600:])
+r = run(ws, "gh issue edit 353 --add-label bug --add-label ready-for-agent --remove-label needs-triage")
+md = (ws / ".tracker" / "issue-353.md").read_text() if (ws / ".tracker" / "issue-353.md").exists() else ""
+check("353 triage: a label edit reaches the file the graders read", "labels: bug, ready-for-agent\n" in md, md or r.stderr)
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
 # --- #1091 fixture: govulncheck red on go1.27.1 and x/net v0.59.0 --------------------------------
 
 ws = scaffold("triage-1091")
