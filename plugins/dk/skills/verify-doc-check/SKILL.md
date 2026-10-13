@@ -41,6 +41,8 @@ When `git ls-remote --heads origin pre-main` prints nothing, base it on `origin/
 
 Start `$RUN/run.md`, the **run log**: one line per doc step with the command as run, the result, and its kind when it failed. It stays in `$RUN`, never in the tree.
 
+Done when `$RUN/tree` is checked out at the base you name in the report, the fresh-worktree setup exited zero there, and `$RUN/run.md` exists.
+
 ## 2. Source wave
 
 Split the doc by its sections (stack start, database, stubs, seeding, login, endpoints, browser, and any others it has). Launch one read-only `dk:codebase-analyzer` per section, all in one message. Each gets the section's text and the worktree path, checks every claim it makes against the source (each script and path exists, each env var is read under that name, each port, route, seeded user and migration tool matches), and returns: claims confirmed, likely drift with `file:line`, and the one live step that exercises the section.
@@ -71,5 +73,7 @@ Done when every step has a line in the run log.
 
 - **Doc drift and harness gaps**: one PR through `dk:issue-flow` (one issue for the run, its branch off `pre-main`), carrying each fix. Run every fixed step again in a fresh worktree of the branch before opening it; the PR's Evidence is the failing run-log line beside the passing one.
 - **Product gaps**, and drift you cannot prove a fix for: one issue each, labelled `needs-triage`, opening with `Found by the verify doc check` and the run-log lines. Search open issues first (`dk:issue-flow` step 3) and comment on a match instead.
+
+Done when every failed line in the run log names the PR that fixes it or the issue (new or commented) that records it.
 
 Report the outcome, the run-log path, and the PR and issues.
