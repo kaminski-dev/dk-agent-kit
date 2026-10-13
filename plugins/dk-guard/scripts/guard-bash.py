@@ -3,7 +3,9 @@
 
 Reads the hook JSON on stdin and answers with a permission decision:
 deny for commands that destroyed shared state before (docker prune, unfiltered
-mass removal, pushes to main, force pushes, git clean of ignored files), ask
+mass removal, pushes to main, force pushes, git clean of ignored files) or
+broke the shell (a zsh special parameter such as `path` as a loop or read
+variable), ask
 for rewriting the shared pre-main branch, reading a credential file or
 answering dk-gc's question for the human (--yes, piped input), and
 hints for gh calls that silently drop the issue body and for an unlabelled
@@ -297,6 +299,35 @@ def check_dk_gc(cmd):
     return []
 
 
+# zsh names that break the shell when assigned: `path` is tied to PATH (later commands are "not found"), the
+# others are read-only or special arrays. The Bash tool runs zsh, so a loop or `read` on them breaks the call.
+ZSH_SPECIAL = {"path", "PATH", "fpath", "module_path", "cdpath", "manpath", "status", "pipestatus", "argv",
+               "commands", "functions", "aliases", "options", "parameters", "history"}
+LOOP_START = r"(?:^|[;&|\n({`]|\$\(|\b(?:then|do|else|while|until|if)\s|zsh\s+-c\s+['\"])\s*"
+LOOP = re.compile(LOOP_START + r"(?:for|foreach|select)\s+((?:[A-Za-z_]\w*\s+)*?[A-Za-z_]\w*)\b(?=\s+in\b|\s*[(;\n]|\s*$)")
+READ = re.compile(LOOP_START + PREFIX + r"read\b(" + END + ")")
+
+
+def check_zsh_names(cmd):
+    targets = [(m, m.group(1).split()) for m in LOOP.finditer(cmd)]
+    for m in READ.finditer(cmd):
+        try:
+            tokens = shlex.split(m.group(1))
+        except ValueError:
+            tokens = m.group(1).split()
+        targets.append((m, [t.partition("?")[0] for t in drop_redirections(tokens) if not t.startswith("-")]))
+    for m, names in targets:
+        quoted = open_quote(cmd, m.start(1))
+        if quoted is not None and not re.search(r"zsh\s+-c\s+$", cmd[:quoted]):
+            continue  # a pattern, or code in another language or shell
+        hit = next((n for n in names if n in ZSH_SPECIAL), None)
+        if hit:
+            return [("deny", f"`{hit}` is a special parameter in zsh, the shell this runs in (`path` is tied to "
+                     "PATH, so every later command is \"command not found\"; `status`, `argv` and the like are "
+                     "read-only or special). Name the loop or read variable something else, e.g. `p` or `file`.")]
+    return []
+
+
 def check_credentials(cmd):
     m = CREDENTIALS.search(cmd)
     if m:
@@ -309,7 +340,7 @@ def check_credentials(cmd):
 def decide(cmd, cwd):
     cmd = strip_heredocs(cmd)
     findings = check_docker(cmd) + check_git(cmd, cwd) + check_credentials(cmd) + check_gh(cmd) \
-        + check_postgres(cmd) + check_dk_gc(cmd)
+        + check_postgres(cmd) + check_dk_gc(cmd) + check_zsh_names(cmd)
     for level in ("deny", "ask"):
         reasons = [r for l, r in findings if l == level]
         if reasons:
