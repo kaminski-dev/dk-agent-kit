@@ -1,0 +1,26 @@
+{
+  "repo": "acme/ledger",
+  "labels": [
+    "bug",
+    "enhancement",
+    "needs-triage",
+    "needs-info",
+    "ready-for-agent",
+    "ready-for-human",
+    "wontfix",
+    "spec"
+  ],
+  "prs": [],
+  "issues": {
+    "361": {
+      "title": "Audit Log is wrong",
+      "body": "Some entries in the Audit Log look wrong. Please fix.\n",
+      "state": "open",
+      "author": "frontdesk",
+      "labels": [
+        "needs-triage"
+      ],
+      "comments": []
+    }
+  }
+}

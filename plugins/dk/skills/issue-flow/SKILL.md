@@ -40,23 +40,21 @@ Then record it, so review counts it as requested work: comment `Scope amendment:
 
 **Otherwise file it**: a new issue labelled `needs-triage`, opening with `Found while working on #N` and the evidence. Before creating it, search open issues touching the same files (`gh issue list --state open --search "<file or term>" --json number,title`) and add it there as a comment when one fits. When it blocks the current issue, link it as a blocker (tracker doc) and say so on the issue.
 
+**Name each item by number and content.** Every follow-up, side finding or deferred item in your report, the PR body or an issue comment is its issue number plus one line of what it is: `#123: login answers 500 on an empty password`. An item without a number is filed first; a folded-in one carries the number of the issue whose scope amendment records it.
+
 ## 4. Commit per green step
 
 Each commit is one verifiable unit: the gates from `AGENTS.md` pass on what it touches before the next unit starts. For a bug, the failing test lands first and the fix on top, so the history shows red then green. Messages are English, imperative, and name the issue: `Fix X when Y (#N)`.
 
 ## 5. Screenshots and evidence
 
-Call the Skill tool with `dk:verify`; the proof it asks for lands here. Evidence goes into the PR, never into the tree. Collect the screenshots in `$SCRATCH/<N>/shots/` first (Playwright MCP saves only under its own roots, so move them there), then push them as an orphan commit on `verify-assets/<N>` and embed them by commit SHA:
+Call the Skill tool with `dk:verify`; the proof it asks for lands here. Evidence goes into the PR, never into the tree. `dk:verify` leaves the screenshots in `$RUN/shots/`, its run directory under the session scratch (`$RUN` stands for the path it printed, written literally); push them to `verify-assets/<N>` with one command and paste the URLs it prints into the PR as printed:
 
 ```sh
-tree=$( { for f in "$SCRATCH/<N>"/shots/*.png; do
-          printf '100644 blob %s\t%s\n' "$(git hash-object -w "$f")" "$(basename "$f")"; done; } | git mktree )
-c=$(git commit-tree "$tree" -m "verify assets for #<N>")
-git push -f origin "${c}:refs/heads/verify-assets/<N>"   # braces: zsh reads $c:r as a modifier
-# embed: https://github.com/<owner>/<repo>/blob/$c/<file>.png?raw=true
+dk-assets push <N> "$RUN"/shots/*.png
 ```
 
-Rerunning replaces the branch; the guard allows force pushes to `verify-assets/*` only. The branch stays after the merge: it is the only ref that keeps the embedded commit, so deleting it would eventually break the images in the merged PR.
+What it pushes and when it refuses is in its header (`head -12 "$(command -v dk-assets)"`). The branch stays after the merge: it is the only ref that keeps the embedded commit, so deleting it would eventually break the images in the merged PR.
 
 ## 6. Open the PR
 
@@ -67,6 +65,8 @@ Rebase onto the current `origin/pre-main`, push the branch, and open the PR agai
 - Every deviation from the issue, named for the maintainer's OK, and the "Also in this PR" list from scope intake.
 
 When the change is one the customer sees, write the customer reply on the issue as `workflow.md` describes; for a change they never see (toolchain, CI, internal refactor), the PR says so instead. Merging is the maintainer's.
+
+Wait for CI with `gh pr checks <PR> --watch --fail-fast`: it returns non-zero at the first failed check, or zero once every check has passed. Right after a push it can answer "no checks reported" before CI has registered; run it again. A failed check is fixed on the branch and watched again before you report.
 
 ## 7. After the merge
 

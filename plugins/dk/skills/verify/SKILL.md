@@ -11,6 +11,8 @@ This skill is the protocol. The repo's facts live in its `docs/agents/verify.md`
 
 `<N>` is the issue number, `$SCRATCH/<N>/` your scratch directory from `dk:issue-flow`.
 
+Each run starts in a fresh **run directory**: `mkdir -p "$SCRATCH/<N>" && mktemp -d "$SCRATCH/<N>/verify.XXXXXX"`. Shell variables last one Bash call, so write the path it prints literally in every later command; `$RUN` below stands for it. Everything the run writes goes in `$RUN`, and a rerun makes a new one, so earlier runs stay where they are and nothing needs deleting.
+
 ## 1. Owe the proof
 
 List what the diff changes and take the matching rows; each row touched is owed in full.
@@ -30,7 +32,7 @@ A change no row covers (docs, CI, tooling) owes what the Evidence section of the
 - **Database**: the repo doc says whether the stack needs one. For Postgres, `dk-pg up <N>` starts a throwaway Postgres on a free port, waits until it accepts connections and prints its URL (`--db NAME` when the repo expects a database name); `dk-pg url <N>` prints it again. Point the stack and the integration suite at that URL. It starts empty every time, so seeding is the repo doc's step.
 - **Ports**: before starting a process, `lsof -iTCP:<port> -sTCP:LISTEN` shows the port free; a stale process from an earlier run answers with old code. Use the repo doc's way of moving to a free port.
 - **External services**: stub them or leave them absent, as the repo doc says per service. The stack never talks to a production service.
-- **Files**: logs, cookie jars, stub output and builds go in `$SCRATCH/<N>/`.
+- **Files**: logs, cookie jars, stub output and builds go in `$RUN`.
 
 Note every process and port you start; step 7 removes them.
 
@@ -42,22 +44,27 @@ The repo doc says whether the API needs a login; an API without one is called wi
 
 Drive one scenario twice, with the same input and the same steps:
 
-1. **Control**: the pre-fix state, built in a throwaway worktree (`git worktree add --detach "$SCRATCH/<N>/base" <base>`, with `<base>` the branch's base from `workflow.md`). It shows the bug, or the feature's absence.
+1. **Control**: the pre-fix state, built in a throwaway worktree (`git worktree add --detach "$RUN/base" <base>`, with `<base>` the branch's base from `workflow.md`). It shows the bug, or the feature's absence.
 2. **Change**: your branch, which shows the fix.
 
 For a fix, a control that already behaves correctly means the scenario misses the bug: rework the scenario until the control fails, then run the change. Keep the output of both runs; they are the before and after of the PR's evidence.
 
 ## 5. Browser
 
-Playwright, through the MCP browser or a standalone script when another session holds the MCP profile. Check 1280 px, then `browser_resize` to 390 × 844, and see the change at both widths. Errors from `browser_console_messages` are findings: each is fixed, or explained in the PR. Save screenshots to `$SCRATCH/<N>/shots/`.
+Drive a browser of your own, with no state from earlier runs: a cookie left over from one run can change what the control or the change shows. The Playwright MCP server runs one browser per session, and the session's subagents share it:
+
+- **Main agent, no other verifier in the session, and the MCP server runs with `--isolated`** (`claude mcp get playwright` lists its args): the MCP browser.
+- **Otherwise**: a standalone Playwright script in `$RUN`, run from the repo so `playwright` resolves (the verify doc says how). `chromium.launch({ headless: true })`, then a fresh `browser.newContext()` for the control and another for the change; the contexts live in memory, so nothing of the session reaches the disk. When the MCP answered "Browser is already in use", or runs without `--isolated`, name it in your report.
+
+Check 1280 px, then 390 × 844 (`browser_resize` or `page.setViewportSize`), and see the change at both widths. Console errors (`browser_console_messages` or `page.on('console')`) are findings: each is fixed, or explained in the PR. Screenshots go in `$RUN/shots/`; the MCP writes only under its own roots, so move its files there.
 
 ## 6. Evidence
 
-Each proof owed in step 1 appears in the PR's Evidence section (`dk:pr`) as a before and after: control and change output, test runs, screenshots. Screenshots go on `verify-assets/<N>` as `dk:issue-flow` step 5 describes.
+Each proof owed in step 1 appears in the PR's Evidence section (`dk:pr`) as a before and after: control and change output, test runs, screenshots. The screenshots in `$RUN/shots/` go on `verify-assets/<N>` as `dk:issue-flow` step 5 describes. A proof that runs only in CI waits for it as `dk:issue-flow` step 6 says.
 
 ## 7. Tear down
 
-Before reporting, remove what you started: stop every process (its port is free again under `lsof`), `dk-pg down <N>` when you started one, `git worktree remove "$SCRATCH/<N>/base"`, and delete cookie jars. Done when none of your ports listens and, with dk-pg, `dk-pg url <N>` finds no running database.
+Before reporting, stop what you started: every process (its port is free again under `lsof`), your browser (`browser_close`, or the script's `browser.close()`), `dk-pg down <N>` when you started one, and `git worktree remove "$RUN/base"`. The files stay in `$RUN` with the session's scratch. Done when none of your ports listens, `git worktree list` no longer shows `$RUN/base` and, with dk-pg, `dk-pg url <N>` finds no running database.
 
 ## The repo's verify doc
 

@@ -27,6 +27,8 @@ jobs:
         run: bash tests/test_dk_pg.sh
       - name: dk-gc against fixture repos
         run: bash tests/test_dk_gc.sh
+      - name: dk-assets against a local origin
+        run: bash tests/test_dk_assets.sh
       - name: upstream sync against fixture repos
         run: bash tests/test_sync.sh
       - name: manifests parse

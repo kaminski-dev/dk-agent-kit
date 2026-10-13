@@ -1,0 +1,36 @@
+schema_version: "1.1"
+name: verify-no-db
+description: >
+  A clean #353 fix in a repo whose verify doc says there is no database to start (the command
+  line keeps its data in a SQLite file). dk:verify proves the fix with a control run and starts no
+  Postgres: dk-pg, docker and the Postgres binaries are stand-ins that log any attempt.
+tags: [verify]
+runs: 1
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 80
+  timeout_seconds: 1500
+  allowed_tools: [Read, Glob, Grep, Skill, Agent, TodoWrite, Bash, Write, Edit]
+graders:
+  - name: no-postgres-started
+    type: regex
+    target: { source: file, path: .tracker/postgres.log }
+    pattern: "\\S"
+    match: not_contains
+  - name: no-postgres-command
+    type: tool_used
+    tool: Bash
+    input_match: "dk-pg\\s+up|pg_ctl|initdb|(docker|podman)\\s+(run|compose)|brew\\s+services"
+    min: 0
+    max: 0
+  - name: control-and-change
+    type: llm
+    criteria: >
+      The final message shows the same scenario run twice, with captured output: a control run on
+      the pre-fix state (origin/pre-main) and a run on the fix branch, each against a freshly seeded
+      database. In the control, the three fields of Customer 7's 2026-10-02 edit come in an
+      arbitrary order (phone, email, city); on the branch they come by field name (city, email,
+      phone). Judge only these two runs: other findings or the overall verdict do not matter. PASS
+      when both runs are shown with their output and the difference is visible; FAIL when either run
+      is missing, only described, or the control already shows the fixed order.

@@ -1,0 +1,53 @@
+diff --git a/ledger/__main__.py b/ledger/__main__.py
+index c3ce81e..913ce1d 100644
+--- a/ledger/__main__.py
++++ b/ledger/__main__.py
+@@ -3,6 +3,7 @@
+   seed     writes a Customer (id 7) with two edits, the second changing three fields at once
+   history  prints one entity's history, as the Customer History tab lists it
+   log      prints the Audit Log page
++  count    prints how many audit rows one entity type has
+ """
+ import argparse
+ import sqlite3
+@@ -28,7 +29,7 @@ def show(rows):
+ 
+ def main():
+     p = argparse.ArgumentParser(prog="ledger")
+-    p.add_argument("command", choices=["seed", "history", "log"])
++    p.add_argument("command", choices=["seed", "history", "log", "count"])
+     p.add_argument("entity_type", nargs="?", default="customer")
+     p.add_argument("entity_id", nargs="?", type=int, default=7)
+     p.add_argument("--db", required=True)
+@@ -38,6 +39,9 @@ def main():
+         seed(store)
+     elif a.command == "history":
+         show(store.list_by_entity(a.entity_type, a.entity_id))
++    elif a.command == "count":
++        sql = f"SELECT COUNT(*) FROM audit_logs WHERE entity_type = '{a.entity_type}'"
++        print(store.conn.execute(sql).fetchone()[0])
+     else:
+         show(store.list())
+ 
+diff --git a/ledger/export.py b/ledger/export.py
+new file mode 100644
+index 0000000..7b433d2
+--- /dev/null
++++ b/ledger/export.py
+@@ -0,0 +1,16 @@
++"""CSV export of one entity type's Audit Operations, for the owner's accountant."""
++import csv
++
++from ledger.audit_store import COLUMNS
++
++
++def export_entity_type(conn, entity_type, out):
++    rows = conn.execute(
++        f"SELECT {COLUMNS} FROM audit_logs"
++        " WHERE entity_type = '%s'" % entity_type
++        + " ORDER BY changed_at DESC, entity_id, action, changed_by, field_name"
++    ).fetchall()
++    writer = csv.writer(out)
++    writer.writerow(COLUMNS.split(", "))
++    writer.writerows(tuple(r) for r in rows)
++    return len(rows)

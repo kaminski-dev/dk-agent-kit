@@ -6,13 +6,21 @@ deny for commands that destroyed shared state before (docker prune, unfiltered
 mass removal, pushes to main, force pushes, git clean of ignored files),
 leaked a credential (reading a credential file) or broke the shell (a zsh
 special parameter such as `path` as a loop or read variable), ask for
-rewriting the shared pre-main branch or answering dk-gc's question for the
+rewriting the shared pre-main branch, a push to the current branch when the
+guard cannot tell which branch that is, or answering dk-gc's question for the
 human (--yes, piped input), and
 hints for gh calls that silently drop the issue body and for an unlabelled
 Postgres server that dk-pg should start instead. Everything else passes.
 
+The rules match on words: the command is split once, as the shell reads it,
+into segments of words (quotes, here-docs, redirections, substitutions and
+`<shell> -c` scripts included). Quoted text and quoted here-doc bodies are data
+to the command rules, so a commit message may mention a command; a credential
+path is caught even when quoted. The substitutions of an unquoted here-doc run,
+so they are checked. A command the splitter cannot read gets the raw-string
+checks, so a parse failure never lets a command through.
+
 This raises the floor against agent mistakes; it is not a security boundary.
-Text inside heredocs is ignored, so a commit message may mention a command.
 """
 import json
 import os
@@ -26,6 +34,7 @@ SHARED = {"pre-main"}
 FORCE_OK = re.compile(r"^verify-assets/")
 CREDENTIALS = re.compile(r"\.sentryclirc|\.aws/credentials|(?<![\w.])\.netrc\b|\.ssh/id_[a-z0-9]+\b(?!\.pub)")
 
+# The raw-string checks, for a command the splitter cannot read.
 # Where a command can start: line start, after a control operator, inside $( or
 # backticks, after a shell keyword, or at the opening quote of `bash -c '...'`.
 OPENERS = r"[;&|\n({`]|\$\(|\b(?:then|do|else|while|until|if)\s|-c\s+['\"]"
@@ -74,6 +83,367 @@ def drop_redirections(tokens):
     return out
 
 
+# The splitter reads the command the way the shell does, into segments (simple commands) of words, so each rule
+# sees a command's own words wherever they are spelled: after `2>&1`, inside `$(...)`, in `bash -lc '...'`.
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+REDIRECT = re.compile(r"&>>?|\d*(?:<<<|<<-|<<|<>|<&|>>[&|!]?|>[&|!]?|<)")
+OPERATOR = re.compile(r"&&|\|\||\|&|\||;;|;&|;\||;|&\||&!|&")
+LEAD = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}", "fi", "done", "esac"}
+ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\[[^]]*\])?\+?=")
+# Commands that run the command after their own options; letters are the options that take a value.
+WRAPPERS = {"sudo": "ugpChDrtUT", "env": "uCS", "nice": "n", "xargs": "nILPsEdaJR", "timeout": "sk",
+            "gtimeout": "sk", "command": "", "exec": "a", "nohup": "", "time": "", "builtin": "", "noglob": ""}
+
+
+class Unsplittable(Exception):
+    """The splitter cannot read the command; the raw-string checks decide instead."""
+
+
+class Segment:
+    """One simple command: its words with quotes removed (a substitution reads `$()`), its redirections as
+    (operator, target), and the segments of its substitutions in `subs`."""
+
+    def __init__(self, shell, substituted):
+        self.shell, self.substituted = shell, substituted
+        self.words, self.redirects, self.subs, self.scripts = [], [], [], set()
+        self.piped_in = self.piped_out = self.started = False
+        self.pipe_to = None
+
+
+class Splitter:
+    """Splits `text` into every segment it runs, in order: substitutions, here-doc bodies that expand, and the
+    scripts of `bash -c '...'`, `zsh -fc '...'` and the like included."""
+
+    def __init__(self, text, shell="zsh", substituted=False, depth=0):
+        if depth > 16:
+            raise Unsplittable("nested too deep")
+        self.s, self.i, self.shell, self.substituted, self.depth = text, 0, shell, substituted, depth
+        self.out, self.heredocs = [], []
+
+    def run(self):
+        self.parse(None, self.substituted)
+        self.read_heredocs()
+        return self.out
+
+    def peek(self, k=0):
+        return self.s[self.i + k] if self.i + k < len(self.s) else ""
+
+    def at_expansion(self):
+        return self.s.startswith(("$(", "${", "`"), self.i)
+
+    def parse(self, end, substituted):
+        seg = Segment(self.shell, substituted)
+        while True:
+            c = self.peek()
+            if not c:
+                if end:
+                    raise Unsplittable("missing " + end)
+                break
+            if c in " \t":
+                self.i += 1
+            elif c == "\\" and self.peek(1) == "\n":
+                self.i += 2
+            elif c == "#":
+                while self.peek() not in ("", "\n"):
+                    self.i += 1
+            elif c == "\n":
+                self.i += 1
+                seg = self.close(seg)
+                self.read_heredocs()
+            elif c == ")":
+                self.i += 1
+                if end == ")":
+                    break
+                seg = self.close(seg)  # a case pattern's `)`
+            elif c in "<>" and self.peek(1) == "(":
+                self.i += 2
+                seg.subs.append(self.nested())
+                self.add_word(seg, "$()")
+            elif REDIRECT.match(self.s, self.i):
+                op = REDIRECT.match(self.s, self.i).group()
+                self.i += len(op)
+                self.redirect(seg, op.lstrip("0123456789"))
+            elif OPERATOR.match(self.s, self.i):
+                op = OPERATOR.match(self.s, self.i).group()
+                self.i += len(op)
+                seg = self.close(seg, piped=op in ("|", "|&"))
+            elif c == "(" and not seg.started and self.peek(1) != "(":
+                self.i += 1
+                seg = self.close(seg)
+                self.parse(")", substituted)  # a subshell
+            else:
+                word, _, subs = self.word()
+                seg.subs += subs
+                if self.add_word(seg, word):
+                    seg = self.close(seg)
+        self.close(seg)
+
+    def add_word(self, seg, word):
+        """Add a word; True when it opens a function body (`f() { ... }`), which starts a new segment."""
+        first = not seg.started and word not in LEAD
+        seg.started = seg.started or first
+        seg.words.append(word)
+        return first and word.endswith("()") and len(word) > 2
+
+    def close(self, seg, piped=False):
+        if not (seg.words or seg.redirects):
+            return seg
+        self.out.append(seg)
+        self.add_scripts(seg)
+        nxt = Segment(self.shell, seg.substituted)
+        if piped:
+            seg.piped_out = nxt.piped_in = True
+            seg.pipe_to = nxt
+        return nxt
+
+    def add_scripts(self, seg):
+        """Split the script of each `<shell> [options] -c <script>` in the segment, in that shell."""
+        words = seg.words
+        for k, w in enumerate(words):
+            shell = os.path.basename(w)
+            if shell not in SHELLS:
+                continue
+            j, has_c = k + 1, False
+            while j < len(words) and words[j][:1] in ("-", "+") and len(words[j]) > 1:
+                has_c = has_c or (not words[j].startswith("--") and "c" in words[j][1:])
+                j += 2 if words[j] in ("-o", "+o") else 1
+            if has_c and j < len(words):
+                seg.scripts.add(j)
+                inner = Splitter(words[j], shell, seg.substituted, self.depth + 1).run()
+                if inner:
+                    inner[0].piped_in = seg.piped_in
+                self.out += inner
+
+    def redirect(self, seg, op):
+        while self.peek() in (" ", "\t"):
+            self.i += 1
+        if self.peek() in ("<", ">") and self.peek(1) == "(":
+            self.i += 2
+            seg.subs.append(self.nested())
+            target, quoted = "$()", False
+        elif not self.peek() or self.peek() in "\n;&|<>)":
+            raise Unsplittable("redirection without a target")
+        else:
+            target, quoted, subs = self.word()
+            seg.subs += subs
+        seg.redirects.append((op, target))
+        if op in ("<<", "<<-"):
+            self.heredocs.append((seg, target, op == "<<-", not quoted))
+
+    def read_heredocs(self):
+        """Consume the bodies of the here-docs opened on the line just ended; split the substitutions of those
+        whose delimiter is unquoted, since the shell runs them."""
+        pending, self.heredocs = self.heredocs, []
+        for seg, delim, strip_tabs, expands in pending:
+            lines = []
+            while self.i < len(self.s):
+                j = self.s.find("\n", self.i)
+                line = self.s[self.i:] if j < 0 else self.s[self.i:j]
+                self.i = len(self.s) if j < 0 else j + 1
+                if (line.lstrip("\t") if strip_tabs else line) == delim:
+                    break
+                lines.append(line)
+            if expands:
+                body, subs = Splitter("\n".join(lines), self.shell, True, self.depth + 1), []
+                body.double([], subs, None)
+                self.out += body.out
+                seg.subs += subs
+
+    def word(self):
+        """Read one word at the cursor: (text without quotes, whether any part was quoted, substitutions)."""
+        buf, subs, quoted = [], [], False
+        while self.i < len(self.s):
+            c = self.s[self.i]
+            if c in " \t\n;&|<>)":
+                break
+            if c == "\\":
+                if self.peek(1) != "\n":
+                    buf.append(self.peek(1))
+                    quoted = True
+                self.i += 2
+            elif c == "'":
+                j = self.s.find("'", self.i + 1)
+                if j < 0:
+                    raise Unsplittable("unterminated '")
+                buf.append(self.s[self.i + 1:j])
+                self.i, quoted = j + 1, True
+            elif self.s.startswith("$'", self.i):
+                buf.append(self.ansi_c())
+                quoted = True
+            elif c == '"':
+                self.i += 1
+                self.double(buf, subs, '"')
+                quoted = True
+            elif self.at_expansion():
+                self.expansion(buf, subs)
+            elif c == "(":
+                buf.append(self.balanced("(", ")", subs))  # zsh glob qualifier, array, `f()`, `foreach x (a b)`
+            else:
+                buf.append(c)
+                self.i += 1
+        return "".join(buf), quoted, subs
+
+    def double(self, buf, subs, term):
+        """Read a double-quoted string up to `term` (None: to the end, for a here-doc body)."""
+        while True:
+            c = self.peek()
+            if not c:
+                if term:
+                    raise Unsplittable('unterminated "')
+                return
+            if c == term:
+                self.i += 1
+                return
+            if c == "\\" and self.peek(1) and self.peek(1) in '$`"\\\n':
+                if self.peek(1) != "\n":
+                    buf.append(self.peek(1))
+                self.i += 2
+            elif self.at_expansion():
+                self.expansion(buf, subs)
+            else:
+                buf.append(c)
+                self.i += 1
+
+    def ansi_c(self):
+        self.i += 2
+        buf = []
+        while True:
+            c = self.peek()
+            if not c:
+                raise Unsplittable("unterminated $'")
+            self.i += 1
+            if c == "'":
+                return "".join(buf)
+            if c == "\\":
+                nxt = self.peek()
+                self.i += 1
+                buf.append({"n": "\n", "t": "\t"}.get(nxt, nxt))
+            else:
+                buf.append(c)
+
+    def expansion(self, buf, subs):
+        """Read `$(...)`, a backtick substitution, `${...}` or `$((...))` at the cursor."""
+        if self.s.startswith("$((", self.i):
+            self.i += 1
+            buf.append("$" + self.balanced("(", ")", subs))
+        elif self.s.startswith("$(", self.i):
+            self.i += 2
+            subs.append(self.nested())
+            buf.append("$()")
+        elif self.s.startswith("${", self.i):
+            self.i += 1
+            buf.append("$" + self.balanced("{", "}", subs))
+        else:
+            subs.append(self.backtick())
+            buf.append("$()")
+
+    def nested(self):
+        """Split a `$(...)` or `<(...)` body; the cursor is past its opening parenthesis."""
+        start = len(self.out)
+        self.parse(")", True)
+        return self.out[start:]
+
+    def backtick(self):
+        self.i += 1
+        buf = []
+        while True:
+            c = self.peek()
+            if not c:
+                raise Unsplittable("unterminated `")
+            if c == "`":
+                self.i += 1
+                break
+            if c == "\\" and self.peek(1) and self.peek(1) in "`\\$":
+                buf.append(self.peek(1))
+                self.i += 2
+            else:
+                buf.append(c)
+                self.i += 1
+        inner = Splitter("".join(buf), self.shell, True, self.depth + 1).run()
+        self.out += inner
+        return inner
+
+    def balanced(self, open_, close, subs):
+        """Raw text from the `open_` at the cursor to its matching `close`, splitting substitutions inside."""
+        start, depth = self.i, 0
+        while True:
+            c = self.peek()
+            if not c:
+                raise Unsplittable("missing " + close)
+            if c == "\\":
+                self.i += 2
+                continue
+            if c == "'":
+                j = self.s.find("'", self.i + 1)
+                if j < 0:
+                    raise Unsplittable("unterminated '")
+                self.i = j + 1
+                continue
+            if c == '"':
+                self.i += 1
+                self.double([], subs, '"')
+                continue
+            if self.i > start and self.at_expansion():
+                self.expansion([], subs)
+                continue
+            depth += {open_: 1, close: -1}.get(c, 0)
+            self.i += 1
+            if depth == 0:
+                return self.s[start:self.i]
+
+
+def split(cmd):
+    """Every segment of the command in order, or None when it cannot be split."""
+    try:
+        return Splitter(cmd).run()
+    except (Unsplittable, RecursionError):
+        return None
+
+
+def command(seg):
+    """(wrappers, words from the program on): leading keywords, assignments and wrappers such as `sudo -u x`
+    dropped."""
+    words, i, wrappers = seg.words, 0, []
+    while i < len(words):
+        w = words[i]
+        name = os.path.basename(w)
+        if w in LEAD or ASSIGNMENT.match(w):
+            i += 1
+        elif name in WRAPPERS:
+            wrappers.append(name)
+            i += 1
+            while i < len(words) and words[i].startswith("-") and len(words[i]) > 1:
+                opt = words[i]
+                i += 1
+                if opt == "--":
+                    break
+                if len(opt) == 2 and opt[1] in WRAPPERS[name]:
+                    i += 1
+            if name in ("timeout", "gtimeout"):
+                i += 1  # the duration
+        else:
+            break
+    return wrappers, words[i:]
+
+
+def cd_into(cwd, target):
+    """The directory `cd target` (or `git -C target`) leaves you in, from `cwd`; None when either is known only at
+    run time (`cd "$WT"`)."""
+    target = os.path.expanduser(target)
+    if cwd is None or "$" in target or "`" in target:
+        return None
+    return target if os.path.isabs(target) else os.path.join(cwd, target)
+
+
+def commands(segs, cwd):
+    """(segment, words from the program on, the directory it runs in) for each segment, following `cd`s."""
+    for seg in segs:
+        _, words = command(seg)
+        if words[:1] == ["cd"] and len(words) > 1:
+            cwd = cd_into(cwd, words[1])
+        yield seg, words, cwd
+
+
 def current_branch(path):
     if path is None:
         return None
@@ -86,16 +456,9 @@ def current_branch(path):
 
 
 def effective_cwd(cmd, offset, cwd):
-    """The directory a command at `offset` runs in, following earlier `cd`s.
-
-    None when a `cd` target is only known at run time (`cd "$WT"`).
-    """
+    """The directory a command at `offset` of the raw text runs in, following earlier `cd`s."""
     for m in re.finditer(r"(?:^|[;&|\n(]|\b(?:then|do|else)\s)\s*cd\s+(\S+)", cmd[:offset]):
-        target = os.path.expanduser(m.group(1).strip("'\""))
-        if "$" in target or "`" in target or cwd is None:
-            cwd = None
-        else:
-            cwd = target if os.path.isabs(target) else os.path.join(cwd, target)
+        cwd = cd_into(cwd, m.group(1).strip("'\""))
     return cwd
 
 
@@ -106,29 +469,51 @@ def short_ref(ref):
 def check_git(cmd, cwd):
     findings = []
     for offset, tokens in segments(cmd, "git"):
-        args, path = tokens[1:], effective_cwd(cmd, offset, cwd)
-        while args and args[0].startswith("-"):
-            opt = args.pop(0)
-            if opt == "-C" and args:
-                p = os.path.expanduser(args.pop(0))
-                if "$" in p or path is None:
-                    path = None
-                else:
-                    path = p if os.path.isabs(p) else os.path.join(path, p)
-            elif opt in ("-c", "--git-dir", "--work-tree", "--namespace") and args:
-                args.pop(0)
-        if not args:
-            continue
-        sub, rest = args[0], args[1:]
-        if sub == "push":
-            findings += check_push(rest, path)
-        elif sub == "clean":
-            flags = "".join(a.lstrip("-") for a in rest if re.match(r"^-[a-zA-Z]+$", a))
-            if re.search("[xX]", flags) and "n" not in flags and "--dry-run" not in rest:
-                findings.append(("deny", "git clean -x/-X deletes ignored files too, and ignored files have held "
-                                 "unrecoverable work here (docs/*, prototypes). Run `git clean -n` first and "
-                                 "remove the specific paths you created."))
+        findings += git_findings(tokens, effective_cwd(cmd, offset, cwd))
     return findings
+
+
+def git_findings(tokens, path):
+    """Findings for one `git` invocation (`tokens[0]` is git), run in `path` (None when unknown)."""
+    args = tokens[1:]
+    while args and args[0].startswith("-"):
+        opt = args.pop(0)
+        if opt == "-C" and args:
+            path = cd_into(path, args.pop(0))
+        elif opt in ("-c", "--git-dir", "--work-tree", "--namespace") and args:
+            args.pop(0)
+    findings = []
+    if not args:
+        return findings
+    sub, rest = args[0], args[1:]
+    if sub == "push":
+        findings += check_push(rest, path)
+    elif sub == "clean":
+        flags = "".join(a.lstrip("-") for a in rest if re.match(r"^-[a-zA-Z]+$", a))
+        if re.search("[xX]", flags) and "n" not in flags and "--dry-run" not in rest:
+            findings.append(("deny", "git clean -x/-X deletes ignored files too, and ignored files have held "
+                             "unrecoverable work here (docs/*, prototypes). Run `git clean -n` first and "
+                             "remove the specific paths you created."))
+    return findings
+
+
+def git_words(segs, cwd):
+    findings = []
+    for _, words, path in commands(segs, cwd):
+        if words and os.path.basename(words[0]) == "git":
+            findings += git_findings(words, path)
+    return findings
+
+
+UNKNOWN_BRANCH = ("ask", "This push goes to the current branch, and the guard cannot tell which branch that is (the "
+                  "directory is known only at run time, or is no checkout), so it cannot rule out main. Name the "
+                  "branch: `git push -u origin <branch>`.")
+
+
+def destination(spec):
+    """The remote ref a refspec writes: `dst` of `src:dst`, else the source itself."""
+    src, colon, dst = spec.lstrip("+").partition(":")
+    return dst if colon else src
 
 
 def check_push(rest, path):
@@ -152,19 +537,17 @@ def check_push(rest, path):
 
     refspecs = positional[1:]
     branch = current_branch(path)
+    # no refspec, or HEAD as the destination, pushes to the current branch
+    if branch is None and (not refspecs or "HEAD" in map(destination, refspecs)):
+        return [UNKNOWN_BRANCH]
     if not refspecs:
-        refspecs = [branch] if branch and branch != "HEAD" else []
+        refspecs = [branch] if branch != "HEAD" else []
     findings = []
     for spec in refspecs:
         plus = spec.startswith("+")
-        spec = spec.lstrip("+")
-        src, _, dst = spec.partition(":")
-        if not _:
-            dst = src
-        if dst == "HEAD":
-            dst = branch or "HEAD"
-        is_delete = delete or (_ and src == "")
-        dst = short_ref(dst)
+        is_delete = delete or spec.lstrip("+").startswith(":")
+        dst = destination(spec)
+        dst = short_ref(branch if dst == "HEAD" else dst)
         if dst in PROTECTED:
             findings.append(("deny", f"Pushing to {dst} deploys to production. Push a feature branch and open a "
                              "PR against pre-main."))
@@ -177,21 +560,72 @@ def check_push(rest, path):
     return findings
 
 
+PRUNE = ("deny", "docker/podman prune is machine-wide: it deletes other projects' containers, volumes and images. "
+         "Remove only what you started, by name or by label, e.g. `docker rm -f <name>` or "
+         "`docker rm -f $(docker ps -aq --filter label=dk.issue=<n>)`.")
+MASS_REMOVAL = ("deny", "Mass docker removal without a label or name filter hits other projects' resources. Filter "
+                "by a label your session set, e.g. --filter label=dk.issue=<n>.")
+
+
 def check_docker(cmd):
     findings = []
     for _, tokens in segments(cmd, "docker|podman"):
         if "prune" in tokens:
-            findings.append(("deny", "docker/podman prune is machine-wide: it deletes other projects' containers, "
-                             "volumes and images. Remove only what you started, by name or by label, e.g. "
-                             "`docker rm -f <name>` or `docker rm -f $(docker ps -aq --filter label=dk.issue=<n>)`."))
+            findings.append(PRUNE)
     mass = re.finditer(r"\b(?:docker|podman)\s+(?:rm|rmi|stop|kill|(?:container|volume|network|image)\s+rm)\b[^;&|\n]*?"
                        r"\$\(\s*((?:docker|podman)\s+[^)]*)\)", cmd)
     piped = re.finditer(r"\b((?:docker|podman)\s+(?:ps|volume\s+ls|images|image\s+ls|network\s+ls)\b[^|;&\n]*)\|\s*"
                         r"xargs\s+(?:-\S+\s+)*(?:docker|podman)\s+(?:rm|rmi|stop|kill|volume\s+rm)", cmd)
     for m in list(mass) + list(piped):
         if not re.search(r"(?:--filter|-f)[=\s]+[\"']?(?:label|name|ancestor|id)=", m.group(1)):
-            findings.append(("deny", "Mass docker removal without a label or name filter hits other projects' "
-                             "resources. Filter by a label your session set, e.g. --filter label=dk.issue=<n>."))
+            findings.append(MASS_REMOVAL)
+    return findings
+
+
+def is_docker(words):
+    return bool(words) and os.path.basename(words[0]) in ("docker", "podman")
+
+
+def removes(words):
+    return words[1:2] in (["rm"], ["rmi"], ["stop"], ["kill"]) \
+        or (words[1:2] in (["container"], ["volume"], ["network"], ["image"]) and words[2:3] == ["rm"])
+
+
+def lists(words):
+    return words[1:2] in (["ps"], ["images"]) or (words[1:2] in (["volume"], ["image"], ["network"])
+                                                   and words[2:3] == ["ls"])
+
+
+def filtered(words):
+    """True when a docker listing filters by label, name, ancestor or id (`--filter x`, `--filter=x`, `-qf x`)."""
+    it = iter(words)
+    for w in it:
+        if w == "--filter" or re.fullmatch(r"-[a-zA-Z]*f", w):
+            value = next(it, "")
+        elif w.startswith("--filter="):
+            value = w[len("--filter="):]
+        else:
+            continue
+        if re.match(r"(?:label|name|ancestor|id)=", value):
+            return True
+    return False
+
+
+def docker_words(segs):
+    findings = []
+    for seg in segs:
+        _, words = command(seg)
+        if not is_docker(words):
+            continue
+        if "prune" in words:
+            findings.append(PRUNE)
+        if removes(words):
+            findings += [MASS_REMOVAL for sub in seg.subs for inner in sub
+                         if is_docker(command(inner)[1]) and not filtered(command(inner)[1])]
+        if lists(words) and seg.pipe_to is not None and not filtered(words):
+            wrappers, target = command(seg.pipe_to)
+            if "xargs" in wrappers and is_docker(target) and removes(target):
+                findings.append(MASS_REMOVAL)
     return findings
 
 
@@ -216,18 +650,27 @@ def run_image(args):
     return None
 
 
+BOOLEANS = {"1": True, "t": True, "T": True, "true": True, "True": True, "TRUE": True,
+            "0": False, "f": False, "F": False, "false": False, "False": False, "FALSE": False}
+
+
 def run_options(options):
-    """Split `docker run` options into flags (`--rm=true` read as `--rm`, `--rm=false` dropped) and label keys."""
+    """Split `docker run` options into flags (`--rm=True` read as `--rm`, `--rm=false` dropped, as docker parses
+    booleans) and label keys (`--label k=v`, `--label=k=v`, `-l k=v`, `-lk=v`)."""
     flags, labels = [], set()
     it = iter(options)
     for a in it:
-        if a in ("--label", "-l"):
+        short = re.fullmatch(r"-([ditPq]*)l(.*)", a)
+        if a == "--label":
             labels.add(next(it, "").partition("=")[0])
+        elif short:
+            flags += ["-" + short.group(1)] if short.group(1) else []
+            labels.add((short.group(2) or next(it, "")).partition("=")[0])
         elif a.startswith("--label="):
             labels.add(a[len("--label="):].partition("=")[0])
-        elif re.fullmatch(r"--[\w-]+=(?:true|false)", a):
+        elif re.fullmatch(r"--[\w-]+=\w+", a) and a.partition("=")[2] in BOOLEANS:
             name, _, value = a.partition("=")
-            flags += [name] if value == "true" else []
+            flags += [name] if BOOLEANS[value] else []
         else:
             flags.append(a)
     return flags, labels
@@ -235,37 +678,55 @@ def run_options(options):
 
 def check_postgres(cmd):
     cmd = cmd.replace("\\\n", " ")
-    for _, tokens in segments(cmd, "docker|podman"):
-        args = tokens[1:]
-        if args[:2] == ["container", "run"]:
-            args = args[1:]
-        if args[:1] != ["run"]:
-            continue
-        i = run_image(args[1:])
-        if i is None or not POSTGRES_IMAGE.match(args[1 + i]):
-            continue
-        flags, labels = run_options(args[1:1 + i])  # what follows the image is the container's command
-        detached = any(a == "--detach" or re.fullmatch(r"-[ditPq]*d[ditPq]*", a) for a in flags)
-        if "dk.issue" not in labels and (detached or "--rm" not in flags):
-            return [("hint", "This Postgres server carries no issue label, so nothing ties it to an issue or "
-                     "cleans it up. `dk-pg up <issue>` starts a throwaway one on a free port (--rm, tmpfs, labels "
-                     "dk.repo and dk.issue) and prints its URL; `dk-pg url <issue>` reprints it, "
-                     "`dk-pg down <issue>` removes it.")]
+    return next(filter(None, (postgres_findings(tokens) for _, tokens in segments(cmd, "docker|podman"))), [])
+
+
+def postgres_findings(tokens):
+    """Findings for one `docker` or `podman` invocation (`tokens[0]` is the program)."""
+    args = tokens[1:]
+    if args[:2] == ["container", "run"]:
+        args = args[1:]
+    if args[:1] != ["run"]:
+        return []
+    i = run_image(args[1:])
+    if i is None or not POSTGRES_IMAGE.match(args[1 + i]):
+        return []
+    flags, labels = run_options(args[1:1 + i])  # what follows the image is the container's command
+    detached = any(a == "--detach" or re.fullmatch(r"-[ditPq]*d[ditPq]*", a) for a in flags)
+    if "dk.issue" not in labels and (detached or "--rm" not in flags):
+        return [("hint", "This Postgres server carries no issue label, so nothing ties it to an issue or "
+                 "cleans it up. `dk-pg up <issue>` starts a throwaway one on a free port (--rm, tmpfs, labels "
+                 "dk.repo and dk.issue) and prints its URL; `dk-pg url <issue>` reprints it, "
+                 "`dk-pg down <issue>` removes it.")]
     return []
 
 
 def check_gh(cmd):
-    for _, tokens in segments(cmd, "gh"):
-        if tokens[1:3] in (["issue", "view"], ["pr", "view"]) and "--comments" in tokens \
-                and not any(t.startswith("--json") for t in tokens):
-            return [("hint", "Piped `gh issue|pr view --comments` prints the comments but not the body. If you "
-                     "need both, use `--json title,body,labels,comments`.")]
+    return next(filter(None, (gh_findings(tokens) for _, tokens in segments(cmd, "gh"))), [])
+
+
+def gh_findings(tokens):
+    if tokens[1:3] in (["issue", "view"], ["pr", "view"]) and "--comments" in tokens \
+            and not any(t.startswith("--json") for t in tokens):
+        return [("hint", "Piped `gh issue|pr view --comments` prints the comments but not the body. If you "
+                 "need both, use `--json title,body,labels,comments`.")]
     return []
+
+
+def postgres_words(segs):
+    return next(filter(None, (postgres_findings(w) for _, w in map(command, segs) if is_docker(w))), [])
+
+
+def gh_words(segs):
+    return next(filter(None, (gh_findings(w) for _, w in map(command, segs)
+                              if w and os.path.basename(w[0]) == "gh")), [])
 
 
 DK_GC = re.compile(r"(?:^|(\|\|?|" + OPENERS + r"))\s*" + PREFIX
                    + r"(?:python3?\s+(?:-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?dk-gc"
                    + r"(?=$|[\s;&|)`<>]|['\"](?:$|[\s;&|)]))(" + END + ")")
+DK_GC_YES = ("ask", "dk-gc removes worktrees, branches and databases after one yes, and that yes is the human's. "
+             "Run `dk-gc` or `dk-gc --dry-run` and leave the answer to them.")
 OUTPUT_REDIRECT = re.compile(r"\d*>>?&(?:\d+|-)?|&>>?")
 
 
@@ -300,8 +761,21 @@ def check_dk_gc(cmd):
         piped = sep == "|" or (sep == "&" and cmd[m.start() - 1:m.start()] == "|")
         args = rest.split()
         if "--dry-run" not in args and ("--yes" in args or "<" in rest or piped):
-            return [("ask", "dk-gc removes worktrees, branches and databases after one yes, and that yes is "
-                     "the human's. Run `dk-gc` or `dk-gc --dry-run` and leave the answer to them.")]
+            return [DK_GC_YES]
+    return []
+
+
+def dk_gc_words(segs):
+    for seg in segs:
+        _, words = command(seg)
+        if words and re.fullmatch(r"python3?", os.path.basename(words[0])):
+            words = words[1:]
+            while words and words[0].startswith("-"):
+                words = words[1:]
+        if not words or os.path.basename(words[0]) != "dk-gc" or "--dry-run" in words:
+            continue
+        if "--yes" in words or seg.piped_in or any(op.startswith("<") for op, _ in seg.redirects):
+            return [DK_GC_YES]
     return []
 
 
@@ -319,20 +793,49 @@ def check_zsh_names(cmd):
     for offset, names in targets:
         if quoted_text(cmd, offset, shell=r"\bzsh\s+(?:(?:[-+]o\s+\w+|[-+][a-zA-Z]+)\s+)*"):
             continue
-        hit = next((n for n in names if n in ZSH_SPECIAL), None)
-        if hit:
-            return [("deny", f"`{hit}` is a special parameter in zsh, the shell this runs in (`path` is tied to "
-                     "PATH, so every later command is \"command not found\"; `status`, `argv` and the like are "
-                     "read-only or special). Name the loop or read variable something else, e.g. `p` or `file`.")]
+        findings = zsh_name_findings(names)
+        if findings:
+            return findings
+    return []
+
+
+def zsh_name_findings(names):
+    hit = next((n for n in names if n in ZSH_SPECIAL), None)
+    if hit:
+        return [("deny", f"`{hit}` is a special parameter in zsh, the shell this runs in (`path` is tied to "
+                 "PATH, so every later command is \"command not found\"; `status`, `argv` and the like are "
+                 "read-only or special). Name the loop or read variable something else, e.g. `p` or `file`.")]
+    return []
+
+
+def zsh_name_words(segs):
+    for seg in (seg for seg in segs if seg.shell == "zsh"):
+        words, names = seg.words, []
+        while words and words[0] in LEAD:
+            words = words[1:]
+        if words[:1] in (["for"], ["foreach"], ["select"]):
+            for w in words[1:]:
+                if w == "in" or w.startswith("("):
+                    break
+                names.append(w)
+        else:
+            _, words = command(seg)
+            if words[:1] == ["read"]:
+                names = [w.partition("?")[0] for w in words[1:] if not w.startswith("-")]
+        findings = zsh_name_findings(names)
+        if findings:
+            return findings
     return []
 
 
 FILE_CHECKS = {"ls", "stat", "test", "[", "[["}
 
 
-def in_code_span(cmd, m):
-    # a real backtick substitution of the bare path would run the file, not read it
-    return bool(re.search(r"`[\w~/${}.-]*$", cmd[:m.start()]) and re.match(r"[\w./-]*\\?`", cmd[m.end():]))
+def in_code_span(text, m):
+    """True when a literal backtick pair encloses the match: a Markdown code span in text, not a read (a real
+    backtick substitution of the bare path would run the file). In raw text an escaped closing backtick keeps its
+    backslash, so one may stand before it."""
+    return bool(re.search(r"`[\w~/${}.-]*$", text[:m.start()]) and re.match(r"[\w./-]*\\?`", text[m.end():]))
 
 
 def only_checks_file(cmd, pos):
@@ -352,17 +855,38 @@ def check_credentials(cmd):
     scan = OUTPUT_REDIRECT.sub(lambda r: " " * len(r.group()), cmd)  # `2>&1 | xargs cat` still pipes
     m = next((m for m in CREDENTIALS.finditer(cmd)
               if not in_code_span(cmd, m) and not only_checks_file(scan, m.start())), None)
-    if m:
-        return [("deny", f"This reads {m.group(0)}, which holds a credential. Sentry event details come from "
-                 "the repo's Sentry helper, named in its docs/agents/observability.md; anything else goes "
-                 "through the CLI that owns the credential (sentry-cli, aws, gh, ssh-add).")]
+    return credential_findings(m.group(0)) if m else []
+
+
+def credential_findings(path):
+    return [("deny", f"This reads {path}, which holds a credential. Sentry event details come from the repo's "
+             "Sentry helper, named in its docs/agents/observability.md; anything else goes through the CLI that "
+             "owns the credential (sentry-cli, aws, gh, ssh-add).")]
+
+
+def credential_words(segs):
+    for seg in segs:
+        _, words = command(seg)
+        # ls, stat or test read nothing, unless their output feeds a pipe or a substitution
+        if words[:1] and words[0] in FILE_CHECKS and not seg.piped_out and not seg.substituted:
+            continue
+        texts = [w for k, w in enumerate(seg.words) if k not in seg.scripts] + [t for _, t in seg.redirects]
+        for text in texts:
+            for m in CREDENTIALS.finditer(text):
+                if not in_code_span(text, m):
+                    return credential_findings(m.group(0))
     return []
 
 
 def decide(cmd, cwd):
-    cmd = strip_heredocs(cmd)
-    findings = check_docker(cmd) + check_git(cmd, cwd) + check_credentials(cmd) + check_gh(cmd) \
-        + check_postgres(cmd) + check_dk_gc(cmd) + check_zsh_names(cmd)
+    segs = split(cmd)
+    if segs is None:  # a command the splitter cannot read gets the raw-string checks, so the guard never fails open
+        raw = strip_heredocs(cmd)
+        findings = check_docker(raw) + check_git(raw, cwd) + check_credentials(raw) + check_gh(raw) \
+            + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw)
+    else:
+        findings = docker_words(segs) + git_words(segs, cwd) + credential_words(segs) + gh_words(segs) \
+            + postgres_words(segs) + dk_gc_words(segs) + zsh_name_words(segs)
     for level in ("deny", "ask"):
         reasons = [r for l, r in findings if l == level]
         if reasons:

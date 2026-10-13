@@ -1,6 +1,6 @@
 {
   "name": "dk-guard",
-  "description": "Deterministic guardrail hooks for agent sessions (Bash guard, worktree requirement on edits, SessionStart baseline, Stop gate), plus dk-pg for a throwaway Postgres per issue and dk-gc to remove what merged work left behind. No skills, so it stays on while skills are switched off.",
+  "description": "Deterministic guardrail hooks for agent sessions (Bash guard, worktree requirement on edits, SessionStart baseline, Stop gate), plus dk-pg for a throwaway Postgres per issue, dk-gc to remove what merged work left behind, and dk-assets to push verify screenshots. No skills, so it stays on while skills are switched off.",
   "author": { "name": "Daniel Kaminski" },
   "license": "MIT"
 }

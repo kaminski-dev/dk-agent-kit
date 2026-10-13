@@ -10,16 +10,24 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 cat > "$tmp/settings.json" <<'EOF'
 {
   "model": "opus",
-  "permissions": { "defaultMode": "auto", "deny": ["Bash(git push * main)", "Bash(rm -rf /)"] },
+  "permissions": { "defaultMode": "auto", "deny": ["Bash(git push * main)", "Bash(rm -rf /)"],
+                   "allow": ["Bash(npm test)", "Bash(git push -u origin HEAD)"] },
   "autoMode": { "soft_deny": ["$defaults", "Bash(psql:*) needs confirmation"], "environment": ["kept as is"] }
 }
 EOF
 echo '{"autoMode": {"environment": ["private line"]}}' > "$tmp/private.json"
 
-export CLAUDE_SETTINGS="$tmp/settings.json" DK_PRIVATE_SETTINGS="$tmp/private.json"
+# a test HOME, so the zsh step never reaches the real ~/.zshenv
+mkdir -p "$tmp/home"
+printf 'export PATH="$HOME/.bun/bin:$PATH"\n' > "$tmp/home/.zshenv"
+cp "$tmp/home/.zshenv" "$tmp/zshenv.orig"
+unset ZDOTDIR
+export HOME="$tmp/home" CLAUDE_SETTINGS="$tmp/settings.json" DK_PRIVATE_SETTINGS="$tmp/private.json"
 out=$("$root/bootstrap.sh")
 grep -q '^+.*docker container prune' <<<"$out" || fail "dry run shows no added deny rule"
 [[ "$(jq -r .model "$tmp/settings.json")" == opus ]] || fail "dry run changed the file"
+grep -q '^+setopt NO_NOMATCH' <<<"$out" || fail "dry run shows no zsh block"
+cmp -s "$tmp/home/.zshenv" "$tmp/zshenv.orig" || fail "dry run changed .zshenv"
 
 # apply without touching the real plugin registry: stub the claude CLI
 mkdir -p "$tmp/bin"
@@ -33,12 +41,39 @@ s="$tmp/settings.json"
 [[ "$(jq '[.permissions.deny[] | select(. == "Bash(git push * main)")] | length' "$s")" == 1 ]] || fail "deny entry duplicated"
 jq -e '.permissions.deny | index("Bash(rm -rf /)")' "$s" >/dev/null || fail "existing deny entry lost"
 jq -e '.permissions.deny | index("Bash(docker container prune *)")' "$s" >/dev/null || fail "fragment deny missing"
+allow='["Bash(npm test)","Bash(git push -u origin HEAD)","Bash(dk-assets push *)","Bash(git push)"]'
+[[ "$(jq -c .permissions.allow "$s")" == "$allow" ]] || fail "allow rules not merged once: $(jq -c .permissions.allow "$s")"
 [[ "$(jq -r '.autoMode.hard_deny[0]' "$s")" == '$defaults' ]] || fail "hard_deny must start with \$defaults"
 [[ "$(jq -c .autoMode.soft_deny "$s")" == '["$defaults","Bash(psql:*) needs confirmation"]' ]] || fail "soft_deny changed"
 [[ "$(jq -c .autoMode.environment "$s")" == '["kept as is","private line"]' ]] || fail "private overlay not merged"
 grep -q "plugin install dk-guard@dk-agent-kit" "$tmp/claude.log" || fail "plugin not installed"
 ls "$tmp"/settings.json.bak-* >/dev/null || fail "no backup written"
+z="$tmp/home/.zshenv"
+head -1 "$z" | grep -q '.bun/bin' || fail "existing .zshenv line lost"
+[[ "$(grep -c '^# >>> dk-agent-kit zsh options >>>$' "$z")" == 1 ]] || fail "zsh block marker not written once"
+grep -qx 'setopt NO_NOMATCH' "$z" && grep -qx 'unsetopt EQUALS' "$z" || fail "zsh options missing"
+cmp -s "$(ls "$z".bak-* | head -1)" "$tmp/zshenv.orig" || fail "no .zshenv backup written"
 
 out=$(PATH="$tmp/bin:$PATH" "$root/bootstrap.sh")
 grep -q "already up to date" <<<"$out" || fail "second run not idempotent"
+cp "$z" "$tmp/zshenv.applied"
+PATH="$tmp/bin:$PATH" "$root/bootstrap.sh" --apply >/dev/null
+cmp -s "$z" "$tmp/zshenv.applied" || fail "second --apply changed .zshenv"
+[[ "$(jq -c .permissions.allow "$s")" == "$allow" ]] || fail "second --apply changed the allow rules"
+
+# a hand-written block without the marker
+mkdir -p "$tmp/home2"
+printf '# Agent-friendly zsh\nsetopt NO_NOMATCH\nunsetopt EQUALS\n' > "$tmp/home2/.zshenv"
+cp "$tmp/home2/.zshenv" "$tmp/zshenv2.orig"
+HOME="$tmp/home2" PATH="$tmp/bin:$PATH" "$root/bootstrap.sh" --apply >/dev/null
+cmp -s "$tmp/home2/.zshenv" "$tmp/zshenv2.orig" || fail "hand-written zsh options duplicated"
+# neither file yet: the dry run writes nothing, --apply creates both, the block at the top of .zshenv
+mkdir -p "$tmp/home3/.claude"
+s3="$tmp/home3/.claude/settings.json"
+HOME="$tmp/home3" CLAUDE_SETTINGS="$s3" "$root/bootstrap.sh" >/dev/null
+[[ ! -e "$s3" ]] || fail "dry run created the settings file"
+[[ ! -e "$tmp/home3/.zshenv" ]] || fail "dry run created .zshenv"
+HOME="$tmp/home3" CLAUDE_SETTINGS="$s3" PATH="$tmp/bin:$PATH" "$root/bootstrap.sh" --apply >/dev/null
+jq -e '.permissions.deny | index("Bash(docker container prune *)")' "$s3" >/dev/null || fail "--apply did not create the settings"
+[[ "$(head -1 "$tmp/home3/.zshenv")" == '# >>> dk-agent-kit zsh options >>>' ]] || fail "new .zshenv does not start with the block: $(head -3 "$tmp/home3/.zshenv")"
 echo "bootstrap: all checks passed"

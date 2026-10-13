@@ -12,12 +12,12 @@ Claude Code only for now. Codex and other hosts will follow.
 
 | Path | What it does |
 |---|---|
-| `plugins/dk-guard` | PreToolUse hook on Bash. It **denies** `docker`/`podman prune`, mass removal without a label or name filter, pushes to `main`/`master` (explicit, `HEAD:main`, or a bare push while on main), plain force pushes (`--force-with-lease` and `verify-assets/*` are fine), `git push --mirror`, `git clean -x`, reading `~/.sentryclirc`, `~/.aws/credentials`, `~/.netrc` or a private SSH key (`ls`, `stat` or `[ -e ]` pass when their output feeds no other command; Sentry events come from the Sentry helper named in the repo's `docs/agents/observability.md`), and a zsh special parameter such as `path` (tied to `PATH`), `status` or `argv` as a `for` or `read` variable, which leaves every later command "not found". It **asks** before rewriting or deleting `pre-main` and before `dk-gc --yes` or `dk-gc` with piped input, so its one yes stays the human's. Piped `gh issue view --comments` gets a hint that the body is missing, and a Postgres server started by `docker run` (detached or without `--rm`) and without a `dk.issue` label gets a hint to use `dk-pg`. The hook fails closed (`onFailure: block`). `bin/dk-pg` is on the agent's PATH: `dk-pg up <issue>` starts a throwaway Postgres (`--rm`, tmpfs, labels `dk.repo`, `dk.root` and `dk.issue`) on a free port and prints its URL, `dk-pg url <issue>` reprints it, `dk-pg down <issue>` removes it. `dk-gc` lists, grouped by repo, the worktrees and local and remote branches of merged PRs and the `dk-pg` databases of closed issues, then removes them after one yes (`--dry-run` only lists); it never removes `pre-main`, `verify-assets/*`, the base of any PR, a branch with an open PR or a worktree with uncommitted changes. A Stop hook runs the repo's executable `.claude/gate.sh` when the tree has uncommitted changes: a failing gate blocks the turn's end once and hands the agent the gate's last lines; a second failure ends the turn and tells you. It fails open. |
+| `plugins/dk-guard` | PreToolUse hook on Bash. It **denies** `docker`/`podman prune`, mass removal without a label or name filter, pushes to `main`/`master` (explicit, `HEAD:main`, or a bare push while on main), plain force pushes (`--force-with-lease` and `verify-assets/*` are fine), `git push --mirror`, `git clean -x`, reading `~/.sentryclirc`, `~/.aws/credentials`, `~/.netrc` or a private SSH key (`ls`, `stat` or `[ -e ]` pass when their output feeds no other command; Sentry events come from the Sentry helper named in the repo's `docs/agents/observability.md`), and a zsh special parameter such as `path` (tied to `PATH`), `status` or `argv` as a `for` or `read` variable, which leaves every later command "not found". It **asks** before rewriting or deleting `pre-main`, before a push to the current branch when it cannot tell which branch that is (`cd "$WT" && git push`), and before `dk-gc --yes` or `dk-gc` with piped input, so its one yes stays the human's. Piped `gh issue view --comments` gets a hint that the body is missing, and a Postgres server started by `docker run` (detached or without `--rm`) and without a `dk.issue` label gets a hint to use `dk-pg`. The rules match on the command's words, split once as the shell reads them (quotes, here-docs, redirections, substitutions and `bash -c` scripts included); a command it cannot split gets the raw-string checks. The hook fails closed (`onFailure: block`). `bin/dk-pg` is on the agent's PATH: `dk-pg up <issue>` starts a throwaway Postgres (`--rm`, tmpfs, labels `dk.repo`, `dk.root` and `dk.issue`) on a free port and prints its URL, `dk-pg url <issue>` reprints it, `dk-pg down <issue>` removes it. `dk-gc` lists, grouped by repo, the worktrees and local and remote branches of merged PRs and the `dk-pg` databases of closed issues, then removes them after one yes (`--dry-run` only lists); it never removes `pre-main`, `verify-assets/*`, the base of any PR, a branch with an open PR or a worktree with uncommitted changes. `dk-assets push <issue> <file>…` pushes verify screenshots from the session's scratch directory as an orphan commit to `verify-assets/<issue>` (a rerun replaces it) and prints the commit SHA and one embeddable URL per file. A Stop hook runs the repo's executable `.claude/gate.sh` when the tree has uncommitted changes: a failing gate blocks the turn's end once and hands the agent the gate's last lines; a second failure ends the turn and tells you. It fails open. |
 | `plugins/dk` | The skills, called as `/dk:<name>`. You start: `triage`, `implement`, `implement-spec`, `to-spec`, `to-tickets`, `research-codebase`, `grill-with-docs`, `improve-codebase-architecture`, `teach`, `prototype`, `retro`, `verify-doc-check`, `handoff`, `setup`. Other skills call: `issue-flow`, `verify`, `post-deploy-check`, `tdd`, `code-review`, `pr`, `blast-radius`, `research`, `grilling`, `domain-modeling`, `codebase-design`, `writing-for-agents`. Agents: the read-only reviewers `reviewer` and `comment-reviewer`, and HumanLayer's `codebase-locator`, `codebase-analyzer`, `codebase-pattern-finder`. Each repo supplies its facts in adapter files that `/dk:setup` writes. |
 | `upstream/` | `UPSTREAM.md` records the commit and changes for every adapted file; `sync.sh` shows what mattpocock/skills, pstack and HumanLayer changed since in those files. |
 | `settings/user.fragment.json` | What a plugin cannot ship: permission deny and ask rules, and `autoMode.hard_deny` lines. Merged into `~/.claude/settings.json` by `bootstrap.sh`. |
-| `bootstrap.sh` | Shows the settings diff; `--apply` backs up, merges and installs the plugins from this checkout. |
-| `tests/` | The guard's case matrix (taken from real incidents), fixture repos for the Stop gate and the session hooks, a `dk-pg` run against Docker, a `dk-gc` run against fixture repos with stubbed `gh` and `docker`, a bootstrap merge test, an `upstream/sync.sh` run against fixture upstream repos, a check of the skill-eval fixtures, and `replay_history.py` for checking the guard against past transcripts. |
+| `bootstrap.sh` | Shows the settings diff and the zsh options block for `~/.zshenv`; `--apply` backs both files up, writes them and installs the plugins from this checkout. |
+| `tests/` | The guard's case matrix (taken from real incidents), fixture repos for the Stop gate and the session hooks, a `dk-pg` run against Docker, a `dk-gc` run against fixture repos with stubbed `gh` and `docker`, a `dk-assets` run against a local origin, a bootstrap merge test, an `upstream/sync.sh` run against fixture upstream repos, a check of the skill-eval fixtures, and `replay_history.py` for checking the guard against past transcripts. |
 | `THIRD_PARTY/` | Licenses and commits of the projects material is adapted from. |
 
 Every rule traces back to something that went wrong in a real session: a
@@ -153,6 +153,13 @@ bootstrap merges that file last, and it never enters this repo.
 Merge rules: objects merge key by key, arrays gain the entries they lack and
 nothing is removed, scalars from the fragment win. A second run is a no-op.
 
+The Bash tool runs zsh, and agents write bash. Bootstrap appends a marked
+block to `~/.zshenv` (`$ZDOTDIR/.zshenv` when set) with `setopt NO_NOMATCH`
+(an unmatched glob such as `--include=*.go` passes through literally) and
+`unsetopt EQUALS` (`echo ====` is not expanded to a command path). The rest
+of the file stays as it is. A file that already has the marker, or sets both
+options by hand, is left alone.
+
 ## Test
 
 ```sh
@@ -165,11 +172,12 @@ python3 -I tests/test_evals.py
 bash tests/test_bootstrap.sh
 bash tests/test_dk_pg.sh      # skips without a Docker daemon
 bash tests/test_dk_gc.sh
+bash tests/test_dk_assets.sh
 bash tests/test_sync.sh
 claude plugin validate .
 ```
 
-The evals for `dk:implement`, `dk:triage` and `dk:code-review` live in
+The evals for `dk:implement`, `dk:triage`, `dk:code-review` and `dk:verify` live in
 `plugins/dk/evals/` and need a model, so they run by hand (the command is in
 `docs/agents/workflow.md`), not in CI.
 
