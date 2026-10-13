@@ -14,14 +14,16 @@ Nothing goes that cannot be tied to a merged PR (the branch tip is the PR's
 head or behind it) or a closed issue. Never removed: main, master, pre-main,
 the remote's default branch, verify-assets/* (PR bodies embed from them),
 a branch with an open PR, the base of any PR (an integration branch like
-pre-master, even after its own batch PR merged), and a worktree with
-uncommitted changes; the last three are listed with "keep". GitHub is asked
-with -R from origin's URL, so a GH_REPO in the environment cannot point it at
-another repo. Checkouts of one GitHub repo share its remote branches; the
-first one lists them.
+pre-master, even after its own batch PR merged), a worktree with uncommitted
+changes, and a worktree with ignored files outside REGENERABLE (build output,
+dependencies, generated code, .env*), whose "keep" line names them; the last
+four are listed with "keep". GitHub is asked with -R from origin's URL, so a
+GH_REPO in the environment cannot point it at another repo. Checkouts of one
+GitHub repo share its remote branches; the first one lists them.
 """
 import argparse
 import dataclasses
+import fnmatch
 import json
 import os
 import re
@@ -30,6 +32,10 @@ import sys
 
 PROTECTED = {"main", "master", "pre-main"}
 KEPT_PREFIX = "verify-assets/"  # PR bodies embed screenshots from these branches
+# Ignored entries a worktree may lose: build output, dependencies, generated code, local env.
+REGENERABLE = ("node_modules", "dist", "build", ".next", "target", ".venv", "__pycache__",
+               "*.tsbuildinfo", "*.gen.*", ".env*")
+KEEP_LINE_NAMES = 5  # ignored entries a "keep" line names before it counts the rest
 
 
 def run(args, cwd=None):
@@ -90,6 +96,28 @@ def worktrees(root):
     return out
 
 
+def regenerable(entry):
+    """True when an ignored entry's basename or top-level directory is on the REGENERABLE list."""
+    parts = entry.rstrip("/").split("/")
+    return any(fnmatch.fnmatchcase(name, pattern) for name in (parts[-1], parts[0]) for pattern in REGENERABLE)
+
+
+def worktree_blocker(path):
+    """Why a worktree cannot go without losing work, or None: uncommitted changes, or ignored
+    files outside REGENERABLE (`git worktree remove` deletes ignored files without asking)."""
+    out = git(path, "status", "--porcelain", "-z", "--ignored=matching")
+    if out is None:
+        return "git status failed"
+    entries = [e for e in out.split("\0") if e]
+    if any(not e.startswith("!! ") for e in entries):
+        return "uncommitted changes"
+    at_risk = [e[3:] for e in entries if not regenerable(e[3:])]
+    if not at_risk:
+        return None
+    more = f" and {len(at_risk) - KEEP_LINE_NAMES} more" if len(at_risk) > KEEP_LINE_NAMES else ""
+    return f"ignored files outside the regenerable list: {', '.join(at_risk[:KEEP_LINE_NAMES])}{more}"
+
+
 def databases():
     """[(dk.root, id, name, dk.issue)] of every dk-pg container, running or not; None without docker."""
     out = run(["docker", "ps", "-a", "--filter", "label=dk.issue", "--format",
@@ -114,6 +142,9 @@ class Worktree:
     def remove(self, root):
         if (git(self.path, "rev-parse", "HEAD") or "").strip() != self.head:
             return "its branch moved since the listing"
+        reason = worktree_blocker(self.path)
+        if reason:
+            return f"{reason} (new since the listing)"
         if git(root, "worktree", "remove", self.path) is None:
             return "git worktree remove refused"
         return None
@@ -212,8 +243,8 @@ class Repo:
             return
         why = f"PR #{pr['number']} merged"
         reason = self.blocker(branch, tied)
-        if not reason and worktree and git(worktree, "status", "--porcelain") != "":
-            reason = "uncommitted changes"
+        if not reason and worktree:
+            reason = worktree_blocker(worktree)
         detail = f"{why}; {reason}" if reason else why
         found = [Worktree(f"{worktree} ({branch}, {detail})", worktree, sha)] if worktree else []
         found.append(RemoteBranch(f"origin/{branch} ({detail})", branch, sha) if remote
