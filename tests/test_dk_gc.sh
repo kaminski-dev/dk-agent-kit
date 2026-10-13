@@ -115,6 +115,9 @@ docs17=$(worktree app-17 feat/17-docs docs/ node_modules/)
 mkdir -p "$ws/app-17/docs" "$ws/app-17/node_modules"
 echo 'only copy' >"$ws/app-17/docs/plan.md"
 echo 1 >"$ws/app-17/node_modules/index.js"
+# Seven ignored scratch files (app-18): the keep line names five and counts the rest.
+scratch18=$(worktree app-18 feat/18-scratch 'scratch-*')
+for i in 1 2 3 4 5 6 7; do echo "$i" >"$ws/app-18/scratch-$i.txt"; done
 # On origin only: a base of an open PR, and one pushed to after its merge. pre-main, the batch
 # branch, is on origin and checked out in a worktree.
 main=$(git -C "$app" rev-parse main)
@@ -132,7 +135,8 @@ echo "[$(pr 11 feat/1-done "$done1" main), $(pr 12 feat/2-dirty "$dirty2" main),
   $(pr 16 feat/5-ahead "$ahead5" main), $(pr 17 verify-assets/6 "$assets6" main), $(pr 18 feat/7-behind "$head7" main),
   $(pr 19 feat/8-loose "$loose8" main), $(pr 20 feat/10-base "$main" main), $(pr 22 pre-main "$main" main),
   $(pr 23 feat/11-moved "$moved11" main), $(pr 24 pre-master "$main" main), $(pr 25 feat/13-batched "$main" pre-master),
-  $(pr 26 feat/16-regen "$regen16" main), $(pr 27 feat/17-docs "$docs17" main)]" \
+  $(pr 26 feat/16-regen "$regen16" main), $(pr 27 feat/17-docs "$docs17" main),
+  $(pr 28 feat/18-scratch "$scratch18" main)]" \
   >"$fx/acme_app/pr-merged.json"
 # A second checkout of acme/app: its remote branches are the same ones, handled once.
 git clone -q https://github.com/acme/app.git "$ws/app-copy"
@@ -192,6 +196,7 @@ lacks "$out" "pre-main"
 has "$out" "remove worktree $ws/app-16 (feat/16-regen, PR #26 merged)"
 has "$out" "keep worktree $ws/app-17 (feat/17-docs, PR #27 merged; ignored files outside the regenerable list: docs/)"
 lacks "$out" "remove branch feat/17-docs"
+has "$out" "keep worktree $ws/app-18 (feat/18-scratch, PR #28 merged; ignored files outside the regenerable list: scratch-1.txt, scratch-2.txt, scratch-3.txt, scratch-4.txt, scratch-5.txt and 2 more)"
 has "$out" "remove database dk-pg-app-1 (issue #1 closed)"
 lacks "$out" "dk-pg-app-3"
 has "$out" "keep database dk-pg-gone-9 (issue #9; no GitHub checkout at $tmp/gone)"
