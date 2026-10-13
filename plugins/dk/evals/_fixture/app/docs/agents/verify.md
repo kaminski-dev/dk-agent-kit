@@ -1,0 +1,9 @@
+# Verify
+
+- **Stack start**: none to start; the command line against a fresh SQLite file is the stack.
+- **Database**: SQLite, one file per run: `python3 -m ledger seed --db <file>` creates and seeds it (Customer 7, with a three-field edit).
+- **Stubs**: none.
+- **Seeding**: `seed` as above, once per fresh file.
+- **Login**: none.
+- **Endpoints**: `python3 -m ledger history customer 7 --db <file>` prints the Customer History; `python3 -m ledger log --db <file>` prints the Audit Log.
+- **Browser**: none.
