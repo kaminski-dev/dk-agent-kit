@@ -705,6 +705,8 @@ def gh_words(segs):
 DK_GC = re.compile(r"(?:^|(\|\|?|" + OPENERS + r"))\s*" + PREFIX
                    + r"(?:python3?\s+(?:-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?dk-gc"
                    + r"(?=$|[\s;&|)`<>]|['\"](?:$|[\s;&|)]))(" + END + ")")
+DK_GC_YES = ("ask", "dk-gc removes worktrees, branches and databases after one yes, and that yes is the human's. "
+             "Run `dk-gc` or `dk-gc --dry-run` and leave the answer to them.")
 OUTPUT_REDIRECT = re.compile(r"\d*>>?&(?:\d+|-)?|&>>?")
 
 
@@ -739,8 +741,21 @@ def check_dk_gc(cmd):
         piped = sep == "|" or (sep == "&" and cmd[m.start() - 1:m.start()] == "|")
         args = rest.split()
         if "--dry-run" not in args and ("--yes" in args or "<" in rest or piped):
-            return [("ask", "dk-gc removes worktrees, branches and databases after one yes, and that yes is "
-                     "the human's. Run `dk-gc` or `dk-gc --dry-run` and leave the answer to them.")]
+            return [DK_GC_YES]
+    return []
+
+
+def dk_gc_words(segs):
+    for seg in segs:
+        _, words = command(seg)
+        if words and re.fullmatch(r"python3?", os.path.basename(words[0])):
+            words = words[1:]
+            while words and words[0].startswith("-"):
+                words = words[1:]
+        if not words or os.path.basename(words[0]) != "dk-gc" or "--dry-run" in words:
+            continue
+        if "--yes" in words or seg.piped_in or any(op.startswith("<") for op, _ in seg.redirects):
+            return [DK_GC_YES]
     return []
 
 
@@ -814,7 +829,7 @@ def decide(cmd, cwd):
             + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw)
     else:
         findings = docker_words(segs) + git_words(segs, cwd) + check_credentials(raw) + gh_words(segs) \
-            + postgres_words(segs) + check_dk_gc(raw) + check_zsh_names(raw)
+            + postgres_words(segs) + dk_gc_words(segs) + check_zsh_names(raw)
     for level in ("deny", "ask"):
         reasons = [r for l, r in findings if l == level]
         if reasons:
