@@ -509,6 +509,17 @@ def git_words(segs, cwd):
     return findings
 
 
+UNKNOWN_BRANCH = ("ask", "This push goes to the current branch, and the guard cannot tell which branch that is (the "
+                  "directory is known only at run time, or is no checkout), so it cannot rule out main. Name the "
+                  "branch: `git push -u origin <branch>`.")
+
+
+def destination(spec):
+    """The remote ref a refspec writes: `dst` of `src:dst`, else the source itself."""
+    src, colon, dst = spec.lstrip("+").partition(":")
+    return dst if colon else src
+
+
 def check_push(rest, path):
     force = delete = False
     lease = False
@@ -530,19 +541,17 @@ def check_push(rest, path):
 
     refspecs = positional[1:]
     branch = current_branch(path)
+    # no refspec, or HEAD as the destination, pushes to the current branch
+    if branch is None and (not refspecs or "HEAD" in map(destination, refspecs)):
+        return [UNKNOWN_BRANCH]
     if not refspecs:
-        refspecs = [branch] if branch and branch != "HEAD" else []
+        refspecs = [branch] if branch != "HEAD" else []
     findings = []
     for spec in refspecs:
         plus = spec.startswith("+")
-        spec = spec.lstrip("+")
-        src, _, dst = spec.partition(":")
-        if not _:
-            dst = src
-        if dst == "HEAD":
-            dst = branch or "HEAD"
-        is_delete = delete or (_ and src == "")
-        dst = short_ref(dst)
+        is_delete = delete or spec.lstrip("+").startswith(":")
+        dst = destination(spec)
+        dst = short_ref(branch if dst == "HEAD" else dst)
         if dst in PROTECTED:
             findings.append(("deny", f"Pushing to {dst} deploys to production. Push a feature branch and open a "
                              "PR against pre-main."))
