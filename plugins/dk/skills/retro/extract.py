@@ -121,7 +121,7 @@ def events(path, since, until):
     """The events of one transcript file whose timestamp falls in the window, in file order."""
     sidechain = os.sep + "subagents" + os.sep in path
     tool_uses, seen_prompt = {}, False
-    with open(path, errors="replace") as fh:
+    with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
             try:
                 record = json.loads(line)
@@ -202,7 +202,7 @@ def main():
                    + glob.glob(os.path.join(projects, "*", "*", "subagents", "*.jsonl")))
     by_kind, with_events = collections.Counter(), 0
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
-    with open(args.out, "w") as out:
+    with open(args.out, "w", encoding="utf-8") as out:
         for path in files:
             found = False
             for event in events(path, args.since, args.until):

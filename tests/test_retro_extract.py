@@ -128,7 +128,7 @@ EXPECTED = [
 
 def write_jsonl(path, records):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         for r in records:
             f.write(json.dumps(r) + "\n")
         f.write("{not json\n")  # a torn last line, as a killed session leaves
@@ -147,7 +147,7 @@ def extract(root, since, until):
     proc = subprocess.run([sys.executable, "-I", SCRIPT, since, until, out, "--projects-dir", build_tree(root)],
                           capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
-    with open(out) as f:
+    with open(out, encoding="utf-8") as f:
         return [json.loads(line) for line in f], json.loads(proc.stdout)
 
 
