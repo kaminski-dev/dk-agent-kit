@@ -51,10 +51,10 @@ For a fix, a control that already behaves correctly means the scenario misses th
 
 ## 5. Browser
 
-Drive a browser of your own. The Playwright MCP server runs one browser per session, and the session's subagents share it:
+Drive a browser of your own, with no state from earlier runs: a cookie left over from one run can change what the control or the change shows. The Playwright MCP server runs one browser per session, and the session's subagents share it:
 
-- **Main agent, no other verifier in the session**: the MCP browser.
-- **Subagent, or the MCP answers "Browser is already in use"** (another session holds its profile): a standalone Playwright script in `$RUN` with its own user-data directory, `chromium.launchPersistentContext('$RUN/profile', { headless: true })`, run from the repo so `playwright` resolves (the verify doc says how). The "already in use" answer means the MCP server runs without `--isolated`; name it in your report.
+- **Main agent, no other verifier in the session, and the MCP server runs with `--isolated`** (`claude mcp get playwright` lists its args): the MCP browser.
+- **Otherwise**: a standalone Playwright script in `$RUN`, run from the repo so `playwright` resolves (the verify doc says how). `chromium.launch({ headless: true })`, then a fresh `browser.newContext()` for the control and another for the change; the contexts live in memory, so nothing of the session reaches the disk. When the MCP answered "Browser is already in use", or runs without `--isolated`, name it in your report.
 
 Check 1280 px, then 390 × 844 (`browser_resize` or `page.setViewportSize`), and see the change at both widths. Console errors (`browser_console_messages` or `page.on('console')`) are findings: each is fixed, or explained in the PR. Screenshots go in `$RUN/shots/`; the MCP writes only under its own roots, so move its files there.
 
@@ -64,7 +64,7 @@ Each proof owed in step 1 appears in the PR's Evidence section (`dk:pr`) as a be
 
 ## 7. Tear down
 
-Before reporting, stop what you started: every process (its port is free again under `lsof`), your browser (`browser_close`, or the script's `close()`), `dk-pg down <N>` when you started one, and `git worktree remove "$RUN/base"`. The files stay in `$RUN` with the session's scratch. Done when none of your ports listens, `git worktree list` no longer shows `$RUN/base` and, with dk-pg, `dk-pg url <N>` finds no running database.
+Before reporting, stop what you started: every process (its port is free again under `lsof`), your browser (`browser_close`, or the script's `browser.close()`), `dk-pg down <N>` when you started one, and `git worktree remove "$RUN/base"`. The files stay in `$RUN` with the session's scratch. Done when none of your ports listens, `git worktree list` no longer shows `$RUN/base` and, with dk-pg, `dk-pg url <N>` finds no running database.
 
 ## The repo's verify doc
 
