@@ -10,7 +10,8 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 cat > "$tmp/settings.json" <<'EOF'
 {
   "model": "opus",
-  "permissions": { "defaultMode": "auto", "deny": ["Bash(git push * main)", "Bash(rm -rf /)"] },
+  "permissions": { "defaultMode": "auto", "deny": ["Bash(git push * main)", "Bash(rm -rf /)"],
+                   "allow": ["Bash(npm test)", "Bash(git push -u origin HEAD)"] },
   "autoMode": { "soft_deny": ["$defaults", "Bash(psql:*) needs confirmation"], "environment": ["kept as is"] }
 }
 EOF
@@ -40,6 +41,8 @@ s="$tmp/settings.json"
 [[ "$(jq '[.permissions.deny[] | select(. == "Bash(git push * main)")] | length' "$s")" == 1 ]] || fail "deny entry duplicated"
 jq -e '.permissions.deny | index("Bash(rm -rf /)")' "$s" >/dev/null || fail "existing deny entry lost"
 jq -e '.permissions.deny | index("Bash(docker container prune *)")' "$s" >/dev/null || fail "fragment deny missing"
+allow='["Bash(npm test)","Bash(git push -u origin HEAD)","Bash(dk-assets push *)","Bash(git push)"]'
+[[ "$(jq -c .permissions.allow "$s")" == "$allow" ]] || fail "allow rules not merged once: $(jq -c .permissions.allow "$s")"
 [[ "$(jq -r '.autoMode.hard_deny[0]' "$s")" == '$defaults' ]] || fail "hard_deny must start with \$defaults"
 [[ "$(jq -c .autoMode.soft_deny "$s")" == '["$defaults","Bash(psql:*) needs confirmation"]' ]] || fail "soft_deny changed"
 [[ "$(jq -c .autoMode.environment "$s")" == '["kept as is","private line"]' ]] || fail "private overlay not merged"
@@ -56,6 +59,7 @@ grep -q "already up to date" <<<"$out" || fail "second run not idempotent"
 cp "$z" "$tmp/zshenv.applied"
 PATH="$tmp/bin:$PATH" "$root/bootstrap.sh" --apply >/dev/null
 cmp -s "$z" "$tmp/zshenv.applied" || fail "second --apply changed .zshenv"
+[[ "$(jq -c .permissions.allow "$s")" == "$allow" ]] || fail "second --apply changed the allow rules"
 
 # a hand-written block without the marker (written before the bootstrap had this step)
 mkdir -p "$tmp/home2"
