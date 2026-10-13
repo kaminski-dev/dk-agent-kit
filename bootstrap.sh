@@ -51,9 +51,15 @@ setopt NO_NOMATCH
 unsetopt EQUALS
 # <<< dk-agent-kit zsh options <<<'
 zsh_current=$(cat "$zshenv" 2>/dev/null || true)
-zsh_merged=$(printf '%s\n\n%s' "$zsh_current" "$zsh_block")
-diff -u --label "$zshenv" --label "$zshenv (merged)" \
-  <(printf '%s\n' "$zsh_current") <(printf '%s\n' "$zsh_merged") || true
+if grep -qxF '# >>> dk-agent-kit zsh options >>>' <<<"$zsh_current"; then
+  echo "bootstrap: zsh options already in $zshenv"
+  zsh_changed=0
+else
+  zsh_merged=$(printf '%s\n\n%s' "$zsh_current" "$zsh_block")
+  diff -u --label "$zshenv" --label "$zshenv (merged)" \
+    <(printf '%s\n' "$zsh_current") <(printf '%s\n' "$zsh_merged") || true
+  zsh_changed=1
+fi
 
 if [[ "${1:-}" != "--apply" ]]; then
   echo
@@ -70,10 +76,15 @@ if ((changed)); then
   echo "bootstrap: wrote $settings (backup: $backup)"
 fi
 
-zsh_backup="$zshenv.bak-$(date +%Y%m%d-%H%M%S)"
-[[ -f "$zshenv" ]] && cp "$zshenv" "$zsh_backup"
-printf '%s\n' "$zsh_merged" > "$zshenv"
-echo "bootstrap: wrote $zshenv (backup: $zsh_backup)"
+if ((zsh_changed)); then
+  if [[ -f "$zshenv" ]]; then
+    zsh_backup="$zshenv.bak-$(date +%Y%m%d-%H%M%S)"
+    cp "$zshenv" "$zsh_backup"
+    echo "bootstrap: backed up $zshenv to $zsh_backup"
+  fi
+  printf '%s\n' "$zsh_merged" > "$zshenv"
+  echo "bootstrap: wrote the zsh options block to $zshenv"
+fi
 
 if ! claude plugin marketplace list 2>/dev/null | grep -q 'dk-agent-kit'; then
   claude plugin marketplace add "$repo"

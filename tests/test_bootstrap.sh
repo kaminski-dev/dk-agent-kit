@@ -53,4 +53,7 @@ cmp -s "$(ls "$z".bak-* | head -1)" "$tmp/zshenv.orig" || fail "no .zshenv backu
 
 out=$(PATH="$tmp/bin:$PATH" "$root/bootstrap.sh")
 grep -q "already up to date" <<<"$out" || fail "second run not idempotent"
+cp "$z" "$tmp/zshenv.applied"
+PATH="$tmp/bin:$PATH" "$root/bootstrap.sh" --apply >/dev/null
+cmp -s "$z" "$tmp/zshenv.applied" || fail "second --apply changed .zshenv"
 echo "bootstrap: all checks passed"
