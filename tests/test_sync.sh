@@ -28,7 +28,7 @@ commit() {
   git -C "$repo" rev-parse --short HEAD
 }
 
-# Three sources, each with an adapted file, an unrelated file and later commits.
+# Four sources, each with an adapted file, an unrelated file and later commits.
 mp_base=$(commit acme/skills "mp base" skills/eng/review/SKILL.md skills/eng/other/SKILL.md)
 commit acme/skills "mp: review tweak" skills/eng/review/SKILL.md >/dev/null
 commit acme/skills "mp: unrelated" skills/eng/other/SKILL.md >/dev/null
