@@ -107,4 +107,4 @@ $out"
 # silently counted as unchanged.
 expect "misspelt.md: not found at $hl_base"
 
-echo "PASS test_sync"
+echo "sync: all checks passed"
