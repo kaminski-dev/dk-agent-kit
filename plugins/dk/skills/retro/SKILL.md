@@ -12,13 +12,13 @@ The user has asked for a **retrospective**. You are suggesting improvements to t
 
 1. Call the Skill tool with `dk:writing-for-agents` for the writing style guide.
 
-2. Read the primary sources for the window the user names: one session, or a period such as the last month. Without one, take the current session. Transcripts live in `~/.claude/projects/<launch directory with / as ->/*.jsonl`, filed under the directory a session started in, so a repo's sessions can sit under its main checkout, its worktrees, or a parent directory: select them by each record's `cwd`. For a period, extract before reading:
+2. Read the primary sources for the window the user names: one session, or a period such as the last month. Without one, take the current session. Transcripts live in `~/.claude/projects/<launch directory with / as ->/*.jsonl`, filed under the directory a session started in, so a repo's sessions can sit under its main checkout, its worktrees, or a parent directory: select them by each record's `cwd`. For a period, extract before reading. Every placeholder in this command is written out literally before it runs; none is a shell variable:
 
    ```sh
-   python3 -I <this skill's base directory>/extract.py SINCE UNTIL "$SCRATCH/retro/events.jsonl"
+   python3 -I <base directory>/extract.py SINCE UNTIL <scratchpad>/retro/events.jsonl
    ```
 
-   SINCE and UNTIL are UTC dates (`2026-09-13`), both inclusive. `$SCRATCH` is the session's scratchpad directory, and it is the only place the output goes: the file holds raw prompt text. Each line is one event with a `kind` (`--help` lists them). Keep the lines whose `project` is the repo's main checkout or one of its worktrees, and read the `prompt` lines for the user's **corrections** (prompts that redirect or reject the agent's work). Add the repo's reverts, fix-up commits and review comments in the same window.
+   `<base directory>` is the one this skill's header names. SINCE and UNTIL are UTC dates (`2026-09-13`), both inclusive. `<scratchpad>` is the session's scratchpad directory, and it is the only place the output goes: the file holds raw prompt text. Each line is one event with a `kind` (`--help` lists them). Keep the lines whose `project` is the repo's main checkout or one of its worktrees, and read the `prompt` lines for the user's **corrections** (prompts that redirect or reject the agent's work). Add the repo's reverts, fix-up commits and review comments in the same window.
 
 3. Group the mistakes into **mistake classes**. A class counts once it has happened twice, and keeps its evidence: session and date, or commit. Then look for candidates for improvement in these categories.
 
