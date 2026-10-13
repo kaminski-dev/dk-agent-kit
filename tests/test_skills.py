@@ -103,7 +103,7 @@ dk_column_by_section_commit = {
 marked = [("agents", n, p) for n, p in agents.items()] + [("skills", n, p) for n, p in skills.items()]
 for kind, name, path in marked:
     for source, commit in re.findall(r"<!-- Adapted from (\S+(?: \S+)?)@([0-9a-f]+) ", path.read_text()):
-        if not re.search(rf"\b{re.escape(name)}\b", dk_column_by_section_commit.get(commit, "")):
+        if not re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", dk_column_by_section_commit.get(commit, "")):
             errors.append(f"{kind}/{name}: adapted from {source}@{commit}, but upstream/UPSTREAM.md has no row for it in the section at that commit")
 
 # The shape upstream/sync.sh parses (the format note at the top of UPSTREAM.md).
