@@ -1,6 +1,11 @@
 # Upstream sources
 
-Each vendored or ported file, the commit it was taken from, and how far it was changed. `upstream/sync.sh` shows what mattpocock/skills changed since; the pstack and HumanLayer ports are compared by hand (`git log <commit>..origin/main -- <path>` in a clone). Merging upstream changes is a manual edit through `dk:writing-for-agents`, recorded by bumping the commit here.
+Each vendored or ported file, the commit it was taken from, and how far it was changed. `upstream/sync.sh` reads this file and shows, per source, what changed upstream in the adapted paths since the recorded commit. Merging upstream changes is a manual edit through `dk:writing-for-agents`, recorded by bumping the commit here.
+
+`sync.sh` parses two things, so keep them in this shape:
+
+- **Section heading**: `## <owner>/<repo> [label] (<license>) @ <short commit>`. The first word is the GitHub repo; the commit ends the line. One commit per section: a file taken at another commit of the same repo gets its own section.
+- **Upstream path column** (the second): paths from the repo root, comma-separated, no globs and no shorthand (`pstack/skills/a, pstack/skills/b`, not `pstack/skills/a, b`). A directory covers everything under it. Backticks are ignored.
 
 ## mattpocock/skills (MIT) @ 49dd158
 
@@ -18,7 +23,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 | pr | skills/engineering/pr | Also in this PR, Deviations, `Closes`/`Refs` (repeated on the batch PR), evidence on `verify-assets`, `dk:blast-radius` for one-way doors |
 | prototype | skills/engineering/prototype | tracking issue, tracked paths, pushed `proto/` branch, versioned artifact titles; production never renders a variant |
 | research | skills/engineering/research | narrower trigger; notes in `docs/research/` |
-| retro | skills/engineering/retro | `dk:` references |
+| retro | skills/engineering/retro | `dk:` references; a window of sessions; correct step and rule-to-check table from pstack |
 | tdd | skills/engineering/tdd | `dk:` references |
 | teach | skills/productivity/teach | as-is |
 | to-spec | skills/engineering/to-spec | `spec` label instead of `ready-for-agent` |
@@ -32,7 +37,8 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 | dk file | Upstream path | Changes |
 |---|---|---|
 | skills/blast-radius | pstack/skills/blast-radius | model-invoked; shared-modules section; pointers to how/why/arena/unslop dropped |
-| code-review Empty Test, Defensive Interior | pstack/skills/principle-test-behavior-not-implementation, principle-boundary-discipline | condensed into baseline entries |
+| skills/retro correct step, rule-to-check table | pstack/skills/correct | folded into the retro as a step; proposes fixes instead of making them; table in the retro report, not the instruction file |
+| code-review Empty Test, Defensive Interior | pstack/skills/principle-test-behavior-not-implementation, pstack/skills/principle-boundary-discipline | condensed into baseline entries |
 | skills/verify-doc-check | pstack/skills/maintain-verification-skill | target is `docs/agents/verify.md` under `dk:verify`; readers per doc section; fixes in one PR into `pre-main`, product gaps as `needs-triage` issues |
 | agents/comment-reviewer | pstack/agents/comment-sicko.md | scoped to comments on added lines; Restates (Reshape folded in), Narrates history, Stale, Commented-out code findings; Suppression left to Standards; repo comment policy overrides the keep list; report only, persona and `/how` `/why` calls dropped |
 
@@ -41,4 +47,4 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 | dk file | Upstream path | Changes |
 |---|---|---|
 | skills/research-codebase | .claude/commands/research_codebase.md | ticket-blind split, single documentarian subagent, `docs/research/` output |
-| agents/codebase-locator, codebase-analyzer, codebase-pattern-finder | .claude/agents/* | trimmed, positive phrasing, Bash for reads |
+| agents/codebase-locator, codebase-analyzer, codebase-pattern-finder | .claude/agents/codebase-locator.md, .claude/agents/codebase-analyzer.md, .claude/agents/codebase-pattern-finder.md | trimmed, positive phrasing, Bash for reads |
