@@ -630,18 +630,27 @@ def run_image(args):
     return None
 
 
+BOOLEANS = {"1": True, "t": True, "T": True, "true": True, "True": True, "TRUE": True,
+            "0": False, "f": False, "F": False, "false": False, "False": False, "FALSE": False}
+
+
 def run_options(options):
-    """Split `docker run` options into flags (`--rm=true` read as `--rm`, `--rm=false` dropped) and label keys."""
+    """Split `docker run` options into flags (`--rm=True` read as `--rm`, `--rm=false` dropped, as docker parses
+    booleans) and label keys (`--label k=v`, `--label=k=v`, `-l k=v`, `-lk=v`)."""
     flags, labels = [], set()
     it = iter(options)
     for a in it:
-        if a in ("--label", "-l"):
+        short = re.fullmatch(r"-([ditPq]*)l(.*)", a)
+        if a == "--label":
             labels.add(next(it, "").partition("=")[0])
+        elif short:
+            flags += ["-" + short.group(1)] if short.group(1) else []
+            labels.add((short.group(2) or next(it, "")).partition("=")[0])
         elif a.startswith("--label="):
             labels.add(a[len("--label="):].partition("=")[0])
-        elif re.fullmatch(r"--[\w-]+=(?:true|false)", a):
+        elif re.fullmatch(r"--[\w-]+=\w+", a) and a.partition("=")[2] in BOOLEANS:
             name, _, value = a.partition("=")
-            flags += [name] if value == "true" else []
+            flags += [name] if BOOLEANS[value] else []
         else:
             flags.append(a)
     return flags, labels
@@ -649,32 +658,48 @@ def run_options(options):
 
 def check_postgres(cmd):
     cmd = cmd.replace("\\\n", " ")
-    for _, tokens in segments(cmd, "docker|podman"):
-        args = tokens[1:]
-        if args[:2] == ["container", "run"]:
-            args = args[1:]
-        if args[:1] != ["run"]:
-            continue
-        i = run_image(args[1:])
-        if i is None or not POSTGRES_IMAGE.match(args[1 + i]):
-            continue
-        flags, labels = run_options(args[1:1 + i])  # what follows the image is the container's command
-        detached = any(a == "--detach" or re.fullmatch(r"-[ditPq]*d[ditPq]*", a) for a in flags)
-        if "dk.issue" not in labels and (detached or "--rm" not in flags):
-            return [("hint", "This Postgres server carries no issue label, so nothing ties it to an issue or "
-                     "cleans it up. `dk-pg up <issue>` starts a throwaway one on a free port (--rm, tmpfs, labels "
-                     "dk.repo and dk.issue) and prints its URL; `dk-pg url <issue>` reprints it, "
-                     "`dk-pg down <issue>` removes it.")]
+    return next(filter(None, (postgres_findings(tokens) for _, tokens in segments(cmd, "docker|podman"))), [])
+
+
+def postgres_findings(tokens):
+    """Findings for one `docker` or `podman` invocation (`tokens[0]` is the program)."""
+    args = tokens[1:]
+    if args[:2] == ["container", "run"]:
+        args = args[1:]
+    if args[:1] != ["run"]:
+        return []
+    i = run_image(args[1:])
+    if i is None or not POSTGRES_IMAGE.match(args[1 + i]):
+        return []
+    flags, labels = run_options(args[1:1 + i])  # what follows the image is the container's command
+    detached = any(a == "--detach" or re.fullmatch(r"-[ditPq]*d[ditPq]*", a) for a in flags)
+    if "dk.issue" not in labels and (detached or "--rm" not in flags):
+        return [("hint", "This Postgres server carries no issue label, so nothing ties it to an issue or "
+                 "cleans it up. `dk-pg up <issue>` starts a throwaway one on a free port (--rm, tmpfs, labels "
+                 "dk.repo and dk.issue) and prints its URL; `dk-pg url <issue>` reprints it, "
+                 "`dk-pg down <issue>` removes it.")]
     return []
 
 
 def check_gh(cmd):
-    for _, tokens in segments(cmd, "gh"):
-        if tokens[1:3] in (["issue", "view"], ["pr", "view"]) and "--comments" in tokens \
-                and not any(t.startswith("--json") for t in tokens):
-            return [("hint", "Piped `gh issue|pr view --comments` prints the comments but not the body. If you "
-                     "need both, use `--json title,body,labels,comments`.")]
+    return next(filter(None, (gh_findings(tokens) for _, tokens in segments(cmd, "gh"))), [])
+
+
+def gh_findings(tokens):
+    if tokens[1:3] in (["issue", "view"], ["pr", "view"]) and "--comments" in tokens \
+            and not any(t.startswith("--json") for t in tokens):
+        return [("hint", "Piped `gh issue|pr view --comments` prints the comments but not the body. If you "
+                 "need both, use `--json title,body,labels,comments`.")]
     return []
+
+
+def postgres_words(segs):
+    return next(filter(None, (postgres_findings(w) for _, w in map(command, segs) if is_docker(w))), [])
+
+
+def gh_words(segs):
+    return next(filter(None, (gh_findings(w) for _, w in map(command, segs)
+                              if w and os.path.basename(w[0]) == "gh")), [])
 
 
 DK_GC = re.compile(r"(?:^|(\|\|?|" + OPENERS + r"))\s*" + PREFIX
@@ -788,8 +813,8 @@ def decide(cmd, cwd):
         findings = check_docker(raw) + check_git(raw, cwd) + check_credentials(raw) + check_gh(raw) \
             + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw)
     else:
-        findings = docker_words(segs) + git_words(segs, cwd) + check_credentials(raw) + check_gh(raw) \
-            + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw)
+        findings = docker_words(segs) + git_words(segs, cwd) + check_credentials(raw) + gh_words(segs) \
+            + postgres_words(segs) + check_dk_gc(raw) + check_zsh_names(raw)
     for level in ("deny", "ask"):
         reasons = [r for l, r in findings if l == level]
         if reasons:
