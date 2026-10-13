@@ -107,4 +107,16 @@ $out"
 # silently counted as unchanged.
 expect "misspelt.md: not found at $hl_base"
 
+# A reused clone that lacks origin/HEAD still gets compared, and the run goes
+# on to the next source. Git before 2.48 never recreates the ref on fetch;
+# followRemoteHEAD=never gives the same behaviour on newer git.
+clones="$tmp/clones"
+"$sync" "$clones" >/dev/null 2>&1 || fail "sync.sh with a fresh clones dir exited non-zero"
+git -C "$clones/acme/skills" symbolic-ref --delete refs/remotes/origin/HEAD
+git -C "$clones/acme/skills" config remote.origin.followRemoteHEAD never
+out=$("$sync" "$clones" 2>&1) || fail "sync.sh with a reused clone lacking origin/HEAD exited non-zero: $out"
+expect "acme/skills $mp_base.."
+expect "mp: review tweak"
+expect "quiet/q $quiet_base.."
+
 echo "sync: all checks passed"

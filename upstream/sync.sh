@@ -39,6 +39,9 @@ while read -r repo base paths <&3; do
   else
     git clone -q "https://github.com/$repo" "$clone"
   fi
+  # A reused clone can lack origin/HEAD: git before 2.48 never recreates it on fetch.
+  git -C "$clone" rev-parse -q --verify refs/remotes/origin/HEAD >/dev/null ||
+    git -C "$clone" remote set-head origin --auto >/dev/null
   head=$(git -C "$clone" rev-parse --short refs/remotes/origin/HEAD)
   out=""
   for p in $paths; do
