@@ -41,6 +41,20 @@ else
   changed=1
 fi
 
+# The Bash tool runs zsh, and agents write bash: this block in the zsh
+# environment file stops the glob and =word errors that mismatch causes.
+zshenv=${ZDOTDIR:-$HOME}/.zshenv
+zsh_block='# >>> dk-agent-kit zsh options >>>
+# An unmatched glob (--include=*.go) is passed through literally, and a word
+# starting with = (echo ====) is not expanded to a command path.
+setopt NO_NOMATCH
+unsetopt EQUALS
+# <<< dk-agent-kit zsh options <<<'
+zsh_current=$(cat "$zshenv" 2>/dev/null || true)
+zsh_merged=$(printf '%s\n\n%s' "$zsh_current" "$zsh_block")
+diff -u --label "$zshenv" --label "$zshenv (merged)" \
+  <(printf '%s\n' "$zsh_current") <(printf '%s\n' "$zsh_merged") || true
+
 if [[ "${1:-}" != "--apply" ]]; then
   echo
   echo "bootstrap: dry run. --apply writes this and runs:"

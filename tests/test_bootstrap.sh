@@ -16,10 +16,17 @@ cat > "$tmp/settings.json" <<'EOF'
 EOF
 echo '{"autoMode": {"environment": ["private line"]}}' > "$tmp/private.json"
 
-export CLAUDE_SETTINGS="$tmp/settings.json" DK_PRIVATE_SETTINGS="$tmp/private.json"
+# a test HOME, so the zsh step never reaches the real ~/.zshenv
+mkdir -p "$tmp/home"
+printf 'export PATH="$HOME/.bun/bin:$PATH"\n' > "$tmp/home/.zshenv"
+cp "$tmp/home/.zshenv" "$tmp/zshenv.orig"
+unset ZDOTDIR
+export HOME="$tmp/home" CLAUDE_SETTINGS="$tmp/settings.json" DK_PRIVATE_SETTINGS="$tmp/private.json"
 out=$("$root/bootstrap.sh")
 grep -q '^+.*docker container prune' <<<"$out" || fail "dry run shows no added deny rule"
 [[ "$(jq -r .model "$tmp/settings.json")" == opus ]] || fail "dry run changed the file"
+grep -q '^+setopt NO_NOMATCH' <<<"$out" || fail "dry run shows no zsh block"
+cmp -s "$tmp/home/.zshenv" "$tmp/zshenv.orig" || fail "dry run changed .zshenv"
 
 # apply without touching the real plugin registry: stub the claude CLI
 mkdir -p "$tmp/bin"
