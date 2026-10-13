@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 # transcript extracts for tests/hooks/replay_history.py stay local
 *.jsonl
+# claude plugin eval writes its reports here
+plugins/dk/evals/results/
