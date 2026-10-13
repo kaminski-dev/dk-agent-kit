@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Merges the kit's user-settings fragment into ~/.claude/settings.json and
-# installs the kit's plugins from this checkout. A plugin cannot ship
-# permission rules or autoMode settings, so those travel this way.
+# Merges the kit's user-settings fragment into ~/.claude/settings.json, adds
+# the zsh options block to ~/.zshenv and installs the kit's plugins from this
+# checkout. A plugin cannot ship permission rules, autoMode settings or shell
+# options, so those travel this way.
 #
-#   ./bootstrap.sh            show the settings diff, change nothing
-#   ./bootstrap.sh --apply    back up settings.json, write the merge, install plugins
+#   ./bootstrap.sh            show the settings and .zshenv diffs, change nothing
+#   ./bootstrap.sh --apply    back up both files, write them, install plugins
 #
 # Objects merge key by key, arrays gain the entries they lack (nothing is
 # removed or reordered), scalars from the fragment win. A private overlay at
