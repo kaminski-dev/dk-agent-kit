@@ -3,11 +3,11 @@
 
 Reads the hook JSON on stdin and answers with a permission decision:
 deny for commands that destroyed shared state before (docker prune, unfiltered
-mass removal, pushes to main, force pushes, git clean of ignored files) or
-broke the shell (a zsh special parameter such as `path` as a loop or read
-variable), ask
-for rewriting the shared pre-main branch, reading a credential file or
-answering dk-gc's question for the human (--yes, piped input), and
+mass removal, pushes to main, force pushes, git clean of ignored files),
+leaked a credential (reading a credential file) or broke the shell (a zsh
+special parameter such as `path` as a loop or read variable), ask for
+rewriting the shared pre-main branch or answering dk-gc's question for the
+human (--yes, piped input), and
 hints for gh calls that silently drop the issue body and for an unlabelled
 Postgres server that dk-pg should start instead. Everything else passes.
 
