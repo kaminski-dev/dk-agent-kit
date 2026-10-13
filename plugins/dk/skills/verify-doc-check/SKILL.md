@@ -4,7 +4,7 @@ description: "Monthly check that this repo's docs/agents/verify.md still starts 
 disable-model-invocation: true
 ---
 
-<!-- Adapted from cursor/plugins pstack@d73344b skills/maintain-verification-skill, MIT (© 2026 Lauren Tan). Changed for dk-agent-kit: the target is docs/agents/verify.md run under the dk:verify protocol, readers per doc section, drift fixed in a PR into pre-main or filed as a needs-triage issue. -->
+<!-- Adapted from cursor/plugins pstack@1dcc2ba skills/maintain-verification-skill, MIT (© 2026 Lauren Tan). Changed for dk-agent-kit: the target is docs/agents/verify.md run under the dk:verify protocol, readers per doc section, drift fixed in a PR into pre-main or filed as a needs-triage issue. -->
 
 # Verify doc check
 

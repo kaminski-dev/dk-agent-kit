@@ -4,7 +4,7 @@ description: "Run a retrospective on a session or a month of sessions, and turn 
 disable-model-invocation: true
 ---
 
-<!-- Adapted from cursor/plugins pstack@d73344b skills/correct, MIT (© 2026 Lauren Tan). Changed for dk-agent-kit: folded into the retro as its correct step, proposes fixes instead of making them, rule-to-check table in the retro report. -->
+<!-- Adapted from cursor/plugins pstack@1dcc2ba skills/correct, MIT (© 2026 Lauren Tan). Changed for dk-agent-kit: folded into the retro as its correct step, proposes fixes instead of making them, rule-to-check table in the retro report. -->
 
 The user has asked for a **retrospective**. You are suggesting improvements to the coding agent's **environment** to improve future runs.
 

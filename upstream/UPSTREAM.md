@@ -32,7 +32,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 | writing-for-agents | skills/productivity/writing-for-agents | as-is |
 | setup | skills/engineering/setup-matt-pocock-skills | rewritten; templates adapted; `docs/agents/verify.md` row and Verify step for `dk:verify` |
 
-## cursor/plugins pstack (MIT) @ d73344b
+## cursor/plugins pstack (MIT) @ 1dcc2ba
 
 | dk file | Upstream path | Changes |
 |---|---|---|

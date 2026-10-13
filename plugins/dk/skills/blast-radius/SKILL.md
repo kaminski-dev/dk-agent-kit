@@ -3,7 +3,7 @@ name: blast-radius
 description: "Find what a change could break beyond its diff, and prove the one fact it is safe because of by running real code. Use for 'blast radius of X', 'what could this break', a one-way-door PR, a diff you don't trust, or before a parallel wave of tickets touches shared modules."
 ---
 
-<!-- Adapted from cursor/plugins pstack@d73344b skills/blast-radius, MIT (© 2026 Lauren Tan). Changed for dk-agent-kit: model-invoked, pointers to how/why/arena/unslop replaced. -->
+<!-- Adapted from cursor/plugins pstack@1dcc2ba skills/blast-radius, MIT (© 2026 Lauren Tan). Changed for dk-agent-kit: model-invoked, pointers to how/why/arena/unslop replaced. -->
 
 # Blast radius
 
