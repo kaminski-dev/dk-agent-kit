@@ -19,12 +19,12 @@ SESSION = "s-1"
 
 
 def user(ts, content, **extra):
-    return {"type": "user", "timestamp": ts, "cwd": CWD, "sessionId": SESSION, "isSidechain": False,
+    return {"type": "user", "timestamp": ts, "cwd": CWD, "sessionId": SESSION,
             "message": {"role": "user", "content": content}, **extra}
 
 
 def human(ts, text):
-    return user(ts, text, origin={"kind": "human"}, promptSource="typed")
+    return user(ts, text, origin={"kind": "human"})
 
 
 def tool_use(ts, tid, name, inp):
@@ -47,6 +47,8 @@ APPROVAL = "This command requires approval"
 REJECTED = "The user doesn't want to proceed with this tool use. The tool use was rejected."
 GATE = "dk-guard: .claude/gate.sh failed (exit 1). Last lines:\nlint failed\n\nFix the failure before you finish."
 GATE_AGAIN = "dk-guard: .claude/gate.sh failed (exit 1) again; the turn ends anyway. Last lines:\nlint failed"
+TAIL = "\nFAILED test_a.py::test_x"  # 25 characters
+LONG_FAILURE = "Exit code 1\n" + "." * 900 + TAIL  # head 200 and tail 400 survive
 HAND_BACK = ("Another Claude session sent a message:\n<agent-message from=\"a1\">\n[Subagent hand-back] "
              "The text below is the final report of a subagent this session delegated to.")
 NOTIFICATION = "<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n</task-notification>"
@@ -62,7 +64,7 @@ MAIN = [
     tool_use("2026-10-01T09:03:30Z", "t6", "Bash", {"command": "sh .claude/gate.sh"}),
     tool_result("2026-10-01T09:03:31Z", "t6", APPROVAL, denial="user-rejected"),  # headless: no user to ask
     tool_use("2026-10-01T09:04:00Z", "t4", "Bash", {"command": "pytest"}),
-    tool_result("2026-10-01T09:04:01Z", "t4", [{"type": "text", "text": "Exit code 1\nFAILED test_a.py::test_x"}]),
+    tool_result("2026-10-01T09:04:01Z", "t4", [{"type": "text", "text": LONG_FAILURE}]),
     tool_use("2026-10-01T09:05:00Z", "t5", "Read", {"file_path": "/work/repo/a.py"}),
     tool_result("2026-10-01T09:05:01Z", "t5", "1\tx = 1", is_error=False),
     user("2026-10-01T09:06:00Z", [{"type": "text", "text": "[Request interrupted by user for tool use]"}]),
@@ -89,10 +91,10 @@ MAIN = [
 ]
 
 SUBAGENT = [
-    dict(user("2026-10-01T09:20:00Z", "You are reviewing the diff for #1."), isSidechain=True),
-    dict(tool_use("2026-10-01T09:20:01Z", "s1", "Edit", {"file_path": "/work/repo/b.py"}), isSidechain=True),
-    dict(tool_result("2026-10-01T09:20:02Z", "s1", "<tool_use_error>File has not been read yet. Read it first "
-                     "before writing to it.</tool_use_error>"), isSidechain=True),
+    user("2026-10-01T09:20:00Z", "You are reviewing the diff for #1."),
+    tool_use("2026-10-01T09:20:01Z", "s1", "Edit", {"file_path": "/work/repo/b.py"}),
+    tool_result("2026-10-01T09:20:02Z", "s1", "<tool_use_error>File has not been read yet. Read it first "
+                "before writing to it.</tool_use_error>"),
 ]
 
 BEFORE = [
@@ -110,7 +112,8 @@ EXPECTED = [
     ev("2026-10-01T09:02:01Z", "denied", SAFETY, tool="Bash: rm -rf ~/workspace"),
     ev("2026-10-01T09:03:01Z", "rejected", REJECTED, tool="Edit: /work/repo/a.py"),
     ev("2026-10-01T09:03:31Z", "denied", APPROVAL, tool="Bash: sh .claude/gate.sh"),
-    ev("2026-10-01T09:04:01Z", "tool_error", "Exit code 1\nFAILED test_a.py::test_x", tool="Bash: pytest",
+    ev("2026-10-01T09:04:01Z", "tool_error", "Exit code 1\n" + "." * 188 + " [...] " + "." * 375 + TAIL,
+       tool="Bash: pytest",
        bucket="test-or-build-fail"),
     ev("2026-10-01T09:06:00Z", "interrupt", "[Request interrupted by user for tool use]"),
     ev("2026-10-01T09:07:00Z", "prompt", "No, work in the worktree instead"),

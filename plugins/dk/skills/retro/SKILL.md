@@ -18,7 +18,7 @@ The user has asked for a **retrospective**. You are suggesting improvements to t
    python3 -I <this skill's base directory>/extract.py SINCE UNTIL "$SCRATCH/retro/events.jsonl"
    ```
 
-   SINCE and UNTIL are dates (`2026-09-13`), both inclusive. `$SCRATCH` is the session's scratchpad directory, and it is the only place the output goes: the file holds raw prompt text. The script writes one JSON line per follow-up prompt, interrupt, rejected or denied tool call, dk-guard denial, Stop gate feedback and errored tool result (with a coarse `bucket`), and prints the counts by `kind`; `--help` lists the kinds. Keep the lines whose `project` is the repo's main checkout or one of its worktrees, then read the prompts for the user's **corrections** (prompts that redirect or reject the agent's work). Add the repo's reverts, fix-up commits and review comments in the same window.
+   SINCE and UNTIL are UTC dates (`2026-09-13`), both inclusive. `$SCRATCH` is the session's scratchpad directory, and it is the only place the output goes: the file holds raw prompt text. Each line is one event with a `kind` (`--help` lists them). Keep the lines whose `project` is the repo's main checkout or one of its worktrees, and read the `prompt` lines for the user's **corrections** (prompts that redirect or reject the agent's work). Add the repo's reverts, fix-up commits and review comments in the same window.
 
 3. Group the mistakes into **mistake classes**. A class counts once it has happened twice, and keeps its evidence: session and date, or commit. Then look for candidates for improvement in these categories.
 
