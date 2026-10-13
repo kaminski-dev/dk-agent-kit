@@ -63,7 +63,7 @@ out=$("$root/bootstrap.sh" --apply)
 ! grep -q 'a=b' <<<"$out" || fail "--apply printed an MCP env value: $out"
 mcp_bak=$(ls "$tmp"/playwright-mcp.json.bak-*) || fail "--apply kept no copy of the old MCP server"
 [[ "$(jq -c '[.args, .env]' "$mcp_bak")" == '[["-y","@playwright/mcp@latest"],{"PW_TEST":"a=b"}]' ]] || fail "MCP backup is not the old server: $(cat "$mcp_bak")"
-[[ "$(stat -f %Lp "$mcp_bak" 2>/dev/null || stat -c %a "$mcp_bak")" == 600 ]] || fail "MCP backup is readable by others"
+[[ -n "$(find "$mcp_bak" -perm 600)" ]] || fail "MCP backup is not mode 600: $(ls -l "$mcp_bak")"
 grep -qF "$mcp_bak" <<<"$out" || fail "--apply does not name the MCP backup: $out"
 
 s="$tmp/settings.json"
