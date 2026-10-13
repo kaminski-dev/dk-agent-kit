@@ -57,8 +57,14 @@ cmp -s "$tmp/home/.zshenv" "$tmp/zshenv.orig" || fail "dry run changed .zshenv"
 grep -q '^claude mcp get playwright$' "$tmp/claude.log" || fail "dry run did not ask the stub for the playwright server"
 grep -qx -- '+  Args: -y @playwright/mcp@latest --isolated' <<<"$out" || fail "dry run shows no --isolated change: $out"
 [[ "$(mcp_writes)" == 0 ]] || fail "dry run changed the MCP server: $(cat "$tmp/claude.log")"
+! grep -q 'a=b' <<<"$out" || fail "dry run printed an MCP env value: $out"
 
-"$root/bootstrap.sh" --apply >/dev/null
+out=$("$root/bootstrap.sh" --apply)
+! grep -q 'a=b' <<<"$out" || fail "--apply printed an MCP env value: $out"
+mcp_bak=$(ls "$tmp"/playwright-mcp.json.bak-*) || fail "--apply kept no copy of the old MCP server"
+[[ "$(jq -c '[.args, .env]' "$mcp_bak")" == '[["-y","@playwright/mcp@latest"],{"PW_TEST":"a=b"}]' ]] || fail "MCP backup is not the old server: $(cat "$mcp_bak")"
+[[ "$(stat -f %Lp "$mcp_bak" 2>/dev/null || stat -c %a "$mcp_bak")" == 600 ]] || fail "MCP backup is readable by others"
+grep -qF "$mcp_bak" <<<"$out" || fail "--apply does not name the MCP backup: $out"
 
 s="$tmp/settings.json"
 [[ "$(jq -r .model "$s")" == opus ]] || fail "model lost"

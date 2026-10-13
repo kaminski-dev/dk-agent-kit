@@ -116,7 +116,7 @@ if [[ "${1:-}" != "--apply" ]]; then
   for p in "${plugins[@]}"; do echo "  claude plugin install $p@dk-agent-kit"; done
   if ((mcp_changed)); then
     echo "  claude mcp remove playwright -s user"
-    echo "  claude mcp add-json -s user playwright $(shell_quote "$mcp_new")"
+    echo "  claude mcp add-json -s user playwright $(shell_quote "$(jq -c '.env |= map_values("<hidden>")' <<<"$mcp_new")")"
   fi
   exit 0
 fi
@@ -149,8 +149,11 @@ for p in "${plugins[@]}"; do
 done
 
 if ((mcp_changed)); then
+  # the env may hold credentials: kept in a private file, never printed
+  mcp_backup="$(dirname "$settings")/playwright-mcp.json.bak-$(date +%Y%m%d-%H%M%S)"
+  (umask 077 && printf '%s\n' "$mcp_old" > "$mcp_backup")
   echo "bootstrap: re-registering playwright with --isolated; if the add fails, restore it with"
-  echo "  claude mcp add-json -s user playwright $(shell_quote "$mcp_old")"
+  echo "  claude mcp add-json -s user playwright \"\$(cat $(shell_quote "$mcp_backup"))\""
   claude mcp remove playwright -s user
   claude mcp add-json -s user playwright "$mcp_new"
   echo "bootstrap: playwright now runs with --isolated in sessions started from now on"

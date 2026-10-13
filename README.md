@@ -165,8 +165,9 @@ profile, and the second gets "Browser is already in use". When a user-scope
 `playwright` MCP server runs without `--isolated` (in-memory profile),
 bootstrap shows the args it would change, and `--apply` re-registers the
 server through the CLI (`claude mcp remove`, then `claude mcp add-json` with
-the same command, args and environment plus `--isolated`). Sessions started
-afterwards pick it up. A server that already has the flag, or a project- or
+the same command, args and environment plus `--isolated`), keeping the old
+definition in a private `playwright-mcp.json.bak-*` next to the settings file;
+environment values are never printed. Sessions started afterwards pick it up. A server that already has the flag, or a project- or
 local-scope one, is left alone, and bootstrap never adds one that isn't there.
 
 ## Test
