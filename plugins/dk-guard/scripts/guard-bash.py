@@ -424,16 +424,21 @@ def command(seg):
     return wrappers, words[i:]
 
 
+def cd_into(cwd, target):
+    """The directory `cd target` (or `git -C target`) leaves you in, from `cwd`; None when either is known only at
+    run time (`cd "$WT"`)."""
+    target = os.path.expanduser(target)
+    if cwd is None or "$" in target or "`" in target:
+        return None
+    return target if os.path.isabs(target) else os.path.join(cwd, target)
+
+
 def commands(segs, cwd):
     """(segment, words from the program on, the directory it runs in) for each segment, following `cd`s."""
     for seg in segs:
         _, words = command(seg)
         if words[:1] == ["cd"] and len(words) > 1:
-            target = os.path.expanduser(words[1])
-            if "$" in target or "`" in target or cwd is None:
-                cwd = None
-            else:
-                cwd = target if os.path.isabs(target) else os.path.join(cwd, target)
+            cwd = cd_into(cwd, words[1])
         yield seg, words, cwd
 
 
@@ -449,16 +454,9 @@ def current_branch(path):
 
 
 def effective_cwd(cmd, offset, cwd):
-    """The directory a command at `offset` runs in, following earlier `cd`s.
-
-    None when a `cd` target is only known at run time (`cd "$WT"`).
-    """
+    """The directory a command at `offset` of the raw text runs in, following earlier `cd`s."""
     for m in re.finditer(r"(?:^|[;&|\n(]|\b(?:then|do|else)\s)\s*cd\s+(\S+)", cmd[:offset]):
-        target = os.path.expanduser(m.group(1).strip("'\""))
-        if "$" in target or "`" in target or cwd is None:
-            cwd = None
-        else:
-            cwd = target if os.path.isabs(target) else os.path.join(cwd, target)
+        cwd = cd_into(cwd, m.group(1).strip("'\""))
     return cwd
 
 
@@ -479,11 +477,7 @@ def git_findings(tokens, path):
     while args and args[0].startswith("-"):
         opt = args.pop(0)
         if opt == "-C" and args:
-            p = os.path.expanduser(args.pop(0))
-            if "$" in p or path is None:
-                path = None
-            else:
-                path = p if os.path.isabs(p) else os.path.join(path, p)
+            path = cd_into(path, args.pop(0))
         elif opt in ("-c", "--git-dir", "--work-tree", "--namespace") and args:
             args.pop(0)
     findings = []
@@ -835,9 +829,11 @@ def zsh_name_words(segs):
 FILE_CHECKS = {"ls", "stat", "test", "[", "[["}
 
 
-def in_code_span(cmd, m):
-    # a real backtick substitution of the bare path would run the file, not read it
-    return bool(re.search(r"`[\w~/${}.-]*$", cmd[:m.start()]) and re.match(r"[\w./-]*\\?`", cmd[m.end():]))
+def in_code_span(text, m):
+    """True when a literal backtick pair encloses the match: a Markdown code span in text, not a read (a real
+    backtick substitution of the bare path would run the file). In raw text an escaped closing backtick keeps its
+    backslash, so one may stand before it."""
+    return bool(re.search(r"`[\w~/${}.-]*$", text[:m.start()]) and re.match(r"[\w./-]*\\?`", text[m.end():]))
 
 
 def only_checks_file(cmd, pos):
@@ -875,8 +871,7 @@ def credential_words(segs):
         texts = [w for k, w in enumerate(seg.words) if k not in seg.scripts] + [t for _, t in seg.redirects]
         for text in texts:
             for m in CREDENTIALS.finditer(text):
-                # a literal backtick pair around the path is a Markdown code span in text, not a read
-                if not (re.search(r"`[\w~/${}.-]*$", text[:m.start()]) and re.match(r"[\w./-]*`", text[m.end():])):
+                if not in_code_span(text, m):
                     return credential_findings(m.group(0))
     return []
 
