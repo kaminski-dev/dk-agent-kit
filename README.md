@@ -176,7 +176,7 @@ bash tests/test_sync.sh
 claude plugin validate .
 ```
 
-The evals for `dk:implement`, `dk:triage` and `dk:code-review` live in
+The evals for `dk:implement`, `dk:triage`, `dk:code-review` and `dk:verify` live in
 `plugins/dk/evals/` and need a model, so they run by hand (the command is in
 `docs/agents/workflow.md`), not in CI.
 
