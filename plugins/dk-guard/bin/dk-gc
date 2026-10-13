@@ -145,7 +145,7 @@ class Worktree:
             return "its branch moved since the listing"
         reason = worktree_blocker(self.path)
         if reason:
-            return f"{reason} since the listing"
+            return f"{reason} (new since the listing)"
         if git(root, "worktree", "remove", self.path) is None:
             return "git worktree remove refused"
         return None

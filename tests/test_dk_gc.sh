@@ -247,4 +247,15 @@ remote_heads=$(git -C "$remotes/acme/app.git" for-each-ref --format='%(refname:s
 
 out=$("$dkgc" --dry-run --workspace "$ws")
 lacks "$out" "remove "
+
+# Ignored work that appears between the listing and the yes keeps the worktree.
+late19=$(worktree app-19 feat/19-late docs/)
+sed -i.bak "s|]\$|, $(pr 29 feat/19-late "$late19" main)]|" "$fx/acme_app/pr-merged.json"
+{ for _ in $(seq 100); do grep -q 'Remove these' "$tmp/late.out" 2>/dev/null && break; sleep 0.1; done
+  mkdir "$ws/app-19/docs"; echo late >"$ws/app-19/docs/plan.md"; echo y; } |
+  "$dkgc" --workspace "$ws" >"$tmp/late.out" 2>&1 && fail "a run that kept a listed worktree exited 0"
+out=$(cat "$tmp/late.out")
+has "$out" "remove worktree $ws/app-19 (feat/19-late, PR #29 merged)"
+has "$out" "kept worktree $ws/app-19 (feat/19-late, PR #29 merged): ignored files outside the regenerable list: docs/ (new since the listing)"
+[[ "$(cat "$ws/app-19/docs/plan.md")" == late ]] || fail "ignored docs/plan.md in app-19 lost"
 echo "dk-gc: all checks passed"
