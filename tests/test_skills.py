@@ -107,6 +107,12 @@ if not re.search(r"<PR>-<review>-<\w+>", step7) or "one at a time" not in step7:
 
 if "PR comment" not in step7:
     errors.append("skills/issue-flow: step 7's push route must record a review-body finding's fix in a PR comment; it has no thread")
+skipped = re.search(r"^ *Either way, a skipped .*$", step7, re.M)
+skipped = skipped.group(0) if skipped else ""
+if not re.search(r"skipped inline finding.*thread", skipped) or not re.search(
+        r"skipped review-body finding.*PR comment.*file.*lines", skipped):
+    errors.append("skills/issue-flow: step 7 must send a skipped inline finding's reason to its thread, "
+                  "and a skipped review-body finding's to a PR comment naming its file and lines")
 
 readme = (ROOT / "README.md").read_text()
 for block in re.findall(r"```mermaid\n(.*?)```", readme, re.S):
