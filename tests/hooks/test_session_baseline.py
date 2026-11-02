@@ -130,6 +130,41 @@ def case_many_changes_stay_within_15_lines(root):
     assert "uncommitted: 40 files" in out, out
 
 
+def add_worktrees(repo, count):
+    for n in range(1, count + 1):
+        subprocess.run(["git", "-C", repo, "worktree", "add", "-q", "-b", f"feat/{n}-x", f"{repo}-{n}"], check=True)
+    return f"{repo}-1"
+
+
+def case_five_linked_worktrees_point_to_dk_gc(root):
+    wt = add_worktrees(make_repo(root, "five"), 5)
+    code, out, err = run(wt, make_stubs(root, "five"))
+    assert code == 0, (code, err)
+    assert "5 linked worktrees; dk-gc --dry-run lists the finished ones" in out, out
+
+
+def case_four_linked_worktrees_say_nothing_about_them(root):
+    repo = make_repo(root, "four")
+    add_worktrees(repo, 4)
+    _, out, _ = run(repo, make_stubs(root, "four"))
+    assert out.startswith("four · main") and "linked worktrees" not in out and "dk-gc" not in out, out
+
+
+def case_worktree_line_survives_a_full_baseline(root):
+    repo = make_repo(root, "full", "feat/9-full")
+    add_worktrees(repo, 6)
+    for i in range(40):
+        with open(os.path.join(repo, f"f{i:02}.txt"), "w") as f:
+            f.write("x\n")
+    stubs = make_stubs(root, "full", {
+        "gh pr-list": json.dumps([{"number": 3, "title": "Full", "url": "https://x/pull/3"}]),
+        "gh issue-view": json.dumps({"number": 9, "title": "Full", "state": "OPEN", "labels": []}),
+        "docker ps": "".join(f"dk-pg-full-{i}\t127.0.0.1:{5000 + i}->5432/tcp\n" for i in range(20)),
+    })
+    _, out, _ = run(repo, stubs)
+    assert len(out.splitlines()) <= 15 and "6 linked worktrees;" in out, out
+
+
 def case_branch_issue_shows_pr_labels_and_its_databases(root):
     repo = make_repo(root, "linked", "feat/19-session-hooks")
     stubs = make_stubs(root, "linked", {
