@@ -794,6 +794,8 @@ def wait_words(segs):
             long_form = rest[2:3] == ["do"]
             _, words = command_words(rest[3:] if long_form else rest[2:])
             keywords += ["repeat"] if long_form else []
+            if not long_form and rest[1:2] != ["1"] and polls(words):
+                return [FOREGROUND_WAIT]
         elif seg.words == ["end"] and loops and loops[-1].keyword == "foreach":  # zsh: foreach x (…) … end
             if loops.pop().waits():
                 return [FOREGROUND_WAIT]
