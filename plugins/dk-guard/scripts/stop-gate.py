@@ -56,6 +56,10 @@ def run_gate(gate, root, timeout=TIMEOUT):
     return failure, out.decode("utf-8", errors="replace")
 
 
+def tail(output):
+    return "\n".join(output.rstrip().splitlines()[-TAIL_LINES:])[-TAIL_CHARS:]
+
+
 def main():
     data = json.load(sys.stdin)
     cwd = data.get("cwd") or os.getcwd()
@@ -66,14 +70,14 @@ def main():
     failure, output = run_gate(gate, root)
     if not failure:
         return
-    tail = "\n".join(output.rstrip().splitlines()[-TAIL_LINES:])[-TAIL_CHARS:]
+    last = tail(output)
     head = f"dk-guard: {GATE} {failure}"
     if data.get("stop_hook_active"):
         # The agent already had one try after a block; a second block could loop.
-        print(json.dumps({"systemMessage": f"{head}; the turn ends anyway. Last lines:\n{tail}"}))
+        print(json.dumps({"systemMessage": f"{head}; the turn ends anyway. Last lines:\n{last}"}))
     else:
         print(json.dumps({"decision": "block",
-                          "reason": f"{head}. Last lines:\n{tail}\n\nFix the failure before you finish."}))
+                          "reason": f"{head}. Last lines:\n{last}\n\nFix the failure before you finish."}))
 
 
 if __name__ == "__main__":

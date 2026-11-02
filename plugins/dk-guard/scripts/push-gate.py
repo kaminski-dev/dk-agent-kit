@@ -10,8 +10,9 @@ checkout's executable .claude/gate.sh from its root. A failing gate denies the
 push with the gate's last lines; a passing gate is silent.
 
 Pushes of verify-assets/*, branch deletes and pushes guard-bash.py denies
-anyway run no gate. A directory known only at run time, a checkout without a
-gate, or no checkout at all: nothing happens.
+anyway run no gate. A checkout without a gate, or no checkout at all: nothing
+happens. A directory known only at run time (`cd "$WT" && git push`) runs no
+gate either, and the agent is told so.
 
 It fails open: a gate that outlives TIMEOUT is killed and the push goes through
 with a message to the user. A crash, or the hook's own timeout in hooks.json,
@@ -23,8 +24,7 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-# Below the hook's 600 s timeout in hooks.json, so a hung gate is reported, not just killed. The slowest plain
-# client gate run on record took 376 s.
+# Below the hook's 600 s timeout in hooks.json, so a hung gate is reported, not just killed.
 TIMEOUT = int(os.environ.get("DK_PUSH_GATE_TIMEOUT", "540"))
 
 
@@ -69,22 +69,20 @@ def gated(rest, path, guard):
 
 
 def push_roots(cmd, cwd, guard, stop):
-    """The checkout roots of the command's gated pushes, in order, without repeats."""
-    roots = []
+    """(the checkout roots of the command's gated pushes, in order, without repeats; whether a gated push runs in a
+    directory known only at run time)."""
+    roots, unknown = [], False
     for tokens, path in git_commands(cmd, cwd, guard):
-        args = tokens[1:]
-        while args and args[0].startswith("-"):
-            opt = args.pop(0)
-            if opt == "-C" and args:
-                path = guard.cd_into(path, args.pop(0))
-            elif opt in ("-c", "--git-dir", "--work-tree", "--namespace") and args:
-                args.pop(0)
-        if path is None or args[:1] != ["push"] or not gated(args[1:], path, guard):
+        args, path = guard.git_subcommand(tokens, path)
+        if args[:1] != ["push"] or not gated(args[1:], path, guard):
+            continue
+        if path is None:
+            unknown = True
             continue
         root = (stop.git(path, "rev-parse", "--show-toplevel") or "").strip()
         if root and root not in roots:
             roots.append(root)
-    return roots
+    return roots, unknown
 
 
 def main():
@@ -96,12 +94,13 @@ def main():
     stop = load("stop_gate", "stop-gate.py")
     cwd = data.get("cwd") or os.getcwd()
     notes = []
-    for root in push_roots(cmd, cwd, guard, stop):
+    roots, unknown = push_roots(cmd, cwd, guard, stop)
+    for root in roots:
         gate = os.path.join(root, stop.GATE)
         if not os.access(gate, os.X_OK):
             continue
         failure, output = stop.run_gate(gate, root, TIMEOUT)
-        tail = "\n".join(output.rstrip().splitlines()[-stop.TAIL_LINES:])[-stop.TAIL_CHARS:]
+        tail = stop.tail(output)
         head = f"dk-guard: {stop.GATE} in {root} {failure or 'passed'}"
         timed_out = bool(failure) and failure.startswith("timed out")
         guard.log({"session": data.get("session_id"), "cwd": cwd, "decision": "deny" if failure and not timed_out
@@ -114,8 +113,17 @@ def main():
                 "permissionDecisionReason": f"{head}, so the push is blocked. Last lines:\n{tail}\n\n"
                                             "Fix the failure, commit, and push again."}}))
             return
+    out = {}
     if notes:
-        print(json.dumps({"systemMessage": "\n\n".join(notes)}))
+        out["systemMessage"] = "\n\n".join(notes)
+    if unknown:
+        out["hookSpecificOutput"] = {
+            "hookEventName": "PreToolUse",
+            "additionalContext": f"dk-guard: {stop.GATE} did not run for this push: its directory is known only at "
+                                 "run time. Write the worktree path literally (`cd <worktree> && git push`), or run "
+                                 "the gate there by hand."}
+    if out:
+        print(json.dumps(out))
 
 
 if __name__ == "__main__":

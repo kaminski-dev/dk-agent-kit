@@ -515,8 +515,9 @@ def check_git(cmd, cwd):
     return findings
 
 
-def git_findings(tokens, path):
-    """Findings for one `git` invocation (`tokens[0]` is git), run in `path` (None when unknown)."""
+def git_subcommand(tokens, path):
+    """(the words from the subcommand on, the directory it runs in) for one `git` invocation run in `path`, its
+    global options dropped and `-C` followed."""
     args = tokens[1:]
     while args and args[0].startswith("-"):
         opt = args.pop(0)
@@ -524,6 +525,12 @@ def git_findings(tokens, path):
             path = cd_into(path, args.pop(0))
         elif opt in ("-c", "--git-dir", "--work-tree", "--namespace") and args:
             args.pop(0)
+    return args, path
+
+
+def git_findings(tokens, path):
+    """Findings for one `git` invocation (`tokens[0]` is git), run in `path` (None when unknown)."""
+    args, path = git_subcommand(tokens, path)
     findings = []
     if not args:
         return findings
