@@ -83,10 +83,14 @@ for ref in sorted(set(re.findall(r'subagent_type: "dk:([a-z][a-z-]*)"', review))
     elif WRITE_TOOLS & {t.strip() for t in tools.split(",")}:
         errors.append(f"agents/{ref}: code-review spawns it, so its tools must exclude {sorted(WRITE_TOOLS)}")
 
-# One axis asks whether a test can fail (#63): the Correctness brief carries the checklist, the baseline does not.
 baseline = re.search(r"\*\*smell baseline\*\*.*?(?=^The \*\*comment policy\*\*)", review, re.M | re.S)
-if baseline is None or "**Empty Test**" in baseline.group(0):
+if baseline is None or re.search(r"empty test", baseline.group(0), re.I):
     errors.append("skills/code-review: the Standards smell baseline lists Empty Test; the Correctness brief owns it")
+standards_brief = re.search(r"^\*\*Standards sub-agent prompt\*\*.*?(?=^\*\*Spec sub-agent prompt\*\*)", review, re.M | re.S)
+if not re.search(r"Whether a test can fail is the Correctness axis's question unless a documented standard rules on it",
+                 standards_brief.group(0) if standards_brief else ""):
+    errors.append("skills/code-review: the Standards brief must hand whether a test can fail to the Correctness axis, "
+                  "keeping documented test rules")
 test_question = re.search(r"^  - \*\*Test\*\*:.*$", review, re.M)
 test_question = test_question.group(0) if test_question else ""
 for what, pattern in (
