@@ -108,6 +108,24 @@ def case_without_pre_main_the_fallback_bases_on_the_remote_default_branch(root):
     assert "git worktree add ~/workspace/acme-trunk-<issue> -b <type>/<issue>-<slug> origin/trunk " in reason, reason
 
 
+def case_without_any_remote_ref_the_fallback_bases_on_origin_main(root):
+    repo = make_repo(root, "acme-noremote", OPT_IN, "# Workflow\n\nNo worktree line here.\n")
+    _, out, _ = run(os.path.join(repo, "src", "a.ts"))
+    deny, reason = denied(out)
+    assert deny, out
+    assert "git worktree add ~/workspace/acme-noremote-<issue> -b <type>/<issue>-<slug> origin/main " in reason, reason
+
+
+def case_a_workflow_line_wins_over_the_fallback(root):
+    repo = make_repo(root, "acme-line", OPT_IN,
+                     "- Path and branch: `git worktree add ~/src/acme-<issue> -b <type>/<issue>-<slug> origin/main`\n")
+    add_remote_ref(repo, "pre-main")
+    _, out, _ = run(os.path.join(repo, "src", "a.ts"))
+    deny, reason = denied(out)
+    assert deny, out
+    assert "git worktree add ~/src/acme-<issue> -b <type>/<issue>-<slug> origin/main " in reason, reason
+
+
 def case_same_edit_in_a_linked_worktree_goes_through(root):
     repo = make_repo(root, "acme-wt", OPT_IN, WORKFLOW)
     wt = add_worktree(repo, os.path.join(root, "acme-wt-1"))
