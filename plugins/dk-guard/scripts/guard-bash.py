@@ -954,8 +954,8 @@ def dk_gc_words(segs):
 WORKTREE_LOOP = ("hint", "This loop removes worktrees by hand. `dk-gc --dry-run` lists the worktrees and branches of "
                  "merged PRs and the databases of closed issues; `dk-gc` removes them after the human's yes and keeps "
                  "a worktree with uncommitted changes.")
-RAW_WORKTREE_LOOP = re.compile(
-    START + r"(for|foreach|select|while|until)\b(?=.*?\bgit\b[^;&|\n]*?\sworktree\s+remove\b)", re.S)
+RAW_WORKTREE_LOOP = re.compile(START + r"(" + "|".join(k for k in LOOP_KEYWORDS if k != "repeat")
+                               + r")\b(?=.*?\bgit\b[^;&|\n]*?\sworktree\s+remove\b)", re.S)
 
 
 def check_worktree_loop(cmd):
@@ -964,15 +964,17 @@ def check_worktree_loop(cmd):
 
 
 def worktree_loop_words(segs):
-    depth = 0
+    loops = []  # innermost last
     for seg in segs:
         for kw in itertools.takewhile(lambda w: w in LEAD or w in LOOP_KEYWORDS and w != "repeat", seg.words):
-            depth += kw in LOOP_KEYWORDS
-            depth -= kw == "done" and depth > 0
-        if seg.words == ["end"] and depth:  # zsh: foreach x (…) … end
-            depth -= 1
+            if kw in LOOP_KEYWORDS:
+                loops.append(kw)
+            elif kw == "done" and loops:
+                loops.pop()
+        if seg.words == ["end"] and loops[-1:] == ["foreach"]:  # zsh: foreach x (…) … end
+            loops.pop()
         _, words = command(seg)
-        if depth and words and os.path.basename(words[0]) == "git" \
+        if loops and words and os.path.basename(words[0]) == "git" \
                 and git_subcommand(words, None)[0][:2] == ["worktree", "remove"]:
             return [WORKTREE_LOOP]
     return []

@@ -28,7 +28,7 @@ DEFAULT_TIMEOUT = 5.0
 
 
 def timeout():
-    """Seconds each gh or docker call gets; the three calls run side by side, inside the hook's timeout."""
+    """Seconds each git, gh or docker call gets; the gh and docker calls run side by side, inside the hook's timeout."""
     try:
         value = float(os.environ.get("DK_BASELINE_TIMEOUT", DEFAULT_TIMEOUT))
     except ValueError:
