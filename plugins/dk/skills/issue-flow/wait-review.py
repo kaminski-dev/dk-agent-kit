@@ -21,6 +21,7 @@ import time
 RATE_LIMITED = ("<!-- This is an auto-generated comment: rate limited by coderabbit.ai -->",
                 "<!-- end of auto-generated comment: rate limited by coderabbit.ai -->")
 RECENT = ("<!-- recent_review_start -->", "<!-- recent_review_end -->")
+NO_FINDINGS = "No actionable comments were generated in the recent review."
 
 
 class GhFailed(Exception):
@@ -52,8 +53,7 @@ def section(body, markers):
 
 
 def head(pr):
-    view = json.loads(gh("pr", "view", pr, "--json", "headRefOid,commits"))
-    return view["headRefOid"], view["commits"][-1]["committedDate"]
+    return json.loads(gh("pr", "view", pr, "--json", "headRefOid"))["headRefOid"]
 
 
 def reviews_of(pr, bot, sha):
@@ -67,32 +67,34 @@ def reviews_of(pr, bot, sha):
     return [str(r["id"]) for r in reviews if r.get("body") or r["id"] in own]
 
 
-def summary_verdict(pr, bot, sha, since):
+def summary_verdict(pr, bot, sha):
+    """CodeRabbit's summary comment: each notice names the commit it is about."""
     for c in gh_list(f"repos/{{owner}}/{{repo}}/issues/{pr}/comments"):
         if c["user"]["login"] != bot:
             continue
         body = c.get("body") or ""
+        if f"and {sha}" in section(body, RATE_LIMITED):
+            return 3, "rate limited"
+        if "Reviews paused" in body and f"Latest commit, not reviewed: {sha}" in body:
+            return 3, "paused"
         if "review in progress" in body:
             return None
-        if f"and {sha}" in section(body, RECENT):
+        recent = section(body, RECENT)
+        if f"and {sha}" in recent and NO_FINDINGS in recent:
             return 0, "clean"
-        if "rate limited" in body and f"and {sha}" in body:
-            return 3, "rate limited"
-        if "Reviews paused" in body and c["updated_at"] > since:
-            return 3, "paused"
     return None
 
 
 def wait(pr, bot, polls, interval):
     current, polled = None, 0
     while polled < polls:
-        sha, since = head(pr)
+        sha = head(pr)
         if sha != current:  # a new head restarts the count
             current, polled = sha, 0
         found = reviews_of(pr, bot, sha)
-        verdict = (0, "reviews " + " ".join(found)) if found else summary_verdict(pr, bot, sha, since)
+        verdict = (0, "reviews " + " ".join(found)) if found else summary_verdict(pr, bot, sha)
         if verdict:
-            if head(pr)[0] == sha:
+            if head(pr) == sha:
                 return verdict
             continue  # the head moved: the next poll takes it
         polled += 1

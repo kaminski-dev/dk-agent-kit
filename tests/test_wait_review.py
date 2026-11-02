@@ -35,7 +35,7 @@ if name == "pr":
     open(count, "w").write(str(n + 1))
     heads = fix["heads"]
     sha, date = heads[min(n, len(heads) - 1)]
-    print(json.dumps({"headRefOid": sha, "commits": [{"committedDate": date}]}))
+    print(json.dumps({"headRefOid": sha}))
 else:
     print(json.dumps(fix.get(name, [])))
 '''
