@@ -136,6 +136,17 @@ if not re.search(r"<PR>-<review>-<\w+>", step7) or "one at a time" not in step7:
     errors.append("skills/issue-flow: step 7's push route needs a worktree key unique per finding, "
                   "body findings of one review included, and works findings one at a time")
 
+fan_out = re.search(r"^\*\*Fan-out\.\*\*.*?(?=^## )", flow, re.M | re.S)
+waits = re.search(r"^- \*\*Waits\*\*:.*$", fan_out.group(0) if fan_out else "", re.M)
+if not waits or not re.search(r"every background wait", waits.group(0)) or not re.search(
+        r"deadline.*20 minutes.*reports", waits.group(0)):
+    errors.append("skills/issue-flow: step 2's fan-out rules need a **Waits** rule: every background wait has a "
+                  "deadline (20 minutes unless the step says otherwise) and reports when it expires")
+manual = re.search(r"A worktree with no merged PR.*$", step7, re.M)
+if not manual or not re.search(r"dk-gc --in-use <worktree>.*git worktree remove", manual.group(0)):
+    errors.append("skills/issue-flow: step 7's removal by hand must run `dk-gc --in-use <worktree>` before "
+                  "`git worktree remove`")
+
 if "PR comment" not in step7:
     errors.append("skills/issue-flow: step 7's push route must record a review-body finding's fix in a PR comment; it has no thread")
 skipped = re.search(r"^ *Either way, a skipped .*$", step7, re.M)

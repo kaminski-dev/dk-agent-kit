@@ -9,7 +9,11 @@ dkgc="$root/plugins/dk-guard/bin/dk-gc"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 tmp=$(cd "$(mktemp -d)" && pwd -P)
-trap 'rm -rf "$tmp"' EXIT
+busy_pids=
+trap 'for p in $busy_pids; do kill "$p" 2>/dev/null || true; done; rm -rf "$tmp"' EXIT
+# start_in <dir>: starts a sleep whose working directory is <dir>, outside this shell's jobs; prints its pid.
+start_in() { (cd "$1" && { sleep 600 >/dev/null 2>&1 & echo $!; }); }
+stop() { kill "$1"; while kill -0 "$1" 2>/dev/null; do sleep 0.1; done; }
 export HOME="$tmp/home" GIT_CONFIG_GLOBAL="$tmp/home/.gitconfig" GIT_CONFIG_NOSYSTEM=1
 unset GH_REPO GH_TOKEN GITHUB_TOKEN
 mkdir -p "$HOME"
@@ -169,6 +173,11 @@ if (: >"$tmp/probe-$(printf '\xff')") 2>/dev/null; then
   echo 'only copy' >"$ws/app-27/note-$(printf '\xff').local.md"
   bytes_pr=", $(pr 37 feat/27-ignored-bytes "$ignored27" main)"
 fi
+# A process whose working directory is inside a merged worktree (app-28): the worktree stays while it runs.
+busy28=$(worktree app-28 feat/28-busy)
+mkdir -p "$ws/app-28/src"
+pid28=$(start_in "$ws/app-28/src")
+busy_pids="$busy_pids $pid28"
 # On origin only: a base of an open PR, and one pushed to after its merge. pre-main, the batch
 # branch, is on origin and checked out in a worktree.
 main=$(git -C "$app" rev-parse main)
@@ -190,7 +199,8 @@ echo "[$(pr 11 feat/1-done "$done1" main), $(pr 12 feat/2-dirty "$dirty2" main),
   $(pr 28 feat/18-scratch "$scratch18" main), $(pr 30 feat/20-output "$output20" main),
   $(pr 31 feat/21-results "$results21" main), $(pr 32 feat/22-port "$port22" main),
   $(pr 33 feat/23-tanstack "$tanstack23" main), $(pr 34 feat/24-evals "$evals24" main),
-  $(pr 35 feat/25-tracked "$tracked25" main), $(pr 36 feat/26-bytes "$bytes26" main)$bytes_pr]" \
+  $(pr 35 feat/25-tracked "$tracked25" main), $(pr 36 feat/26-bytes "$bytes26" main),
+  $(pr 38 feat/28-busy "$busy28" main)$bytes_pr]" \
   >"$fx/acme_app/pr-merged.json"
 # A second checkout of acme/app: its remote branches are the same ones, handled once.
 git clone -q https://github.com/acme/app.git "$ws/app-copy"
@@ -258,6 +268,8 @@ has "$out" "remove worktree $ws/app-23 (feat/23-tanstack, PR #33 merged)"
 has "$out" "keep worktree $ws/app-24 (feat/24-evals, PR #34 merged; ignored files outside the regenerable list: plugins/dk/evals/results/)"
 has "$out" "keep worktree $ws/app-25 (feat/25-tracked, PR #35 merged; ignored files outside the regenerable list: build/plan.local.md, tools/build/plan.local.md)"
 has "$out" "keep worktree $ws/app-26 (feat/26-bytes, PR #36 merged; ignored files outside the regenerable list: build/plan.local.md)"
+has "$out" "keep worktree $ws/app-28 (feat/28-busy, PR #38 merged; in use by sleep (pid $pid28))"
+lacks "$out" "remove branch feat/28-busy"
 has "$out" "remove database dk-pg-app-1 (issue #1 closed)"
 lacks "$out" "dk-pg-app-3"
 has "$out" "keep database dk-pg-gone-9 (issue #9; no GitHub checkout at $tmp/gone)"
@@ -280,6 +292,28 @@ else
   echo "dk-gc: skipped the ignored name that is not UTF-8: this file system refuses it"
 fi
 
+# When lsof cannot run, no worktree goes on a guess.
+mkdir -p "$fx/no-lsof"
+printf '#!/bin/sh\nexit 1\n' >"$fx/no-lsof/lsof"
+chmod +x "$fx/no-lsof/lsof"
+out=$(PATH="$fx/no-lsof:$PATH" "$dkgc" --dry-run --workspace "$ws")
+has "$out" "keep worktree $ws/app-1 (feat/1-done, PR #11 merged; cannot tell whether a process runs in it: lsof failed)"
+lacks "$out" "remove worktree"
+# Nor when lsof lists processes and then reports an error: the listing may be missing one.
+real_lsof=$(command -v lsof)
+mkdir -p "$fx/lsof-error"
+printf '#!/bin/sh\n%s "$@"\nexit 1\n' "$real_lsof" >"$fx/lsof-error/lsof"
+chmod +x "$fx/lsof-error/lsof"
+out=$(PATH="$fx/lsof-error:$PATH" "$dkgc" --dry-run --workspace "$ws")
+has "$out" "keep worktree $ws/app-1 (feat/1-done, PR #11 merged; cannot tell whether a process runs in it: lsof failed)"
+lacks "$out" "remove worktree"
+
+# Once the process is gone, the worktree is finished like any other.
+stop "$pid28"
+out=$("$dkgc" --dry-run --workspace "$ws")
+has "$out" "remove worktree $ws/app-28 (feat/28-busy, PR #38 merged)"
+before=$(state)
+
 # Without a yes on stdin, nothing changes.
 out=$("$dkgc" --workspace "$ws" </dev/null)
 has "$out" "Nothing changed."
@@ -299,6 +333,7 @@ git -C "$app" rev-parse -q --verify refs/heads/feat/1-done >/dev/null && fail "b
 [[ ! -e "$ws/app-7" ]] || fail "worktree behind its merged PR still there"
 [[ ! -e "$ws/app-16" ]] || fail "worktree with only regenerable ignored files still there"
 for gone in app-20 app-21 app-22 app-23; do [[ ! -e "$ws/$gone" ]] || fail "worktree $gone with only regenerable ignored files still there"; done
+[[ ! -e "$ws/app-28" ]] || fail "worktree app-28 still there after its process ended"
 git -C "$app" rev-parse -q --verify refs/heads/pre-master >/dev/null || fail "integration branch pre-master removed"
 for kept in app-pre-main:pre-main app-2:feat/2-dirty app-3:feat/3-open app-4:feat/4-again app-5:feat/5-ahead app-6:verify-assets/6; do
   [[ -d "$ws/${kept%%:*}" ]] || fail "worktree ${kept%%:*} removed"
@@ -320,14 +355,55 @@ remote_heads=$(git -C "$remotes/acme/app.git" for-each-ref --format='%(refname:s
 out=$("$dkgc" --dry-run --workspace "$ws")
 lacks "$out" "remove "
 
-# Ignored work that appears between the listing and the yes keeps the worktree.
+# Ignored work (app-19) or a process (app-29) that appears between the listing and the yes keeps the worktree.
 late19=$(worktree app-19 feat/19-late docs/)
-sed -i.bak "s|]\$|, $(pr 29 feat/19-late "$late19" main)]|" "$fx/acme_app/pr-merged.json"
+late29=$(worktree app-29 feat/29-late-busy)
+sed -i.bak "s|]\$|, $(pr 29 feat/19-late "$late19" main), $(pr 39 feat/29-late-busy "$late29" main)]|" "$fx/acme_app/pr-merged.json"
 { for _ in $(seq 100); do grep -q 'Remove these' "$tmp/late.out" 2>/dev/null && break; sleep 0.1; done
-  mkdir "$ws/app-19/docs"; echo late >"$ws/app-19/docs/plan.md"; echo y; } |
+  mkdir "$ws/app-19/docs"; echo late >"$ws/app-19/docs/plan.md"
+  start_in "$ws/app-29" >"$tmp/late29.pid"; echo y; } |
   "$dkgc" --workspace "$ws" >"$tmp/late.out" 2>&1 && fail "a run that kept a listed worktree exited 0"
 out=$(cat "$tmp/late.out")
 has "$out" "remove worktree $ws/app-19 (feat/19-late, PR #29 merged)"
 has "$out" "kept worktree $ws/app-19 (feat/19-late, PR #29 merged): ignored files outside the regenerable list: docs/ (new since the listing)"
 [[ "$(cat "$ws/app-19/docs/plan.md")" == late ]] || fail "ignored docs/plan.md in app-19 lost"
+pid29=$(cat "$tmp/late29.pid")
+busy_pids="$busy_pids $pid29"
+has "$out" "remove worktree $ws/app-29 (feat/29-late-busy, PR #39 merged)"
+has "$out" "kept worktree $ws/app-29 (feat/29-late-busy, PR #39 merged): in use by sleep (pid $pid29) (new since the listing)"
+[[ -d "$ws/app-29" ]] || fail "worktree app-29 removed under its process"
+stop "$pid29"
+# --in-use asks the same question of one worktree, for a removal by hand (no merged PR): it exits 0
+# only when no process runs in it and lsof could tell.
+pidn=$(start_in "$ws/notes-1")
+busy_pids="$busy_pids $pidn"
+out=$("$dkgc" --in-use "$ws/notes-1") && fail "--in-use exited 0 on a worktree a process runs in"
+[[ "$out" == "$ws/notes-1: in use by sleep (pid $pidn)" ]] || fail "--in-use printed: $out"
+stop "$pidn"
+out=$("$dkgc" --in-use "$ws/notes-1") || fail "--in-use exited non-zero on a worktree no process runs in: $out"
+[[ -z "$out" ]] || fail "--in-use printed on a free worktree: $out"
+out=$(PATH="$fx/no-lsof:$PATH" "$dkgc" --in-use "$ws/notes-1") && fail "--in-use exited 0 when lsof could not tell"
+has "$out" "$ws/notes-1: cannot tell whether a process runs in it: lsof failed"
+[[ -d "$ws/notes-1" ]] || fail "--in-use removed something"
+# A worktree path outside ASCII matches the process in it whatever the locale (lsof escapes it in C).
+git -C "$ws/notes" worktree add -q -b feat/2-cafe "$ws/notes-2-café"
+pidc=$(start_in "$ws/notes-2-café")
+busy_pids="$busy_pids $pidc"
+for loc in C en_US.UTF-8; do
+  out=$(LC_ALL=$loc "$dkgc" --in-use "$ws/notes-2-café") && fail "--in-use under LC_ALL=$loc missed the process in a non-ASCII path"
+  has "$out" "in use by sleep (pid $pidc)"
+done
+stop "$pidc"
+# lsof escapes control characters and backslashes in a path (\n, ^A, \\); the match follows its escapes.
+odd="$tmp/odd-a"$'\n'"b"$'\t'"c"$'\x01'"d"$'\x7f'"e\\f"
+mkdir -p "$odd/src"
+pido=$(start_in "$odd/src")
+busy_pids="$busy_pids $pido"
+out=$("$dkgc" --in-use "$odd") && fail "--in-use missed the process in a path with control characters"
+has "$out" "in use by sleep (pid $pido)"
+stop "$pido"
+"$dkgc" --in-use "$odd" >/dev/null || fail "--in-use flagged a free path with control characters"
+# A path that is no worktree is no all-clear: a typo stops the removal by hand.
+out=$("$dkgc" --in-use "$ws/notes-9") && fail "--in-use exited 0 on a path that does not exist"
+has "$out" "$ws/notes-9: no such directory"
 echo "dk-gc: all checks passed"
