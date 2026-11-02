@@ -34,7 +34,7 @@ PROTECTED = {"main", "master", "pre-main"}
 KEPT_PREFIX = "verify-assets/"  # PR bodies embed screenshots from these branches
 # Ignored entries a worktree may lose: build output, dependencies, generated code, local env.
 REGENERABLE = ("node_modules", "dist", "build", ".next", ".output", "target", ".venv", "__pycache__",
-               "test-results", ".api-port", "*.tsbuildinfo", "*.gen.*", ".env*")
+               "test-results", ".api-port", ".tanstack", "*.tsbuildinfo", "*.gen.*", ".env*")
 KEEP_LINE_NAMES = 5  # ignored entries a "keep" line names before it counts the rest
 
 
@@ -97,9 +97,8 @@ def worktrees(root):
 
 
 def regenerable(entry):
-    """True when an ignored entry's basename or top-level directory is on the REGENERABLE list."""
-    parts = entry.rstrip("/").split("/")
-    return any(fnmatch.fnmatchcase(name, pattern) for name in (parts[-1], parts[0]) for pattern in REGENERABLE)
+    """True when any path component of an ignored entry is on the REGENERABLE list."""
+    return any(fnmatch.fnmatchcase(name, pattern) for name in entry.rstrip("/").split("/") for pattern in REGENERABLE)
 
 
 def worktree_blocker(path):
