@@ -5,12 +5,15 @@ Reads the hook JSON on stdin and answers with a permission decision:
 deny for commands that destroyed shared state before (docker prune, unfiltered
 mass removal, pushes to main, force pushes, git clean of ignored files),
 leaked a credential (reading a credential file) or broke the shell (a zsh
-special parameter such as `path` as a loop or read variable) or blocked the
-session (a CI or merge wait outside run_in_background), ask for
+special parameter such as `path` as a loop, read or assigned variable, `$name:`
+before a zsh modifier, a variable holding a spaced command as the command, a
+function named like one of the user's zsh aliases) or blocked the session (a CI
+or merge wait outside run_in_background) or dropped the issue body (`gh issue
+view --comments`), ask for
 rewriting the shared pre-main branch, a push to the current branch when the
 guard cannot tell which branch that is, or answering dk-gc's question for the
 human (--yes, piped input), and
-hints for gh calls that silently drop the issue body and for an unlabelled
+hints for `gh pr view --comments`, which drops the body, and for an unlabelled
 Postgres server that dk-pg should start instead. Everything else passes.
 
 The rules match on words: the command is split once, as the shell reads it,
@@ -23,6 +26,7 @@ checks, so a parse failure never lets a command through.
 
 This raises the floor against agent mistakes; it is not a security boundary.
 """
+import collections
 import dataclasses
 import itertools
 import json
@@ -94,6 +98,8 @@ OPERATOR = re.compile(r"&&|\|\||\|&|\||;;|;&|;\||;|&\||&!|&")
 LEAD = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}", "fi", "done", "esac"}
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\[[^]]*\])?\+?=")
 # Commands that run the command after their own options; letters are the options that take a value.
+# A function name holds no `$` or `=`: `X=$(date)` is an assignment whose substitution reads as `$()`.
+FUNCTION_NAME = re.compile(r"[^\s$=()]+")
 WRAPPERS = {"sudo": "ugpChDrtUT", "env": "uCS", "nice": "n", "xargs": "nILPsEdaJR", "timeout": "sk",
             "gtimeout": "sk", "command": "", "exec": "a", "nohup": "", "time": "", "builtin": "", "noglob": ""}
 
@@ -109,6 +115,8 @@ class Segment:
     def __init__(self, shell, substituted):
         self.shell, self.substituted = shell, substituted
         self.words, self.redirects, self.subs, self.scripts = [], [], [], set()
+        self.modifier_names = []  # `$name:x`, x a zsh modifier, unquoted or double-quoted
+        self.defines = None  # the function name when the segment is `f()`, `f ()` or `function f`
         self.piped_in = self.piped_out = self.started = False
         self.pipe_to = None
 
@@ -121,7 +129,7 @@ class Splitter:
         if depth > 16:
             raise Unsplittable("nested too deep")
         self.s, self.i, self.shell, self.substituted, self.depth = text, 0, shell, substituted, depth
-        self.out, self.heredocs = [], []
+        self.out, self.heredocs, self.modifier_names = [], [], []
 
     def run(self):
         self.parse(None, self.substituted)
@@ -175,18 +183,33 @@ class Splitter:
                 seg = self.close(seg)
                 self.parse(")", substituted)  # a subshell
             else:
-                word, _, subs = self.word()
+                mark = len(self.modifier_names)
+                word, quoted, subs = self.word()
                 seg.subs += subs
-                if self.add_word(seg, word):
+                self.take_modifiers(seg, mark)
+                if self.add_word(seg, word, quoted):
                     seg = self.close(seg)
         self.close(seg)
 
-    def add_word(self, seg, word):
-        """Add a word; True when it opens a function body (`f() { ... }`), which starts a new segment."""
+    def add_word(self, seg, word, quoted=False):
+        """Add a word; True when it ends a function's name (`f() {`, `f () {`, `function f {`), so its body starts
+        a new segment."""
         first = not seg.started and word not in LEAD
         seg.started = seg.started or first
         seg.words.append(word)
-        return first and word.endswith("()") and len(word) > 2
+        named = command_words(seg.words)[1]
+        if first and not quoted and FUNCTION_NAME.fullmatch(word[:-2]) and word.endswith("()"):
+            seg.defines = word[:-2]
+        elif not quoted and named[1:] == ["()"] and FUNCTION_NAME.fullmatch(named[0]):
+            seg.defines = named[0]
+        elif named[:1] == ["function"] and len(named) == 2:
+            seg.defines = word[:-2] if word.endswith("()") else word
+        return seg.defines is not None
+
+    def take_modifiers(self, seg, mark):
+        """Move the modifier names noted since `mark` to `seg`; a substitution inside the word took its own."""
+        seg.modifier_names += self.modifier_names[mark:]
+        del self.modifier_names[mark:]
 
     def close(self, seg, piped=False):
         if not (seg.words or seg.redirects):
@@ -227,8 +250,10 @@ class Splitter:
         elif not self.peek() or self.peek() in "\n;&|<>)":
             raise Unsplittable("redirection without a target")
         else:
+            mark = len(self.modifier_names)
             target, quoted, subs = self.word()
             seg.subs += subs
+            self.take_modifiers(seg, mark)
         seg.redirects.append((op, target))
         if op in ("<<", "<<-"):
             self.heredocs.append((seg, target, op == "<<-", not quoted))
@@ -251,6 +276,7 @@ class Splitter:
                 body.double([], subs, None)
                 self.out += body.out
                 seg.subs += subs
+                seg.modifier_names += body.modifier_names
 
     def word(self):
         """Read one word at the cursor: (text without quotes, whether any part was quoted, substitutions)."""
@@ -281,7 +307,10 @@ class Splitter:
                 self.expansion(buf, subs)
             elif c == "(":
                 buf.append(self.balanced("(", ")", subs))  # zsh glob qualifier, array, `f()`, `foreach x (a b)`
+                if buf[-1] == "()":
+                    break  # `f(){ ...`: the name ends here and the body opens
             else:
+                self.note_modifier()
                 buf.append(c)
                 self.i += 1
         return "".join(buf), quoted, subs
@@ -304,8 +333,14 @@ class Splitter:
             elif self.at_expansion():
                 self.expansion(buf, subs)
             else:
+                self.note_modifier()
                 buf.append(c)
                 self.i += 1
+
+    def note_modifier(self):
+        m = MODIFIER.match(self.s, self.i)
+        if m:
+            self.modifier_names.append(m.group(1))
 
     def ansi_c(self):
         self.i += 2
@@ -715,7 +750,10 @@ def check_gh(cmd):
 def gh_findings(tokens):
     if tokens[1:3] in (["issue", "view"], ["pr", "view"]) and "--comments" in tokens \
             and not any(t.startswith("--json") for t in tokens):
-        return [("hint", "Piped `gh issue|pr view --comments` prints the comments but not the body. If you "
+        if tokens[1] == "issue":
+            return [("deny", "Piped `gh issue view --comments` prints the comments but not the body. Use "
+                     "`gh issue view <N> --json title,body,labels,comments`.")]
+        return [("hint", "Piped `gh pr view --comments` prints the comments but not the body. If you "
                  "need both, use `--json title,body,labels,comments`.")]
     return []
 
@@ -883,18 +921,29 @@ def dk_gc_words(segs):
 
 
 # zsh names that break the shell when assigned: `path` is tied to PATH (later commands are "not found"), the
-# others are read-only or special arrays. The Bash tool runs zsh, so a loop or `read` on them breaks the call.
+# others are read-only or special arrays. The Bash tool runs zsh, so a loop, `read` or assignment on them breaks the
+# call.
 ZSH_SPECIAL = {"path", "PATH", "fpath", "module_path", "cdpath", "manpath", "status", "pipestatus", "argv",
                "commands", "functions", "aliases", "options", "parameters", "history"}
 LOOP = re.compile(START + r"(?:for|foreach|select)\s+((?:[A-Za-z_]\w*\s+)*?[A-Za-z_]\w*)\b(?=\s+in\b|\s*[(;\n]|\s*$)")
+ZSH_SCRIPT_OPENER = r"\bzsh\s+(?:(?:[-+]o\s+\w+|[-+][a-zA-Z]+)\s+)*"
+DECLARE = {"local", "typeset", "declare", "export", "readonly", "integer", "float"}
+ASSIGN_PARTS = re.compile(r"([A-Za-z_]\w*)(?:\[[^]]*\])?(\+?=)(.*)", re.S)
 
 
 def check_zsh_names(cmd):
     targets = [(m.start(1), m.group(1).split()) for m in LOOP.finditer(cmd)]
     targets += [(offset, [t.partition("?")[0] for t in tokens[1:] if not t.startswith("-")])
                 for offset, tokens in segments(cmd, "read")]
+    for m in re.finditer(START, cmd):
+        text = re.match(END, cmd[m.end():]).group()
+        try:
+            words = shlex.split(text)
+        except ValueError:
+            words = text.split()
+        targets.append((m.end(), list(overwritten(words))))
     for offset, names in targets:
-        if quoted_text(cmd, offset, shell=r"\bzsh\s+(?:(?:[-+]o\s+\w+|[-+][a-zA-Z]+)\s+)*"):
+        if quoted_text(cmd, offset, shell=ZSH_SCRIPT_OPENER):
             continue
         findings = zsh_name_findings(names)
         if findings:
@@ -907,13 +956,40 @@ def zsh_name_findings(names):
     if hit:
         return [("deny", f"`{hit}` is a special parameter in zsh, the shell this runs in (`path` is tied to "
                  "PATH, so every later command is \"command not found\"; `status`, `argv` and the like are "
-                 "read-only or special). Name the loop or read variable something else, e.g. `p` or `file`.")]
+                 "read-only or special). Name the variable something else, e.g. `p` or `file`.")]
     return []
+
+
+def assignments(words):
+    """(name, operator, value) for each variable a simple command sets: its leading assignments, or the names after
+    a DECLARE word (a bare name there has no operator and value)."""
+    words = list(itertools.dropwhile(lambda w: w in LEAD, words))
+    if words[:1] and words[0] in DECLARE:
+        rest = [w for w in words[1:] if not w.startswith(("-", "+"))]
+    else:
+        rest = itertools.takewhile(ASSIGNMENT.match, words)
+    for w in rest:
+        m = ASSIGN_PARTS.fullmatch(w)
+        yield m.groups() if m else (w, None, None)
+
+
+def overwritten(words):
+    """The zsh special names a simple command overwrites. PATH itself, `path+=(…)` and a value that keeps the old one
+    (`path=(/opt/bin $path)`) edit the search path on purpose; `local path`, or `typeset path` in a function, empties
+    it, while `typeset -p path` only prints it."""
+    words = list(itertools.dropwhile(lambda w: w in LEAD, words))
+    localizes = words[:1] in (["local"], ["typeset"], ["declare"], ["integer"], ["float"]) \
+        and not any(re.fullmatch(r"[-+]\w*p\w*", w) for w in words[1:])
+    for name, op, value in assignments(words):
+        keeps = op and re.search(r"\$\{?(?:%s|%s)\b" % (name, name.upper()), value)
+        edits = name == "PATH" or keeps or op == "+=" and name.endswith("path")
+        if name in ZSH_SPECIAL and (op is None and localizes or op and not edits):
+            yield name
 
 
 def zsh_name_words(segs):
     for seg in (seg for seg in segs if seg.shell == "zsh"):
-        words, names = seg.words, []
+        words, names = seg.words, list(overwritten(seg.words))
         while words and words[0] in LEAD:
             words = words[1:]
         if words[:1] in (["for"], ["foreach"], ["select"]):
@@ -924,14 +1000,121 @@ def zsh_name_words(segs):
         else:
             _, words = command(seg)
             if words[:1] == ["read"]:
-                names = [w.partition("?")[0] for w in words[1:] if not w.startswith("-")]
+                names += [w.partition("?")[0] for w in words[1:] if not w.startswith("-")]
         findings = zsh_name_findings(names)
         if findings:
             return findings
     return []
 
 
+# A zsh modifier after an unbraced name: `$c:refs/heads/x` reads `:r` (drop the extension), then `efs/heads/x`.
+MODIFIER = re.compile(r"\$([A-Za-z_]\w*|\d):(?:[aAcehlPqQrstu&]|g[s&])")
+
+
+def modifier_findings(name):
+    return [("deny", f"In zsh, `${name}:` before a letter applies a modifier (`:r` drops an extension, `:t` keeps "
+             "the last path part), so the text after the colon is lost. Write `${" + name + "}:` for a literal "
+             "colon, or `${" + name + ":t}` and the like when you mean the modifier.")]
+
+
+def check_modifiers(cmd):
+    for m in MODIFIER.finditer(cmd):
+        escaped = re.search(r"(?<!\\)(?:\\\\)*\\$", cmd[:m.start()])
+        quote = open_quote(cmd, m.start())
+        if escaped or quote is not None and cmd[quote] == "'" and quoted_text(cmd, m.start(), shell=ZSH_SCRIPT_OPENER):
+            continue
+        return modifier_findings(m.group(1))
+    return []
+
+
+def modifier_words(segs):
+    return next((modifier_findings(name) for seg in segs if seg.shell == "zsh" for name in seg.modifier_names), [])
+
+
+# zsh does not word-split a variable: `G="git grep -n"; $G foo` runs a command named `git grep -n`.
+VARIABLE_COMMAND = ("deny", "zsh does not word-split a variable, so a command kept in a string runs as one word "
+                    "(\"command not found: git grep -n\"). Use a function with a descriptive name, or an array: "
+                    "`cmd=(git grep -n); $cmd foo`.")
+SPACED_RAW = re.compile(r"(?:^|[\s;&|(])([A-Za-z_]\w*)=(?:\"[^\"]*\s[^\"]*\"|'[^']*\s[^']*')")
+
+
+def check_command_variable(cmd):
+    for m in SPACED_RAW.finditer(cmd):
+        use = START + PREFIX + r"[\"']?\$\{?" + m.group(1) + r"\}?[\"']?(?=\s|[;&|)]|$)"
+        if not quoted_text(cmd, m.start(1), shell=ZSH_SCRIPT_OPENER) and re.search(use, cmd[m.end():]):
+            return [VARIABLE_COMMAND]
+    return []
+
+
+def command_variable_words(segs):
+    spaced = set()
+    for seg in (seg for seg in segs if seg.shell == "zsh"):
+        _, words = command(seg)
+        m = re.fullmatch(r"\$\{?([A-Za-z_]\w*)\}?", words[0]) if words else None
+        if m and m.group(1) in spaced:
+            return [VARIABLE_COMMAND]
+        for name, op, value in assignments(seg.words):
+            if op and not value.startswith("(") and re.search(r"\s", value):
+                spaced.add(name)
+            elif op:
+                spaced.discard(name)
+    return []
+
+
+# A function named like one of the user's zsh aliases fails: "defining function based on alias", or the alias runs.
+# bootstrap.sh writes the alias names, one per line, beside the private settings overlay; without the file, no deny.
+ALIASES_FILE = "~/.config/dk-agent-kit/zsh-aliases"
+FUNCTION_RAW = re.compile(START + r"(?:function\s+([^\s(){};&|<>'\"$]+)|([^\s(){};&|<>'\"$=]+)\s*\(\s*\))")
+
+
+def alias_names():
+    try:
+        with open(os.path.expanduser(ALIASES_FILE), encoding="utf-8") as f:
+            return {line.strip() for line in f if line.strip() and not line.startswith("#")}
+    except (OSError, UnicodeDecodeError):
+        return set()
+
+
+def alias_function_findings(names):
+    hit = next((n for n in names if n in alias_names()), None) if names else None
+    return [("deny", f"`{hit}` is one of your zsh aliases, so zsh refuses to define a function with that name "
+             "(\"defining function based on alias\") or runs the alias instead. Use a descriptive name, e.g. "
+             "`git_in`.")] if hit else []
+
+
+def check_function_names(cmd):
+    names = [m.group(1) or m.group(2) for m in FUNCTION_RAW.finditer(cmd)
+             if not quoted_text(cmd, m.start(1) if m.group(1) else m.start(2), shell=ZSH_SCRIPT_OPENER)]
+    return alias_function_findings(names)
+
+
+def function_name_words(segs):
+    return alias_function_findings([seg.defines for seg in segs if seg.shell == "zsh" and seg.defines])
+
+
 FILE_CHECKS = {"ls", "stat", "test", "[", "[["}
+# Tools whose first operand is a pattern or script, not a file: a credential name there is text being searched or
+# edited (`sed -i '' 's#~/.sentryclirc#…#' a.ts`), unless the script itself reads files (`script_reads`).
+PatternTool = collections.namedtuple("PatternTool", "short_takes long_takes pattern_opts no_pattern script_reads")
+# an escape and a plain character are disjoint alternatives, so a failed match cannot backtrack exponentially
+SED_ADDRESS = r"(?:\d+|\$|/(?:\\.|[^/\\])*/)"
+SED_SUBSTITUTION = re.compile(rf"\s*(?:{SED_ADDRESS}(?:,{SED_ADDRESS})?)?\s*s(.)(?:\\.|(?!\1)[^\\])*\1"
+                              r"(?:\\.|(?!\1)[^\\])*\1[gpIiM0-9]*\s*", re.S)
+GREP = PatternTool("efmABCdD", {"--regexp", "--file", "--max-count", "--after-context", "--before-context", "--context",
+                                "--include", "--exclude", "--exclude-dir", "--exclude-from", "--binary-files",
+                                "--devices", "--directories"},
+                   {"-e", "--regexp"}, set(), lambda script: False)
+RG = PatternTool("efgtTmABCjMrEd", {"--regexp", "--file", "--glob", "--iglob", "--type", "--type-not", "--max-count",
+                                    "--after-context", "--before-context", "--context", "--max-depth", "--replace",
+                                    "--ignore-file", "--type-add", "--sort", "--sortr", "--max-filesize"},
+                 {"-e", "--regexp"}, {"--files", "--type-list"}, lambda script: False)
+# sed's r, R, w, W and e commands and the s///e flag read or run files, so only plain substitutions are text
+SED = PatternTool("efl", {"--expression", "--file"}, {"-e", "--expression"}, set(),
+                  lambda script: not all(SED_SUBSTITUTION.fullmatch(c)
+                                         for c in re.split(r"[;\n]", script) if c.strip()))
+AWK = PatternTool("Fvf", set(), set(), set(), lambda script: re.search(r"\bgetline\b|\bsystem\s*\(", script))
+PATTERN_TOOLS = {"grep": GREP, "egrep": GREP, "fgrep": GREP, "rg": RG, "sed": SED, "gsed": SED,
+                 "awk": AWK, "gawk": AWK, "mawk": AWK, "nawk": AWK}
 
 
 def in_code_span(text, m):
@@ -941,10 +1124,13 @@ def in_code_span(text, m):
     return bool(re.search(r"`[\w~/${}.-]*$", text[:m.start()]) and re.match(r"[\w./-]*\\?`", text[m.end():]))
 
 
+def last_start(cmd, pos):
+    """The last place a command can start before `pos`, or None."""
+    return next(reversed(list(re.finditer(START, cmd[:pos]))), None)
+
+
 def only_checks_file(cmd, pos):
-    start = None
-    for start in re.finditer(START, cmd[:pos]):
-        pass
+    start = last_start(cmd, pos)
     opener = cmd[start.start():start.end()].strip() if start else ""
     if opener in ("$(", "`") or (opener == "(" and start.start() > 0 and cmd[start.start() - 1] in "<>"):
         return False  # its output is substituted into another command
@@ -954,10 +1140,62 @@ def only_checks_file(cmd, pos):
     return bool(words) and words[0] in FILE_CHECKS and not piped
 
 
+def pattern_args(words):
+    """Indexes of the words that are the pattern or script of a grep, rg, sed or awk call (`words[0]` is the
+    program): the value of -e, else the first operand when no -e or -f gave one."""
+    tool = PATTERN_TOOLS.get(os.path.basename(words[0])) if words else None
+    if tool is None:
+        return set()
+    found, operands, given, k = set(), [], False, 1
+    while k < len(words):
+        w, k = words[k], k + 1
+        if w == "--":
+            operands += range(k, len(words))
+            break
+        if w.startswith("--"):
+            name = w.partition("=")[0]
+            given = given or name in ("--regexp", "--file", "--expression") or name in tool.no_pattern
+            if name in tool.pattern_opts:
+                found.add(k - 1 if "=" in w else k)
+            k += 1 if "=" not in w and name in tool.long_takes else 0
+        elif w.startswith("-") and len(w) > 1:
+            if w == "-i" and k < len(words) and re.fullmatch(r"|\.\w+", words[k]) and tool is SED:
+                k += 1  # BSD sed: `-i ''` or `-i .bak`
+                continue
+            for j, c in enumerate(w[1:], 1):
+                if c in tool.short_takes:
+                    given = given or c in "ef"
+                    attached = j < len(w) - 1
+                    if "-" + c in tool.pattern_opts:
+                        found.add(k - 1 if attached else k)
+                    k += 0 if attached else 1
+                    break
+        else:
+            operands.append(k - 1)
+    if not given and operands:
+        found.add(operands[0])
+    return {k for k in found if k < len(words) and not tool.script_reads(words[k])}
+
+
+def in_pattern_arg(cmd, pos):
+    start, quote = last_start(cmd, pos), open_quote(cmd, pos)
+    close = cmd.find(cmd[quote], pos) if quote is not None else -1
+    end = close + 1 if close >= 0 else re.compile(r"\s|$").search(cmd, pos).start()
+    word = cmd[start.end() if start else 0:end] + (cmd[quote] if quote is not None and close < 0 else "")
+    try:
+        words = shlex.split(re.sub("^" + PREFIX, "", word))  # up to the end of the word `pos` sits in
+    except ValueError:
+        return False
+    if REDIRECT.match(words[-1]) or len(words) > 1 and REDIRECT.fullmatch(words[-2]):
+        return False  # the shell reads a redirection's target
+    _, words = command_words(drop_redirections(words))
+    return len(words) - 1 in pattern_args(words)
+
+
 def check_credentials(cmd):
     scan = OUTPUT_REDIRECT.sub(lambda r: " " * len(r.group()), cmd)  # `2>&1 | xargs cat` still pipes
-    m = next((m for m in CREDENTIALS.finditer(cmd)
-              if not in_code_span(cmd, m) and not only_checks_file(scan, m.start())), None)
+    m = next((m for m in CREDENTIALS.finditer(cmd) if not in_code_span(cmd, m)
+              and not only_checks_file(scan, m.start()) and not in_pattern_arg(scan, m.start())), None)
     return credential_findings(m.group(0)) if m else []
 
 
@@ -973,7 +1211,9 @@ def credential_words(segs):
         # ls, stat or test read nothing, unless their output feeds a pipe or a substitution
         if words[:1] and words[0] in FILE_CHECKS and not seg.piped_out and not seg.substituted:
             continue
-        texts = [w for k, w in enumerate(seg.words) if k not in seg.scripts] + [t for _, t in seg.redirects]
+        offset = len(seg.words) - len(words)
+        not_reads = seg.scripts | {offset + k for k in pattern_args(words)}
+        texts = [w for k, w in enumerate(seg.words) if k not in not_reads] + [t for _, t in seg.redirects]
         for text in texts:
             for m in CREDENTIALS.finditer(text):
                 if not in_code_span(text, m):
@@ -986,10 +1226,12 @@ def decide(cmd, cwd, background=False):
     if segs is None:  # a command the splitter cannot read gets the raw-string checks, so the guard never fails open
         raw = strip_heredocs(cmd)
         findings = check_docker(raw) + check_git(raw, cwd) + check_credentials(raw) + check_gh(raw) \
-            + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw) + check_waits(raw)
+            + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw) + check_waits(raw) \
+            + check_modifiers(raw) + check_command_variable(raw) + check_function_names(raw)
     else:
         findings = docker_words(segs) + git_words(segs, cwd) + credential_words(segs) + gh_words(segs) \
-            + postgres_words(segs) + dk_gc_words(segs) + zsh_name_words(segs) + wait_words(segs)
+            + postgres_words(segs) + dk_gc_words(segs) + zsh_name_words(segs) + wait_words(segs) \
+            + modifier_words(segs) + command_variable_words(segs) + function_name_words(segs)
     if background:  # the same wait started with run_in_background blocks nothing
         findings = [f for f in findings if f is not FOREGROUND_WAIT]
     for level in ("deny", "ask"):

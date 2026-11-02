@@ -45,7 +45,20 @@ case "\$1 \$2" in
 esac
 EOF
 chmod +x "$tmp/bin/claude"
+# A zsh stub, so the alias step never reads the real ~/.zshrc: it prints a
+# startup banner, as an interactive zshrc may, then one marked line per name
+# in $tmp/aliases.
+printf 'gs\ng\nll\n' > "$tmp/aliases"
+cat > "$tmp/bin/zsh" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$tmp/zsh.log"
+echo "Welcome back"
+[[ -f "$tmp/zsh.fails" ]] && exit 1
+sed 's/^/dk-alias:/' "$tmp/aliases"
+EOF
+chmod +x "$tmp/bin/zsh"
 export PATH="$tmp/bin:$PATH"
+aliases_file="$tmp/home/.config/dk-agent-kit/zsh-aliases"
 mcp_writes() { grep -cE '^claude mcp (remove|add)' "$tmp/claude.log" || true; }
 echo '{"name":"playwright","command":"npx","args":["-y","@playwright/mcp@latest"],"env":{"PW_TEST":"a=b"}}' > "$tmp/mcp.json"
 
@@ -58,6 +71,9 @@ grep -q '^claude mcp get playwright$' "$tmp/claude.log" || fail "dry run did not
 grep -qx -- '+  Args: -y @playwright/mcp@latest --isolated' <<<"$out" || fail "dry run shows no --isolated change: $out"
 [[ "$(mcp_writes)" == 0 ]] || fail "dry run changed the MCP server: $(cat "$tmp/claude.log")"
 ! grep -q 'a=b' <<<"$out" || fail "dry run printed an MCP env value: $out"
+grep -qx -- '+gs' <<<"$out" || fail "dry run shows no alias names: $out"
+[[ ! -e "$aliases_file" ]] || fail "dry run wrote the alias list"
+grep -q -- '-ic .*(k)aliases' "$tmp/zsh.log" || fail "bootstrap did not ask an interactive zsh for the alias names: $(cat "$tmp/zsh.log")"
 
 out=$("$root/bootstrap.sh" --apply)
 ! grep -q 'a=b' <<<"$out" || fail "--apply printed an MCP env value: $out"
@@ -65,6 +81,9 @@ mcp_bak=$(ls "$tmp"/playwright-mcp.json.bak-*) || fail "--apply kept no copy of 
 [[ "$(jq -c '[.args, .env]' "$mcp_bak")" == '[["-y","@playwright/mcp@latest"],{"PW_TEST":"a=b"}]' ]] || fail "MCP backup is not the old server: $(cat "$mcp_bak")"
 [[ -n "$(find "$mcp_bak" -perm 600)" ]] || fail "MCP backup is not mode 600: $(ls -l "$mcp_bak")"
 grep -qF "$mcp_bak" <<<"$out" || fail "--apply does not name the MCP backup: $out"
+[[ "$(grep -v '^#' "$aliases_file" | tr '\n' ' ')" == 'g gs ll ' ]] || fail "alias list is not the sorted names: $(cat "$aliases_file")"
+! grep -q 'Welcome' "$aliases_file" || fail "the startup banner reached the alias list"
+cp "$aliases_file" "$tmp/aliases.applied"
 
 s="$tmp/settings.json"
 [[ "$(jq -r .model "$s")" == opus ]] || fail "model lost"
@@ -95,9 +114,20 @@ cmp -s "$(ls "$z".bak-* | head -1)" "$tmp/zshenv.orig" || fail "no .zshenv backu
 out=$("$root/bootstrap.sh")
 grep -q "already up to date" <<<"$out" || fail "second run not idempotent"
 grep -q "playwright already runs with --isolated" <<<"$out" || fail "second run does not say the server is isolated: $out"
+grep -q "zsh alias list already up to date" <<<"$out" || fail "second run does not say the alias list is current: $out"
 cp "$z" "$tmp/zshenv.applied"
 "$root/bootstrap.sh" --apply >/dev/null
 [[ "$(mcp_writes)" == 0 ]] || fail "second run changed the MCP server: $(cat "$tmp/claude.log")"
+cmp -s "$aliases_file" "$tmp/aliases.applied" || fail "second --apply changed the alias list"
+# a new alias shows in the next dry run
+echo co >> "$tmp/aliases"
+grep -qx -- '+co' <<<"$("$root/bootstrap.sh")" || fail "dry run does not show a new alias"
+# a zsh that fails keeps the current list, so the guard's alias rule stays on
+touch "$tmp/zsh.fails"
+out=$("$root/bootstrap.sh" --apply)
+grep -q "zsh failed, alias list kept" <<<"$out" || fail "a failing zsh is not reported: $out"
+cmp -s "$aliases_file" "$tmp/aliases.applied" || fail "a failing zsh changed the alias list: $(cat "$aliases_file")"
+rm "$tmp/zsh.fails"
 
 # a local-scope server shadows the user one: left as is
 echo '{"name":"playwright","scope":"Local config (private to you in this project)","command":"npx","args":["-y","@playwright/mcp@latest"]}' > "$tmp/mcp.json"
