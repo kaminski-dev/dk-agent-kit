@@ -105,21 +105,25 @@ def summary_verdict(pr, bot, sha):
 def wait(pr, bot, minutes, interval):
     global deadline
     current = None
-    deadline = time.monotonic() + minutes * 60
-    try:
-        while True:
-            sha = head(pr)
-            if sha != current:
-                current, deadline = sha, time.monotonic() + minutes * 60
-            found = reviews_of(pr, bot, sha)
-            verdict = (0, "reviews " + " ".join(found)) if found else summary_verdict(pr, bot, sha)
-            if verdict:
-                if head(pr) == sha:
-                    return verdict
-                continue  # the head moved: the next poll takes it
-            time.sleep(max(0, min(interval, deadline - time.monotonic())))
-    except DeadlinePassed:
-        return 1, f"no verdict from {bot} on {current} after {minutes:g} minutes"
+    while True:
+        deadline = time.monotonic() + minutes * 60
+        try:
+            while True:
+                sha = head(pr)
+                if sha != current:
+                    current, deadline = sha, time.monotonic() + minutes * 60
+                found = reviews_of(pr, bot, sha)
+                verdict = (0, "reviews " + " ".join(found)) if found else summary_verdict(pr, bot, sha)
+                if verdict:
+                    if head(pr) == sha:
+                        return verdict
+                    continue  # the head moved: the next poll takes it
+                time.sleep(max(0, min(interval, deadline - time.monotonic())))
+        except DeadlinePassed:
+            deadline = float("inf")
+            # one last look: a push during the last sleep gets a wait of its own
+            if current is None or head(pr) == current:
+                return 1, f"no verdict from {bot} on {current} after {minutes:g} minutes"
 
 
 def main():
