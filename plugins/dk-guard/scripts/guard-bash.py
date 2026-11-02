@@ -1229,9 +1229,9 @@ def credential_words(segs):
     return []
 
 
-# mktemp's six random characters are rarely all lowercase, which keeps `verify.output` out; a glob over the runs
-# counts only under the issue number's directory.
-RUN_DIR = re.compile(r"(?:^|/)(?:verify\.(?=[a-z]{0,5}[A-Z0-9])[A-Za-z0-9]{6}|\d+/verify\.\*)(?:/|$)")
+# Under the issue number's directory any six characters or a glob name a run; elsewhere mktemp's six are rarely all
+# lowercase, which keeps a file such as `verify.output` out.
+RUN_DIR = re.compile(r"(?:^|/)(?:verify\.(?=[a-z]{0,5}[A-Z0-9])[A-Za-z0-9]{6}|\d+/verify\.(?:[A-Za-z0-9]{6}|\*))(?:/|$)")
 VERIFY_RM = ("deny", "This deletes inside a dk:verify run directory (verify.XXXXXX), and a rerun needs no cleanup: "
              "screenshots overwrite by name, and a rerun takes a new `mktemp -d \"$SCRATCH/<N>/verify.XXXXXX\"` "
              "while the earlier runs stay as evidence. The control worktree goes with `git worktree remove`.")
@@ -1244,7 +1244,9 @@ def run_path(cwd, target, known):
     """The path `target` names from `cwd`, with the variables this command set (`known`) filled in; one it did not
     set stays as written."""
     text = os.path.expanduser(VARIABLE.sub(lambda m: known.get(m.group(1) or m.group(2), m.group()), target))
-    return text if cwd is None or text.startswith(("/", "$")) else os.path.join(cwd, text)
+    if text.startswith("$"):
+        return text
+    return os.path.normpath(text if cwd is None or text.startswith("/") else os.path.join(cwd, text))
 
 
 def rm_operands(rm_words):
