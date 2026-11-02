@@ -85,7 +85,7 @@ A failed check is fixed on the branch and watched again before you report.
 
 **Review bot.** A PR into a base that `workflow.md` lists under **Review bot** gets a review from the bot it names; with no such line, that is `coderabbitai[bot]` on PRs into `main`, the batch PR. You fetch its findings yourself, so the maintainer never pastes them:
 
-1. Wait in the background for the bot's review of the head SHA: start this with `run_in_background` (or run its check as a Monitor until-loop) and keep answering. A review counts when its `commit_id` is the `headRefOid` and it has a body or inline comments of its own; a bot review holding only replies to threads (`in_reply_to_id` set) is not one. A round with no findings leaves no review, only the bot's summary comment, whose reviewed range now ends at the SHA (`between <old> and <sha>`).
+1. Wait in the background for the bot's review of the head SHA: start this with `run_in_background` (or run its check as a Monitor until-loop) and keep answering. A review counts when its `commit_id` is the `headRefOid` and it has a body or inline comments of its own; a bot review holding only replies to threads (`in_reply_to_id` set) is not one. A round with no findings leaves no review, only the bot's summary comment, whose reviewed range now ends at the SHA (`between <old> and <sha>`) once no review is in progress. A match counts only while the head is still that SHA; a push meanwhile starts the wait on the new head.
 
    ```sh
    export bot='coderabbitai[bot]'   # or the login workflow.md names
@@ -94,10 +94,15 @@ A failed check is fixed on the branch and watched again before you report.
    for i in $(seq 40); do
      reviews=$(gh api --paginate "repos/{owner}/{repo}/pulls/<PR>/reviews" --jq '.[] | select(.user.login == env.bot and .commit_id == env.sha) | "\(.id) \(.body | length > 0)"') || exit 2
      own=$(gh api --paginate "repos/{owner}/{repo}/pulls/<PR>/comments" --jq '.[] | select(.user.login == env.bot and .in_reply_to_id == null) | .pull_request_review_id') || exit 2
-     found=$(while read -r id body; do [ "$body" = true ] || grep -qx "$id" <<<"$own" && echo "$id"; done <<<"$reviews")
-     [ -n "$found" ] && { echo "$found"; exit 0; }
-     notes=$(gh api --paginate "repos/{owner}/{repo}/issues/<PR>/comments" --jq '.[] | select(.user.login == env.bot) | if (.body | contains("and " + env.sha)) then "clean round: and \(env.sha)" elif (.body | contains("Reviews paused")) and .updated_at > env.since then "Reviews paused" else empty end') || exit 2
-     [ -n "$notes" ] && { echo "$notes"; exit 0; }
+     hit=$(while read -r id body; do [ "$body" = true ] || grep -qx "$id" <<<"$own" && echo "$id"; done <<<"$reviews")
+     if [ -z "$hit" ]; then
+       hit=$(gh api --paginate "repos/{owner}/{repo}/issues/<PR>/comments" --jq '.[] | select(.user.login == env.bot) | if (.body | contains("review in progress")) then empty elif (.body | contains("and " + env.sha)) then "clean round: and \(env.sha)" elif (.body | contains("Reviews paused")) and .updated_at > env.since then "Reviews paused" else empty end') || exit 2
+     fi
+     if [ -n "$hit" ]; then
+       now=$(gh pr view <PR> --json headRefOid,commits --jq '"\(.headRefOid) \(.commits[-1].committedDate)"') || exit 2
+       [ "$now" = "$head" ] && { echo "$hit"; exit 0; }
+       head=$now; read -r sha since <<<"$head"; export sha since   # the head moved: wait for its round
+     fi
      sleep 30
    done
    echo "no review by $bot on $sha after 20 minutes"; exit 1
@@ -105,13 +110,13 @@ A failed check is fixed on the branch and watched again before you report.
 
    It prints the review ids, or `clean round`, or `Reviews paused` when the bot paused after the head commit, which you tell the user (resuming is theirs). A failed `gh` call stops it with exit 2 and the API error: tell the user that error. After 20 minutes it gives up; tell the user no review arrived, since the bot skips drafts and can be rate-limited.
 2. After a clean round, run the block once more: a review can land just after the summary. Then read both sources of each review id it printed and list every finding before fixing any. Inline comments: `gh api --paginate "repos/{owner}/{repo}/pulls/<PR>/comments" --jq '.[] | select(.pull_request_review_id == <id>) | {id, path, line, body}'`. The review body: `gh api "repos/{owner}/{repo}/pulls/<PR>/reviews/<id>" --jq .body`. The body holds findings no inline comment carries (outside diff range, nitpick, follow-up), each headed by its lines: `` `path:12-20` ``, or `` `12-20`: `` under a file name.
-3. Work them: on a per-issue PR, fix on its branch and push; on the batch PR, step 7 routes them. A skipped finding gets its reason on its thread. A body finding has no thread, so its reply is a PR comment naming its file and lines, and the review's id stands in for a thread id. Each push starts a new round: wait and read again until a round brings no new finding.
+3. Work them: on a per-issue PR, fix on its branch and push; on the batch PR, step 7 routes them. A skipped finding gets its reason on its thread. A body finding has no thread, so its reply is a PR comment naming its file and lines. Each push starts a new round: wait and read again until a round brings no new finding.
 
 ## 7. After the merge
 
 - Batch PR review findings, fetched as step 6's **Review bot** says, take the route `workflow.md` sets as **Batch-review fixes**, `pr` when it sets none:
   - `pr`: fix them in a new PR against `pre-main`, so they ride the same batch.
-  - `push`: a finding that passes the four fold-in tests of scope intake (step 3) is fixed in a worktree on `origin/pre-main` (step 2, with `<N>` the batch PR's number and the review thread's id, `<PR>-<thread>`, so each finding has its own worktree and its own cleanup). Rebase onto `origin/pre-main` if it moved, then push the fix as a fast-forward, never forced: `git push origin HEAD:pre-main`; the push runs the gate first (step 6). When the push is refused because `pre-main` moved meanwhile, `git fetch -q origin`, rebase and push once more, until the push lands. Then reply on the review thread with the pushed commit's SHA; that reply is the fix's record. A finding that fails a fold-in test becomes its own issue (step 3).
+  - `push`: a finding that passes the four fold-in tests of scope intake (step 3) is fixed in a worktree on `origin/pre-main` (step 2, with `<N>` the batch PR's number and the finding's key: `<PR>-<thread>` for an inline finding, `<PR>-<review>-<k>` for the k-th finding in a review body). Work the findings one at a time, removing each worktree (clean-up below) before the next. Rebase onto `origin/pre-main` if it moved, then push the fix as a fast-forward, never forced: `git push origin HEAD:pre-main`; the push runs the gate first (step 6). When the push is refused because `pre-main` moved meanwhile, `git fetch -q origin`, rebase and push once more, until the push lands. Then reply on the review thread with the pushed commit's SHA; that reply is the fix's record. A finding that fails a fold-in test becomes its own issue (step 3).
 
   Either way, a skipped finding gets its reason on the review thread.
 - `Refs #N` issues: once the batch reaches `main`, swap `ready-for-agent` for `awaiting-verification` and comment the exact query, the deploy time and the due date. When the window has passed, call the Skill tool with `dk:post-deploy-check`: it runs the query and posts the verdict.
