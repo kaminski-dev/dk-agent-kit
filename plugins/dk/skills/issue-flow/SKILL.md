@@ -85,21 +85,26 @@ A failed check is fixed on the branch and watched again before you report.
 
 **Review bot.** A PR into a base that `workflow.md` lists under **Review bot** gets a review from the bot it names; with no such line, that is `coderabbitai[bot]` on PRs into `main`, the batch PR. You fetch its findings yourself, so the maintainer never pastes them:
 
-1. Wait in the background for the bot's review of the head SHA: start this with `run_in_background` (or run its check as a Monitor until-loop) and keep answering. A review counts when its `commit_id` is the `headRefOid` and it has a body; a round with no findings leaves no review, only the bot's summary comment, whose reviewed range now ends at the SHA (`between <old> and <sha>`).
+1. Wait in the background for the bot's review of the head SHA: start this with `run_in_background` (or run its check as a Monitor until-loop) and keep answering. A review counts when its `commit_id` is the `headRefOid` and it has a body or inline comments of its own; a bot review holding only replies to threads (`in_reply_to_id` set) is not one. A round with no findings leaves no review, only the bot's summary comment, whose reviewed range now ends at the SHA (`between <old> and <sha>`).
 
    ```sh
-   bot='coderabbitai[bot]'   # or the login workflow.md names
-   sha=$(gh pr view <PR> --json headRefOid -q .headRefOid) && [ -n "$sha" ] || exit 2
+   export bot='coderabbitai[bot]'   # or the login workflow.md names
+   head=$(gh pr view <PR> --json headRefOid,commits --jq '"\(.headRefOid) \(.commits[-1].committedDate)"') || exit 2
+   read -r sha since <<<"$head"; export sha since
    for i in $(seq 40); do
-     gh api --paginate "repos/{owner}/{repo}/pulls/<PR>/reviews" --jq ".[] | select(.user.login == \"$bot\" and .commit_id == \"$sha\" and .body != \"\") | .id" | grep '^[0-9]' && exit 0
-     gh api --paginate "repos/{owner}/{repo}/issues/<PR>/comments" --jq ".[] | select(.user.login == \"$bot\") | .body" | grep -o -m1 -e "and $sha" -e 'Reviews paused' && exit 0
+     reviews=$(gh api --paginate "repos/{owner}/{repo}/pulls/<PR>/reviews" --jq '.[] | select(.user.login == env.bot and .commit_id == env.sha) | "\(.id) \(.body | length > 0)"') || exit 2
+     own=$(gh api --paginate "repos/{owner}/{repo}/pulls/<PR>/comments" --jq '.[] | select(.user.login == env.bot and .in_reply_to_id == null) | .pull_request_review_id') || exit 2
+     found=$(while read -r id body; do [ "$body" = true ] || grep -qx "$id" <<<"$own" && echo "$id"; done <<<"$reviews")
+     [ -n "$found" ] && { echo "$found"; exit 0; }
+     notes=$(gh api --paginate "repos/{owner}/{repo}/issues/<PR>/comments" --jq '.[] | select(.user.login == env.bot) | if (.body | contains("and " + env.sha)) then "clean round: and \(env.sha)" elif (.body | contains("Reviews paused")) and .updated_at > env.since then "Reviews paused" else empty end') || exit 2
+     [ -n "$notes" ] && { echo "$notes"; exit 0; }
      sleep 30
    done
    echo "no review by $bot on $sha after 20 minutes"; exit 1
    ```
 
-   It prints the review's id, or `and <sha>` for a clean round, or `Reviews paused`, which you tell the user (resuming is theirs). After 20 minutes it gives up; tell the user no review arrived, since the bot skips drafts and can be rate-limited.
-2. Run step 1's `reviews` call once more (a review can land just after the summary), then read both sources of each review it prints and list every finding before fixing any. Inline comments: `gh api --paginate "repos/{owner}/{repo}/pulls/<PR>/comments" --jq '.[] | select(.pull_request_review_id == <id>) | {id, path, line, body}'`. The review body: `gh api "repos/{owner}/{repo}/pulls/<PR>/reviews/<id>" --jq .body`. The body holds findings no inline comment carries (outside diff range, nitpick, follow-up), each headed by its lines: `` `path:12-20` ``, or `` `12-20`: `` under a file name.
+   It prints the review ids, or `clean round`, or `Reviews paused` when the bot paused after the head commit, which you tell the user (resuming is theirs). A failed `gh` call stops it with exit 2 and the API error: tell the user that error. After 20 minutes it gives up; tell the user no review arrived, since the bot skips drafts and can be rate-limited.
+2. After a clean round, run the block once more: a review can land just after the summary. Then read both sources of each review id it printed and list every finding before fixing any. Inline comments: `gh api --paginate "repos/{owner}/{repo}/pulls/<PR>/comments" --jq '.[] | select(.pull_request_review_id == <id>) | {id, path, line, body}'`. The review body: `gh api "repos/{owner}/{repo}/pulls/<PR>/reviews/<id>" --jq .body`. The body holds findings no inline comment carries (outside diff range, nitpick, follow-up), each headed by its lines: `` `path:12-20` ``, or `` `12-20`: `` under a file name.
 3. Work them: on a per-issue PR, fix on its branch and push; on the batch PR, step 7 routes them. A skipped finding gets its reason on its thread. A body finding has no thread, so its reply is a PR comment naming its file and lines, and the review's id stands in for a thread id. Each push starts a new round: wait and read again until a round brings no new finding.
 
 ## 7. After the merge
