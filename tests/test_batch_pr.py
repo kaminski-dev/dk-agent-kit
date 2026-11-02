@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Runs the dk:batch-pr collection script against a fixture repo and the eval `gh` stand-in.
+"""Runs the dk:batch-pr collection and review scripts against a fixture repo, the eval `gh` stand-in
+and a `coderabbit` stand-in.
 
 The workspace copies the shape plugins/dk/evals/_fixture/build.sh builds: .bin/gh
 first on PATH, its state in .tracker/state.json, a bare origin beside the repo.
-Nothing reaches GitHub, and no case may open a PR.
+Directories holding a real `coderabbit` are left off PATH. Nothing reaches GitHub
+or CodeRabbit, and no case may open a PR.
 """
 import json
 import os
@@ -15,6 +17,7 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "plugins" / "dk" / "skills" / "batch-pr" / "batch.py"
+REVIEW = ROOT / "plugins" / "dk" / "skills" / "batch-pr" / "review.py"
 GH = ROOT / "plugins" / "dk" / "evals" / "_fixture" / "bin" / "gh"
 
 failures = []
@@ -38,7 +41,8 @@ class Workspace:
         (self.root / ".tracker").mkdir()
         shutil.copy(GH, self.root / ".bin" / "gh")
         self.repo = self.root / "repo"
-        self.env = {"PATH": f"{self.root / '.bin'}:{os.environ['PATH']}", "HOME": str(self.root), "TERM": "dumb",
+        path = [d for d in os.environ["PATH"].split(os.pathsep) if not (pathlib.Path(d) / "coderabbit").exists()]
+        self.env = {"PATH": os.pathsep.join([str(self.root / ".bin"), *path]), "HOME": str(self.root), "TERM": "dumb",
                     "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
         self.git_in(self.root, "init", "-q", "--bare", "origin.git")
         self.repo.mkdir()
@@ -218,6 +222,94 @@ ws.state([pr(51, "pre-main", "fix/501-known", "MERGED", "Closes #501", known),
 r, _ = ws.run()
 check("unknown merge commit: exits 1 and names the PR",
       r.returncode == 1 and "#52" in r.stderr and "## Lines" not in r.stdout, (r.returncode, r.stdout, r.stderr))
+ws.remove()
+
+# The local review. The stand-in logs its argv, its directory's HEAD and its branch, then
+# reports one finding; CODERABBIT_FAIL makes it fail the way a rate limit does.
+CODERABBIT = """#!/bin/sh
+log="$(dirname "$0")/../.tracker/coderabbit.log"
+printf '%s\\n' "$*" >> "$log"
+git rev-parse HEAD >> "$log"
+git rev-parse --abbrev-ref HEAD >> "$log"
+if [ -n "$CODERABBIT_FAIL" ]; then echo "Rate limit exceeded, try again in 12 minutes" >&2; exit 1; fi
+echo '{"type":"finding","file":"first","line":1,"severity":"minor","comment":"first is missing its trailing period"}'
+"""
+
+
+def review_ws():
+    """A batch on pre-main, and a hotfix on main after pre-main branched: the merge base is not origin/main."""
+    ws = Workspace()
+    ws.git("branch", "pre-main")
+    hotfix = ws.commit("hotfix")
+    ws.git("checkout", "-q", "pre-main")
+    ws.commit("first")
+    ws.push()
+    ws.git("checkout", "-q", "main")
+    ws.git("fetch", "-q", "origin")
+    ws.out = ws.root / "scratch" / "batch-review"
+    ws.base = ws.git("merge-base", "origin/main", "origin/pre-main").strip()
+    ws.head = ws.git("rev-parse", "origin/pre-main").strip()
+    assert ws.base != hotfix
+    return ws
+
+
+def run_review(ws, env=None):
+    r = subprocess.run([sys.executable, "-I", str(REVIEW), str(ws.out)], cwd=ws.repo, env={**ws.env, **(env or {})},
+                       capture_output=True, text=True)
+    log = ws.root / ".tracker" / "coderabbit.log"
+    return r, log.read_text().splitlines() if log.exists() else []
+
+
+def stub_coderabbit(ws):
+    stub = ws.root / ".bin" / "coderabbit"
+    stub.write_text(CODERABBIT)
+    stub.chmod(0o755)
+
+
+ws = review_ws()
+r, calls = run_review(ws)
+check("no coderabbit on PATH: exits 4 and says so", r.returncode == 4 and "coderabbit" in r.stdout,
+      (r.returncode, r.stdout, r.stderr))
+check("no coderabbit on PATH: writes nothing", not ws.out.exists() or not any(ws.out.iterdir()), r.stdout)
+ws.remove()
+
+ws = review_ws()
+stub_coderabbit(ws)
+r, calls = run_review(ws)
+check("coderabbit on PATH: exits 0", r.returncode == 0, (r.returncode, r.stdout, r.stderr))
+check("coderabbit on PATH: one agent review of the committed batch against the merge base",
+      calls[:1] == [f"review --agent --committed --base-commit {ws.base}"], calls)
+check("coderabbit on PATH: reviews origin/pre-main's head", calls[1:2] == [ws.head], (calls, ws.head))
+check("coderabbit on PATH: never --use-credits", not any("--use-credits" in c for c in calls), calls)
+found = list(ws.out.glob("*")) if ws.out.exists() else []
+check("coderabbit on PATH: the finding lands in the scratch directory, and its path is printed",
+      len(found) == 1 and "first is missing its trailing period" in found[0].read_text() and str(found[0]) in r.stdout,
+      (found, r.stdout))
+check("coderabbit on PATH: the checkout keeps its branch and no worktree is left",
+      ws.git("rev-parse", "--abbrev-ref", "HEAD").strip() == "main" and ws.git("worktree", "list").count("\n") == 1,
+      ws.git("worktree", "list"))
+
+# One review per batch: a fix pushed onto pre-main does not earn a second one.
+ws.git("checkout", "-q", "pre-main")
+ws.commit("fix")
+ws.git("push", "-q", "origin", "pre-main")
+ws.git("checkout", "-q", "main")
+ws.git("fetch", "-q", "origin")
+r, calls = run_review(ws)
+check("second run for the batch: exits 3, names the first review and runs none",
+      r.returncode == 3 and str(found[0] if found else "?") in r.stdout and len(calls) == 3,
+      (r.returncode, r.stdout, r.stderr, calls))
+ws.remove()
+
+ws = review_ws()
+stub_coderabbit(ws)
+r, calls = run_review(ws, {"CODERABBIT_FAIL": "1"})
+check("coderabbit fails: exits 1 with its message", r.returncode == 1 and "Rate limit exceeded" in r.stderr,
+      (r.returncode, r.stdout, r.stderr))
+r, calls = run_review(ws)
+check("coderabbit fails: a failed run is no review, the next run reviews",
+      r.returncode == 0 and len(calls) == 6, (r.returncode, r.stdout, r.stderr, calls))
+check("coderabbit fails: no worktree is left", ws.git("worktree", "list").count("\n") == 1, ws.git("worktree", "list"))
 ws.remove()
 
 print(f"{len(failures)} failures")
