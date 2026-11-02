@@ -95,27 +95,8 @@ for what, pattern in (
 ):
     if not re.search(pattern, bot, re.S):
         errors.append(f"skills/issue-flow: its **Review bot.** paragraph in step 6 does not name {what}")
-wait = re.search(r"```sh\n(.*?)```", bot, re.S)
-wait = wait.group(1) if wait else ""
-if 'body != ""' in wait or "in_reply_to_id" not in wait:
-    errors.append("skills/issue-flow: the review-bot wait must count a review with inline comments and no body, "
-                  "and tell it from a thread reply by in_reply_to_id")
-for line in wait.splitlines():
-    if re.search(r"\bgh (api|pr)\b", line) and not re.search(r"\$\(gh .*\) \|\| exit", line):
-        errors.append(f"skills/issue-flow: the review-bot wait must stop on a failed gh call: {line.strip()[:60]}")
-if "Reviews paused" in wait and "updated_at" not in wait:
-    errors.append("skills/issue-flow: the review-bot wait counts a pause only when the bot wrote it after the head commit")
-if wait.count("gh pr view") < 2:
-    errors.append("skills/issue-flow: the review-bot wait must read the head again after a match, so a moved head keeps it waiting")
-loop = re.split(r"^(?:for|while) .*$", wait, maxsplit=1, flags=re.M)[-1]
-first_gh = re.search(r"\bgh (api|pr view)\b", loop)
-if not first_gh or first_gh.group(1) != "pr view" or not re.search(r"\bi=0\b", loop):
-    errors.append("skills/issue-flow: the review-bot wait must read the head on every poll and restart its 20 minutes on a new head")
-if "review in progress" not in wait:
-    errors.append("skills/issue-flow: the review-bot wait must not take a summary whose review is still in progress as a clean round")
-if "recent_review_start" not in wait:
-    errors.append("skills/issue-flow: the review-bot wait must read the clean round from the summary's recent-review block; "
-                  "a rate-limit notice names the head SHA too")
+if "wait-review.py" not in bot:
+    errors.append("skills/issue-flow: its **Review bot.** paragraph must start wait-review.py, whose cases tests/test_wait_review.py runs")
 step7 = re.search(r"^## 7\..*?(?=^## )", flow, re.M | re.S)
 step7 = step7.group(0) if step7 else ""
 if not re.search(r"<PR>-<review>-<\w+>", step7) or "one at a time" not in step7:
