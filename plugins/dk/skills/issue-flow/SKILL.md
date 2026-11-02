@@ -30,7 +30,7 @@ Scratch files live in `$SCRATCH/<N>/` (`$SCRATCH` = the session's scratchpad dir
 - **Worktrees**: it creates every worktree itself, one `git worktree add` after another (parallel adds collide on the `.git/config` lock), and hands each subagent its path. The subagent launches as a plain one, with no `isolation` parameter: harness isolation gives it a worktree of its own, branched from the default branch rather than the base, and blocks its edits in the one it was handed.
 - **Briefs**: a brief names only skills a subagent can call: `dk:issue-flow`, `dk:tdd`, `dk:verify`, `dk:code-review`, `dk:pr`. A skill with `disable-model-invocation: true`, such as `dk:implement`, answers a subagent with an error, so the brief spells out the sequence through those five.
 - **Waves**: at most 20 subagents run at once, the harness's limit; the remaining tickets start as slots free up.
-- **Waits**: every background wait it or a subagent starts (CI, a free review slot, a service coming up) carries a deadline, 20 minutes unless the step names another, and on expiry it stops and reports that the deadline passed. A wait whose condition can never come true, such as a loop whose worktree was removed under it, then ends instead of polling for an hour.
+- **Waits**: every background wait it or a subagent starts (CI, a free review slot, a service coming up) carries a deadline, 20 minutes unless the step names another, and on expiry it stops and reports that the deadline passed. A wait whose condition can never come true, such as a loop whose worktree was removed under it, then ends at its deadline and says so. Where `timeout` is missing (macOS), `perl -e 'alarm 1200; exec @ARGV' <command>` bounds a command to 20 minutes.
 
 ## 3. Scope intake
 

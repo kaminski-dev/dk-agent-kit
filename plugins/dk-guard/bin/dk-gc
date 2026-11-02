@@ -47,7 +47,7 @@ KEPT_PREFIX = "verify-assets/"  # PR bodies embed screenshots from these branche
 # runtime files a dev server rewrites, local env.
 REGENERABLE = ("node_modules", "dist", "build", ".next", ".output", "target", ".venv", "__pycache__",
                "test-results", ".api-port", ".tanstack", "*.tsbuildinfo", "*.gen.*", ".env*")
-KEEP_LINE_NAMES = 5  # ignored entries a "keep" line names before it counts the rest
+KEEP_LINE_NAMES = 5  # ignored entries or processes a "keep" line names before it counts the rest
 
 
 def run(args, cwd=None):
@@ -134,6 +134,12 @@ def tracked_dirs(path):
     return dirs
 
 
+def listed(names):
+    """The first KEEP_LINE_NAMES names, then a count of the rest."""
+    more = f" and {len(names) - KEEP_LINE_NAMES} more" if len(names) > KEEP_LINE_NAMES else ""
+    return f"{', '.join(names[:KEEP_LINE_NAMES])}{more}"
+
+
 def worktree_blocker(path):
     """Why a worktree cannot go without losing work, or None: uncommitted changes, or ignored
     files outside REGENERABLE (`git worktree remove` deletes ignored files without asking)."""
@@ -151,12 +157,12 @@ def worktree_blocker(path):
     at_risk = [e[3:] for e in entries if not regenerable(e[3:], tracked)]
     if not at_risk:
         return None
-    more = f" and {len(at_risk) - KEEP_LINE_NAMES} more" if len(at_risk) > KEEP_LINE_NAMES else ""
-    return f"ignored files outside the regenerable list: {', '.join(at_risk[:KEEP_LINE_NAMES])}{more}"
+    return f"ignored files outside the regenerable list: {listed(at_risk)}"
 
 
 def processes():
     """[(pid, command, cwd)] of the running processes lsof can see; None when lsof cannot run."""
+    # Not run(): lsof exits 1 when it cannot read some process, and the rest of its output still holds.
     try:  # from /, so lsof's own working directory is in no worktree
         out = subprocess.run(["lsof", "-w", "-d", "cwd", "-Fpcn"], cwd="/", capture_output=True,
                              encoding="utf-8", errors="surrogateescape", timeout=60)
@@ -174,12 +180,12 @@ def processes():
     return rows or None  # lsof lists at least itself, so no rows means it did not run
 
 
-class Cwds:
-    """The working directories of running processes, read on first use."""
+class Processes:
+    """The running processes and their working directories, read on first use."""
     def __init__(self):
         self.rows, self.read = None, False
 
-    def users(self, path):
+    def blocker(self, path):
         """Why a process keeps the worktree at `path`, or None: the processes running in it, or
         that lsof could not tell, since removing the folder under one leaves it running nowhere."""
         if not self.read:
@@ -191,8 +197,7 @@ class Cwds:
                  if pid != os.getpid() and (cwd == inside or cwd.startswith(inside + "/"))]
         if not found:
             return None
-        more = f" and {len(found) - KEEP_LINE_NAMES} more" if len(found) > KEEP_LINE_NAMES else ""
-        return f"in use by {', '.join(found[:KEEP_LINE_NAMES])}{more}"
+        return f"in use by {listed(found)}"
 
 
 def databases():
@@ -219,7 +224,7 @@ class Worktree:
     def remove(self, root):
         if (git(self.path, "rev-parse", "HEAD") or "").strip() != self.head:
             return "its branch moved since the listing"
-        reason = worktree_blocker(self.path) or Cwds().users(self.path)
+        reason = worktree_blocker(self.path) or Processes().blocker(self.path)
         if reason:
             return f"{reason} (new since the listing)"
         if git(root, "worktree", "remove", self.path) is None:
@@ -267,11 +272,11 @@ class Database:
 
 
 class Repo:
-    def __init__(self, root, cwds=None):
+    def __init__(self, root, processes=None):
         self.root, self.name, self.slug = root, os.path.basename(root), slug_of(root)
         self.items, self.kept, self.notes = [], [], []
         self.merged, self.open_heads, self.bases = {}, {}, {}
-        self.cwds = cwds or Cwds()
+        self.processes = processes or Processes()
 
     def load_prs(self):
         """Fetch merged and open PRs; False without a GitHub origin, or with a note when gh cannot list them."""
@@ -322,7 +327,7 @@ class Repo:
         why = f"PR #{pr['number']} merged"
         reason = self.blocker(branch, tied)
         if not reason and worktree:
-            reason = worktree_blocker(worktree) or self.cwds.users(worktree)
+            reason = worktree_blocker(worktree) or self.processes.blocker(worktree)
         detail = f"{why}; {reason}" if reason else why
         found = [Worktree(f"{worktree} ({branch}, {detail})", worktree, sha)] if worktree else []
         found.append(RemoteBranch(f"origin/{branch} ({detail})", branch, sha) if remote
@@ -386,18 +391,19 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="list, change nothing")
     ap.add_argument("--yes", action="store_true", help="remove without asking")
     ap.add_argument("--workspace", default=os.path.expanduser("~/workspace"))
-    ap.add_argument("--in-use", metavar="WORKTREE", help="only say whether a process runs in WORKTREE; exit 1 if one does or lsof cannot tell")
+    ap.add_argument("--in-use", metavar="WORKTREE",
+                    help="only say whether a process runs in WORKTREE; exit 1 if one does or lsof cannot tell")
     args = ap.parse_args()
     if args.in_use:
-        reason = Cwds().users(args.in_use)
+        reason = Processes().blocker(args.in_use)
         if reason:
             print(shown(f"{args.in_use}: {reason}"))
         return 1 if reason else 0
     if not os.path.isdir(args.workspace):
         sys.exit(shown(f"dk-gc: no workspace at {args.workspace}"))
 
-    cwds = Cwds()
-    repos = [Repo(root, cwds) for root in main_roots(args.workspace)]
+    processes = Processes()
+    repos = [Repo(root, processes) for root in main_roots(args.workspace)]
     slugs = set()
     for repo in repos:
         repo.scan(args.workspace, remote=repo.slug not in slugs)

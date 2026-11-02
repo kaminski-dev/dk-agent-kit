@@ -136,7 +136,6 @@ if not re.search(r"<PR>-<review>-<\w+>", step7) or "one at a time" not in step7:
     errors.append("skills/issue-flow: step 7's push route needs a worktree key unique per finding, "
                   "body findings of one review included, and works findings one at a time")
 
-# A worktree removed under a running loop left it polling for 50 minutes (#90).
 fan_out = re.search(r"^\*\*Fan-out\.\*\*.*?(?=^## )", flow, re.M | re.S)
 waits = re.search(r"^- \*\*Waits\*\*:.*$", fan_out.group(0) if fan_out else "", re.M)
 if not waits or not re.search(r"every background wait", waits.group(0)) or not re.search(
