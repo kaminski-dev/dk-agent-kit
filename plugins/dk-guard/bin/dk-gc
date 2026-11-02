@@ -2,6 +2,7 @@
 """dk-gc: remove what finished work left behind.
 
   dk-gc [--dry-run] [--yes] [--workspace DIR]
+  dk-gc --in-use WORKTREE
 
 Lists, grouped by repo, what finished work left behind: worktrees under the
 workspace (default ~/workspace) whose branch's PR has merged, and those local
@@ -25,6 +26,11 @@ process and pid, or says lsof could not tell; the last five are listed with
 GitHub is asked with -R from origin's URL, so a GH_REPO in the environment
 cannot point it at another repo. Checkouts of one GitHub repo share its remote
 branches; the first one lists them.
+
+--in-use WORKTREE runs only the process check, for a worktree removed by hand
+(no merged PR): it prints why the worktree must stay and exits 1, or prints
+nothing and exits 0. Run it from outside the worktree, or your own shell
+counts.
 """
 import argparse
 import dataclasses
@@ -380,7 +386,13 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="list, change nothing")
     ap.add_argument("--yes", action="store_true", help="remove without asking")
     ap.add_argument("--workspace", default=os.path.expanduser("~/workspace"))
+    ap.add_argument("--in-use", metavar="WORKTREE", help="only say whether a process runs in WORKTREE; exit 1 if one does or lsof cannot tell")
     args = ap.parse_args()
+    if args.in_use:
+        reason = Cwds().users(args.in_use)
+        if reason:
+            print(shown(f"{args.in_use}: {reason}"))
+        return 1 if reason else 0
     if not os.path.isdir(args.workspace):
         sys.exit(shown(f"dk-gc: no workspace at {args.workspace}"))
 
