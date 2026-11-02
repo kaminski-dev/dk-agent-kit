@@ -17,7 +17,7 @@ Claude Code only for now. Codex and other hosts will follow.
 | `upstream/` | `UPSTREAM.md` records the commit and changes for every adapted file; `sync.sh` shows what mattpocock/skills, pstack and HumanLayer changed since in those files. |
 | `settings/user.fragment.json` | What a plugin cannot ship: permission allow (the sanctioned pushes), deny and ask rules, and `autoMode.hard_deny` lines. Merged into `~/.claude/settings.json` by `bootstrap.sh`. |
 | `bootstrap.sh` | Shows the settings diff, the zsh options block for `~/.zshenv`, the zsh alias-name list for `dk-guard` and the `--isolated` change to the `playwright` MCP server; `--apply` backs both files up, writes them and the list, installs the plugins from this checkout and re-registers the server. |
-| `tests/` | The guard's case matrix (taken from real incidents), fixture repos for the Stop gate, the push gate and the session hooks, a `dk-pg` run against Docker, a `dk-gc` run against fixture repos with stubbed `gh` and `docker`, a `dk-assets` run against a local origin, a bootstrap test with a stubbed `claude` and `zsh`, an `upstream/sync.sh` run against fixture upstream repos, a check of the skill-eval fixtures, a run of the `dk:retro` extraction script against fixture transcripts, and `replay_history.py` for checking the guard against past transcripts. |
+| `tests/` | The guard's case matrix (taken from real incidents), fixture repos for the Stop gate, the push gate and the session hooks, a `dk-pg` run against Docker, a `dk-gc` run against fixture repos with stubbed `gh` and `docker`, a `dk-assets` run against a local origin, a bootstrap test with a stubbed `claude` and `zsh`, an `upstream/sync.sh` run against fixture upstream repos, a check of the skill-eval fixtures, a run of the `dk:retro` extraction script against fixture transcripts, a run of `dk:issue-flow`'s review-bot wait against a stubbed `gh`, and `replay_history.py` for checking the guard against past transcripts. |
 | `THIRD_PARTY/` | Licenses and commits of the projects material is adapted from. |
 
 Every rule traces back to something that went wrong in a real session: a
@@ -191,6 +191,7 @@ python3 -I tests/hooks/test_session_baseline.py
 python3 -I tests/test_skills.py
 python3 -I tests/test_evals.py
 python3 -I tests/test_retro_extract.py
+python3 -I tests/test_wait_review.py
 bash tests/test_bootstrap.sh
 bash tests/test_dk_pg.sh      # skips without a Docker daemon
 bash tests/test_dk_gc.sh

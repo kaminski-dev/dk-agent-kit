@@ -83,6 +83,31 @@ for ref in sorted(set(re.findall(r'subagent_type: "dk:([a-z][a-z-]*)"', review))
     elif WRITE_TOOLS & {t.strip() for t in tools.split(",")}:
         errors.append(f"agents/{ref}: code-review spawns it, so its tools must exclude {sorted(WRITE_TOOLS)}")
 
+flow = skills["issue-flow"].read_text()
+bot = re.search(r"^\*\*Review bot\.\*\*.*?(?=^## )", flow, re.M | re.S)
+bot = bot.group(0) if bot else ""
+for what, pattern in (
+    ("the background wait", r"run_in_background"),
+    ("the 20-minute give-up", r"20 minutes"),
+    ("the head-SHA filter", r"headRefOid.*commit_id|commit_id.*headRefOid"),
+    ("the inline-comment endpoint", r"repos/\S+/pulls/\S+/comments"),
+    ("the review-body endpoint", r"repos/\S+/pulls/\S+/reviews/\S+"),
+):
+    if not re.search(pattern, bot, re.S):
+        errors.append(f"skills/issue-flow: its **Review bot.** paragraph in step 6 does not name {what}")
+if not re.search(r"pulls/\S+/comments\" --jq '[^']*in_reply_to_id == null", bot):
+    errors.append("skills/issue-flow: item 2's inline query must keep the bot's thread starters only (in_reply_to_id == null)")
+if "wait-review.py" not in bot:
+    errors.append("skills/issue-flow: its **Review bot.** paragraph must start wait-review.py, whose cases tests/test_wait_review.py runs")
+step7 = re.search(r"^## 7\..*?(?=^## )", flow, re.M | re.S)
+step7 = step7.group(0) if step7 else ""
+if not re.search(r"<PR>-<review>-<\w+>", step7) or "one at a time" not in step7:
+    errors.append("skills/issue-flow: step 7's push route needs a worktree key unique per finding, "
+                  "body findings of one review included, and works findings one at a time")
+
+if "PR comment" not in step7:
+    errors.append("skills/issue-flow: step 7's push route must record a review-body finding's fix in a PR comment; it has no thread")
+
 readme = (ROOT / "README.md").read_text()
 for block in re.findall(r"```mermaid\n(.*?)```", readme, re.S):
     planned = {i for ids in re.findall(r"^\s*class (\S+) planned$", block, re.M) for i in ids.split(",")}
