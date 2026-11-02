@@ -119,6 +119,67 @@ tests = run(ws, "python3 -m unittest discover -s tests -q", cwd=ws / "app")
 check("wip review: the tests still pass with the work in progress", tests.returncode == 0, tests.stderr[-500:])
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
+# The correctness fixture: #388 sends queued mail and follows every documented standard, but the provider
+# call sits between the claim's commit and the sent mark's, and the Outbox tab's test only renders.
+SEND_ONCE = """
+import os, sqlite3, sys
+from datetime import datetime, timedelta, timezone
+from ledger.outbox import Outbox
+db, log, phase = sys.argv[1:4]
+class Provider:
+    def send(self, to, subject, body, idempotency_key=None):
+        with open(log, "a") as f:
+            f.write(f"{subject}|{idempotency_key}\\n")
+        if phase == "crash":
+            os._exit(9)
+outbox = Outbox(sqlite3.connect(db), Provider())
+t = datetime(2026, 10, 19, 9, 0, tzinfo=timezone.utc)
+if phase == "crash":
+    outbox.queue("accountant@example.com", "Week 41", "-", "2026-10-12T08:00:00Z")
+    outbox.send_next(t)
+else:
+    print(outbox.send_next(t + timedelta(minutes=6)))
+"""
+RENDER_NOTHING = ("import sys, unittest, ledger.web as w; w.render_to_string = lambda c: None; "
+                  "s = unittest.defaultTestLoader.loadTestsFromName('tests.test_outbox.OutboxTabTest'); "
+                  "sys.exit(not unittest.TextTestRunner().run(s).wasSuccessful())")
+
+
+def sends_after_crash(ws, tag):
+    """Subjects and idempotency keys the provider saw: a sender dies right after its send, a second runs past the lease."""
+    script, db, log = ws.parent / "send_once.py", ws.parent / f"{tag}.db", ws.parent / f"{tag}.log"
+    script.write_text(SEND_ONCE)
+    crash = run(ws, f"python3 '{script}' '{db}' '{log}' crash", cwd=ws / "app")
+    retry = run(ws, f"python3 '{script}' '{db}' '{log}' retry", cwd=ws / "app")
+    return crash.returncode, retry.stdout.strip(), log.read_text().splitlines() if log.exists() else []
+
+
+ws = scaffold("code-review-correctness")
+branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+check("388 review: the feature branch is checked out", branch == "fix/388-outbox-mail", branch)
+tests = run(ws, "python3 -m unittest discover -s tests -q", cwd=ws / "app")
+check("388 review: the fixture's own tests pass", tests.returncode == 0, tests.stderr[-500:])
+status = git(ws, "app", "status", "--porcelain").stdout
+check("388 review: nothing uncommitted", status == "", status)
+code, retried, sent = sends_after_crash(ws, "seeded")
+check("388 review: a crash after the send leaves the mail to go out again, with no idempotency key",
+      code == 9 and retried == "1" and sent == ["Week 41|None", "Week 41|None"], (code, retried, sent))
+empty = run(ws, f'python3 -c "{RENDER_NOTHING}"', cwd=ws / "app")
+check("388 review: the Outbox tab's test passes when rendering returns nothing", empty.returncode == 0, empty.stderr[-500:])
+
+git(ws, "app", "checkout", "-q", "-b", "reference")
+patch = run(ws, f"git apply '{REFERENCE / 'reference-388.patch'}'", cwd=ws / "app")
+check("388 review: reference fix applies", patch.returncode == 0, patch.stderr)
+tests = run(ws, "python3 -m unittest discover -s tests -q", cwd=ws / "app")
+check("388 review: the reference fix's tests pass", tests.returncode == 0, tests.stderr[-500:])
+code, retried, sent = sends_after_crash(ws, "reference")
+check("388 review: on the reference fix the repeat carries the first send's idempotency key",
+      code == 9 and retried == "1" and sent == ["Week 41|outbox-1", "Week 41|outbox-1"], (code, retried, sent))
+empty = run(ws, f'python3 -c "{RENDER_NOTHING}"', cwd=ws / "app")
+check("388 review: on the reference fix the Outbox tab's test fails when rendering returns nothing",
+      empty.returncode != 0, empty.stderr[-500:])
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
 # The verify fixture: a clean #353 fix in a repo whose verify doc says there is no database to start.
 ws = scaffold("verify-no-db")
 branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
