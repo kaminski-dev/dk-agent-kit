@@ -16,10 +16,12 @@ the remote's default branch, verify-assets/* (PR bodies embed from them),
 a branch with an open PR, the base of any PR (an integration branch like
 pre-master, even after its own batch PR merged), a worktree with uncommitted
 changes, and a worktree with ignored files outside REGENERABLE (build output,
-dependencies, generated code, .env*), whose "keep" line names them; the last
-four are listed with "keep". GitHub is asked with -R from origin's URL, so a
-GH_REPO in the environment cannot point it at another repo. Checkouts of one
-GitHub repo share its remote branches; the first one lists them.
+dependencies, generated code, test reports, a dev server's port file, .env*;
+a listed name counts at any depth unless it names a folder holding tracked
+files), whose "keep" line names them; the last four are listed with "keep".
+GitHub is asked with -R from origin's URL, so a GH_REPO in the environment
+cannot point it at another repo. Checkouts of one GitHub repo share its remote
+branches; the first one lists them.
 """
 import argparse
 import dataclasses
@@ -32,18 +34,25 @@ import sys
 
 PROTECTED = {"main", "master", "pre-main"}
 KEPT_PREFIX = "verify-assets/"  # PR bodies embed screenshots from these branches
-# Ignored entries a worktree may lose: build output, dependencies, generated code, local env.
-REGENERABLE = ("node_modules", "dist", "build", ".next", "target", ".venv", "__pycache__",
-               "*.tsbuildinfo", "*.gen.*", ".env*")
+# Ignored entries a worktree may lose: build output, dependencies, generated code, test reports,
+# runtime files a dev server rewrites, local env.
+REGENERABLE = ("node_modules", "dist", "build", ".next", ".output", "target", ".venv", "__pycache__",
+               "test-results", ".api-port", ".tanstack", "*.tsbuildinfo", "*.gen.*", ".env*")
 KEEP_LINE_NAMES = 5  # ignored entries a "keep" line names before it counts the rest
 
 
 def run(args, cwd=None):
     try:
-        out = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+        # git prints paths as raw bytes; surrogateescape keeps a name that is not UTF-8 intact
+        out = subprocess.run(args, cwd=cwd, capture_output=True, encoding="utf-8", errors="surrogateescape")
     except OSError:
         return None
     return out.stdout if out.returncode == 0 else None
+
+
+def shown(text):
+    """Text for the terminal: a byte that is not UTF-8 in a path shows as \\xff instead of raising."""
+    return text.encode("utf-8", "surrogateescape").decode("utf-8", "backslashreplace")
 
 
 def git(path, *args):
@@ -96,10 +105,24 @@ def worktrees(root):
     return out
 
 
-def regenerable(entry):
-    """True when an ignored entry's basename or top-level directory is on the REGENERABLE list."""
+def regenerable(entry, tracked_dirs):
+    """True when a path component of an ignored entry is on the REGENERABLE list and names a
+    folder with no tracked file in it: a tool's output, not a tracked build/ holding notes."""
     parts = entry.rstrip("/").split("/")
-    return any(fnmatch.fnmatchcase(name, pattern) for name in (parts[-1], parts[0]) for pattern in REGENERABLE)
+    return any(fnmatch.fnmatchcase(name, pattern) and "/".join(parts[:i + 1]) not in tracked_dirs
+               for i, name in enumerate(parts) for pattern in REGENERABLE)
+
+
+def tracked_dirs(path):
+    """Every folder that holds a tracked file, at any depth; None when git fails."""
+    out = git(path, "ls-files", "-z")
+    if out is None:
+        return None
+    dirs = set()
+    for file in out.split("\0"):
+        parts = file.split("/")[:-1]
+        dirs.update("/".join(parts[:i + 1]) for i in range(len(parts)))
+    return dirs
 
 
 def worktree_blocker(path):
@@ -111,7 +134,12 @@ def worktree_blocker(path):
     entries = [e for e in out.split("\0") if e]
     if any(not e.startswith("!! ") for e in entries):
         return "uncommitted changes"
-    at_risk = [e[3:] for e in entries if not regenerable(e[3:])]
+    if not entries:
+        return None
+    tracked = tracked_dirs(path)
+    if tracked is None:
+        return "git ls-files failed"
+    at_risk = [e[3:] for e in entries if not regenerable(e[3:], tracked)]
     if not at_risk:
         return None
     more = f" and {len(at_risk) - KEEP_LINE_NAMES} more" if len(at_risk) > KEEP_LINE_NAMES else ""
@@ -310,7 +338,7 @@ def main():
     ap.add_argument("--workspace", default=os.path.expanduser("~/workspace"))
     args = ap.parse_args()
     if not os.path.isdir(args.workspace):
-        sys.exit(f"dk-gc: no workspace at {args.workspace}")
+        sys.exit(shown(f"dk-gc: no workspace at {args.workspace}"))
 
     repos = [Repo(root) for root in main_roots(args.workspace)]
     slugs = set()
@@ -330,14 +358,14 @@ def main():
     for repo in repos:
         if not repo.items and not repo.kept and not repo.notes:
             continue
-        print(f"{repo.name} ({repo.slug or 'no GitHub origin'})")
+        print(shown(f"{repo.name} ({repo.slug or 'no GitHub origin'})"))
         for note in repo.notes:
-            print(f"  {note}")
+            print(shown(f"  {note}"))
         for item in repo.items:
-            print(f"  remove {item.kind} {item.label}")
+            print(shown(f"  remove {item.kind} {item.label}"))
             count += 1
         for item in repo.kept:
-            print(f"  keep {item.kind} {item.label}")
+            print(shown(f"  keep {item.kind} {item.label}"))
     if not count:
         print("Nothing to remove.")
         return 0
@@ -355,7 +383,7 @@ def main():
             error = item.remove(repo.root)
             if error:
                 failed += 1
-                print(f"kept {item.kind} {item.label}: {error}", file=sys.stderr)
+                print(shown(f"kept {item.kind} {item.label}: {error}"), file=sys.stderr)
     print(f"Removed {count - failed} of {count}.")
     return 1 if failed else 0
 

@@ -121,6 +121,54 @@ echo 1 >"$ws/app-17/node_modules/index.js"
 # Seven ignored scratch files (app-18): the keep line names five and counts the rest.
 scratch18=$(worktree app-18 feat/18-scratch 'scratch-*')
 for i in 1 2 3 4 5 6 7; do echo "$i" >"$ws/app-18/scratch-$i.txt"; done
+# Files tools write and rewrite (app-20 to app-22): a server bundle, a test report, a dev server's port.
+output20=$(worktree app-20 feat/20-output .output/)
+mkdir -p "$ws/app-20/.output/server"
+echo bundle >"$ws/app-20/.output/server/index.mjs"
+results21=$(worktree app-21 feat/21-results test-results/)
+mkdir -p "$ws/app-21/test-results"
+echo report >"$ws/app-21/test-results/report.json"
+port22=$(worktree app-22 feat/22-port .api-port)
+echo 8123 >"$ws/app-22/.api-port"
+# A listed name below the top level (app-23) goes; eval records (app-24) stay.
+tanstack23=$(worktree app-23 feat/23-tanstack frontend/.tanstack/tmp/)
+mkdir -p "$ws/app-23/frontend/.tanstack/tmp"
+echo routes >"$ws/app-23/frontend/.tanstack/tmp/routes.ts"
+evals24=$(worktree app-24 feat/24-evals plugins/dk/evals/results/)
+mkdir -p "$ws/app-24/plugins/dk/evals/results"
+echo '{"pass":true}' >"$ws/app-24/plugins/dk/evals/results/run.json"
+# A listed name on a tracked folder (app-25): build/ and tools/build/ hold a tracked script, so a
+# note ignored inside them is hand-written and stays.
+worktree app-25 feat/25-tracked '*.local.md' >/dev/null
+mkdir -p "$ws/app-25/build" "$ws/app-25/tools/build"
+echo 'make' >"$ws/app-25/build/run.sh"
+echo 'make' >"$ws/app-25/tools/build/run.sh"
+git -C "$ws/app-25" add build tools
+git -C "$ws/app-25" commit -q -m "add build scripts"
+git -C "$ws/app-25" push -q origin feat/25-tracked
+tracked25=$(git -C "$ws/app-25" rev-parse HEAD)
+echo 'only copy' >"$ws/app-25/build/plan.local.md"
+echo 'only copy' >"$ws/app-25/tools/build/plan.local.md"
+# A tracked name with a byte that is not UTF-8 (app-26): build/ holds it, so the note ignored there
+# stays, and the listing still finishes. It is tracked through the index with skip-worktree, since
+# some file systems refuse the name on disk.
+worktree app-26 feat/26-bytes '*.local.md' >/dev/null
+blob=$(echo make | git -C "$ws/app-26" hash-object -w --stdin)
+git -C "$ws/app-26" update-index --add --cacheinfo "100644,$blob,build/run-$(printf '\xff').sh"
+git -C "$ws/app-26" update-index --skip-worktree "build/run-$(printf '\xff').sh"
+git -C "$ws/app-26" commit -q -m "add a build script"
+git -C "$ws/app-26" push -q origin feat/26-bytes
+bytes26=$(git -C "$ws/app-26" rev-parse HEAD)
+mkdir -p "$ws/app-26/build"
+echo 'only copy' >"$ws/app-26/build/plan.local.md"
+# An ignored file whose name holds a byte that is not UTF-8 (app-27): the keep line names it escaped,
+# even on a strict UTF-8 stdout. Some file systems (APFS) refuse the name; there the case is skipped.
+bytes_pr=
+if (: >"$tmp/probe-$(printf '\xff')") 2>/dev/null; then
+  ignored27=$(worktree app-27 feat/27-ignored-bytes '*.local.md')
+  echo 'only copy' >"$ws/app-27/note-$(printf '\xff').local.md"
+  bytes_pr=", $(pr 37 feat/27-ignored-bytes "$ignored27" main)"
+fi
 # On origin only: a base of an open PR, and one pushed to after its merge. pre-main, the batch
 # branch, is on origin and checked out in a worktree.
 main=$(git -C "$app" rev-parse main)
@@ -139,7 +187,10 @@ echo "[$(pr 11 feat/1-done "$done1" main), $(pr 12 feat/2-dirty "$dirty2" main),
   $(pr 19 feat/8-loose "$loose8" main), $(pr 20 feat/10-base "$main" main), $(pr 22 pre-main "$main" main),
   $(pr 23 feat/11-moved "$moved11" main), $(pr 24 pre-master "$main" main), $(pr 25 feat/13-batched "$main" pre-master),
   $(pr 26 feat/16-regen "$regen16" main), $(pr 27 feat/17-docs "$docs17" main),
-  $(pr 28 feat/18-scratch "$scratch18" main)]" \
+  $(pr 28 feat/18-scratch "$scratch18" main), $(pr 30 feat/20-output "$output20" main),
+  $(pr 31 feat/21-results "$results21" main), $(pr 32 feat/22-port "$port22" main),
+  $(pr 33 feat/23-tanstack "$tanstack23" main), $(pr 34 feat/24-evals "$evals24" main),
+  $(pr 35 feat/25-tracked "$tracked25" main), $(pr 36 feat/26-bytes "$bytes26" main)$bytes_pr]" \
   >"$fx/acme_app/pr-merged.json"
 # A second checkout of acme/app: its remote branches are the same ones, handled once.
 git clone -q https://github.com/acme/app.git "$ws/app-copy"
@@ -200,6 +251,13 @@ has "$out" "remove worktree $ws/app-16 (feat/16-regen, PR #26 merged)"
 has "$out" "keep worktree $ws/app-17 (feat/17-docs, PR #27 merged; ignored files outside the regenerable list: docs/)"
 lacks "$out" "remove branch feat/17-docs"
 has "$out" "keep worktree $ws/app-18 (feat/18-scratch, PR #28 merged; ignored files outside the regenerable list: scratch-1.txt, scratch-2.txt, scratch-3.txt, scratch-4.txt, scratch-5.txt and 2 more)"
+has "$out" "remove worktree $ws/app-20 (feat/20-output, PR #30 merged)"
+has "$out" "remove worktree $ws/app-21 (feat/21-results, PR #31 merged)"
+has "$out" "remove worktree $ws/app-22 (feat/22-port, PR #32 merged)"
+has "$out" "remove worktree $ws/app-23 (feat/23-tanstack, PR #33 merged)"
+has "$out" "keep worktree $ws/app-24 (feat/24-evals, PR #34 merged; ignored files outside the regenerable list: plugins/dk/evals/results/)"
+has "$out" "keep worktree $ws/app-25 (feat/25-tracked, PR #35 merged; ignored files outside the regenerable list: build/plan.local.md, tools/build/plan.local.md)"
+has "$out" "keep worktree $ws/app-26 (feat/26-bytes, PR #36 merged; ignored files outside the regenerable list: build/plan.local.md)"
 has "$out" "remove database dk-pg-app-1 (issue #1 closed)"
 lacks "$out" "dk-pg-app-3"
 has "$out" "keep database dk-pg-gone-9 (issue #9; no GitHub checkout at $tmp/gone)"
@@ -213,6 +271,14 @@ has "$out" "keep remote origin/pre-master (PR #24 merged; base of PR #25)"
 [[ "$(grep -c "remove remote origin/feat/1-done " <<<"$out")" == 1 ]] || fail "remote branch listed once per checkout"
 has "$out" "Dry run: nothing changed."
 [[ "$(state)" == "$before" ]] || fail "dry run changed something"
+if [[ -n "$bytes_pr" ]]; then
+  out=$(PYTHONIOENCODING=utf-8:strict "$dkgc" --dry-run --workspace "$ws") || fail "dry run on a strict UTF-8 stdout failed"
+  has "$out" "keep worktree $ws/app-27 (feat/27-ignored-bytes, PR #37 merged; ignored files outside the regenerable list: note-\xff.local.md)"
+  has "$out" "Dry run: nothing changed."
+  echo "dk-gc: the ignored name that is not UTF-8 ran"
+else
+  echo "dk-gc: skipped the ignored name that is not UTF-8: this file system refuses it"
+fi
 
 # Without a yes on stdin, nothing changes.
 out=$("$dkgc" --workspace "$ws" </dev/null)
@@ -232,6 +298,7 @@ git -C "$app" rev-parse -q --verify refs/heads/feat/1-done >/dev/null && fail "b
 [[ -d "$ws/notes-1" && -d "$ws/other-1" ]] || fail "worktree of a repo without PRs removed"
 [[ ! -e "$ws/app-7" ]] || fail "worktree behind its merged PR still there"
 [[ ! -e "$ws/app-16" ]] || fail "worktree with only regenerable ignored files still there"
+for gone in app-20 app-21 app-22 app-23; do [[ ! -e "$ws/$gone" ]] || fail "worktree $gone with only regenerable ignored files still there"; done
 git -C "$app" rev-parse -q --verify refs/heads/pre-master >/dev/null || fail "integration branch pre-master removed"
 for kept in app-pre-main:pre-main app-2:feat/2-dirty app-3:feat/3-open app-4:feat/4-again app-5:feat/5-ahead app-6:verify-assets/6; do
   [[ -d "$ws/${kept%%:*}" ]] || fail "worktree ${kept%%:*} removed"
@@ -239,6 +306,8 @@ for kept in app-pre-main:pre-main app-2:feat/2-dirty app-3:feat/3-open app-4:fea
 done
 [[ "$(cat "$ws/app-2/notes.txt")" == wip ]] || fail "uncommitted file in app-2 lost"
 [[ "$(cat "$ws/app-17/docs/plan.md")" == 'only copy' ]] || fail "ignored docs/plan.md in app-17 lost"
+[[ "$(cat "$ws/app-24/plugins/dk/evals/results/run.json")" == '{"pass":true}' ]] || fail "eval record in app-24 lost"
+[[ "$(cat "$ws/app-25/tools/build/plan.local.md")" == 'only copy' ]] || fail "ignored note under a tracked build/ in app-25 lost"
 git -C "$app" rev-parse -q --verify refs/heads/feat/17-docs >/dev/null || fail "branch feat/17-docs removed"
 [[ "$(cut -f1 "$fx/docker-ps" | tr '\n' ' ')" == "c3 c9 " ]] || fail "containers left: $(cut -f1 "$fx/docker-ps")"
 grep -q '^rm -fv c1$' "$fx/docker.log" || fail "container c1 not removed with its volumes"
