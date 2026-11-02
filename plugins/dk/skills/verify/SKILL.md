@@ -64,7 +64,7 @@ Each proof owed in step 1 appears in the PR's Evidence section (`dk:pr`) as a be
 
 ## 7. Tear down
 
-Before reporting, stop what you started: every process (its port is free again under `lsof`), your browser (`browser_close`, or the script's `browser.close()`), `dk-pg down <N>` when you started one, and `git worktree remove "$RUN/base"`. The files stay in `$RUN` with the session's scratch. Done when none of your ports listens, `git worktree list` no longer shows `$RUN/base` and, with dk-pg, `dk-pg url <N>` finds no running database.
+Before reporting, stop what you started: every process (its port is free again under `lsof`), your browser (`browser_close`, or the script's `browser.close()`), `dk-pg down <N>` when you started one, and `git worktree remove "$RUN/base"`. The files stay in `$RUN` with the session's scratch. Done when none of your ports listens, `git worktree list` no longer shows `$RUN/base` and, with dk-pg, `dk-pg status <N>` prints `none running`.
 
 ## The repo's verify doc
 
