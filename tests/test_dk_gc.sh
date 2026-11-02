@@ -293,6 +293,14 @@ else
   echo "dk-gc: skipped the ignored name that is not UTF-8: this file system refuses it"
 fi
 
+# When lsof cannot run, no worktree goes on a guess.
+mkdir -p "$fx/no-lsof"
+printf '#!/bin/sh\nexit 1\n' >"$fx/no-lsof/lsof"
+chmod +x "$fx/no-lsof/lsof"
+out=$(PATH="$fx/no-lsof:$PATH" "$dkgc" --dry-run --workspace "$ws")
+has "$out" "keep worktree $ws/app-1 (feat/1-done, PR #11 merged; cannot tell whether a process runs in it: lsof did not answer)"
+lacks "$out" "remove worktree"
+
 # Once the process is gone, the worktree is finished like any other.
 stop "$pid28"
 out=$("$dkgc" --dry-run --workspace "$ws")
@@ -339,14 +347,22 @@ remote_heads=$(git -C "$remotes/acme/app.git" for-each-ref --format='%(refname:s
 out=$("$dkgc" --dry-run --workspace "$ws")
 lacks "$out" "remove "
 
-# Ignored work that appears between the listing and the yes keeps the worktree.
+# Ignored work (app-19) or a process (app-29) that appears between the listing and the yes keeps the worktree.
 late19=$(worktree app-19 feat/19-late docs/)
-sed -i.bak "s|]\$|, $(pr 29 feat/19-late "$late19" main)]|" "$fx/acme_app/pr-merged.json"
+late29=$(worktree app-29 feat/29-late-busy)
+sed -i.bak "s|]\$|, $(pr 29 feat/19-late "$late19" main), $(pr 39 feat/29-late-busy "$late29" main)]|" "$fx/acme_app/pr-merged.json"
 { for _ in $(seq 100); do grep -q 'Remove these' "$tmp/late.out" 2>/dev/null && break; sleep 0.1; done
-  mkdir "$ws/app-19/docs"; echo late >"$ws/app-19/docs/plan.md"; echo y; } |
+  mkdir "$ws/app-19/docs"; echo late >"$ws/app-19/docs/plan.md"
+  start_in "$ws/app-29" >"$tmp/late29.pid"; echo y; } |
   "$dkgc" --workspace "$ws" >"$tmp/late.out" 2>&1 && fail "a run that kept a listed worktree exited 0"
 out=$(cat "$tmp/late.out")
 has "$out" "remove worktree $ws/app-19 (feat/19-late, PR #29 merged)"
 has "$out" "kept worktree $ws/app-19 (feat/19-late, PR #29 merged): ignored files outside the regenerable list: docs/ (new since the listing)"
 [[ "$(cat "$ws/app-19/docs/plan.md")" == late ]] || fail "ignored docs/plan.md in app-19 lost"
+pid29=$(cat "$tmp/late29.pid")
+busy="$busy $pid29"
+has "$out" "remove worktree $ws/app-29 (feat/29-late-busy, PR #39 merged)"
+has "$out" "kept worktree $ws/app-29 (feat/29-late-busy, PR #39 merged): in use by sleep (pid $pid29) (new since the listing)"
+[[ -d "$ws/app-29" ]] || fail "worktree app-29 removed under its process"
+stop "$pid29"
 echo "dk-gc: all checks passed"
