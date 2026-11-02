@@ -785,8 +785,9 @@ READS = {"pr": ("checks", "view", "status", "list"), "run": ("view", "list", "wa
 # `gh api` reads unless it names a method other than GET or sends fields or a body (fields alone make it a POST)
 API_FIELDS = ("--field", "--raw-field", "--input")
 API_SHORT_FIELDS = ("-f", "-F")
-API_WRITE = r"\s(?:(?:-X\s*|--method[=\s]\s*)(?=\S)(?!['\"]?(?i:get)\b)|" + "|".join(API_SHORT_FIELDS) \
-    + r"|(?:" + "|".join(API_FIELDS) + r")\b)"
+# gh keeps the last method flag, so a method writes only when no later one replaces it
+API_WRITE = r"\s(?:(?:-X\s*=?|--method[=\s]\s*)(?=[^\s=])(?!['\"]?(?i:get)\b)(?!" + END + r"\s(?:-X|--method\b))|" \
+    + "|".join(API_SHORT_FIELDS) + r"|(?:" + "|".join(API_FIELDS) + r")\b)"
 GH_POLL = r"\bgh" + GH_REPO_FLAG + r"\s+(?:(?:" + "|".join(
     rf"{group}\s+(?:{'|'.join(subs)})" for group, subs in READS.items()) + r")\b|api\b(?!" + END + API_WRITE + r"))"
 RAW_WAITS = [re.compile(p, re.S) for p in (
@@ -815,13 +816,17 @@ def polls(words):
 
 
 def api_reads(args):
+    method = "GET"
     for i, w in enumerate(args):
-        if w in ("-X", "--method"):
-            w = "-X" + (args[i + 1] if i + 1 < len(args) else "")
-        method = w[2:] if w.startswith("-X") else w.split("=", 1)[1] if w.startswith("--method=") else "GET"
-        if method.upper() != "GET" or w[:2] in API_SHORT_FIELDS or w.split("=", 1)[0] in API_FIELDS:
+        if w[:2] in API_SHORT_FIELDS or w.split("=", 1)[0] in API_FIELDS:
             return False
-    return True
+        if w in ("-X", "--method"):
+            method = args[i + 1] if i + 1 < len(args) else ""
+        elif w.startswith("-X"):
+            method = w[2:].lstrip("=")
+        elif w.startswith("--method="):
+            method = w.split("=", 1)[1]
+    return method.upper() == "GET"
 
 
 def watches(words):
