@@ -63,7 +63,6 @@ The baseline also covers what agents add that Fowler's list misses. Same two rul
 - **Swallowed Error**: a catch or error branch that logs-and-continues, returns a default, or drops the error without a reason the caller can see. → propagate it, or name why it is safe to drop.
 - **Dead Code**: unused functions, exports, parameters or branches the change leaves behind (commented-out code is the Comments axis's). → delete it; history keeps it.
 - **Deprecated API**: a call the library or this repo marks deprecated, where the replacement is available. → use the replacement.
-- **Empty Test**: a test that would still pass if every function it imports returned `undefined` or a wrong value, so it cannot fail for a defect: a loose or missing assertion (`toBeDefined`, `toBeTruthy`, `not.toThrow`); a call or an empty result as the only assertion (`toHaveBeenCalled` without its payload, `toEqual([])`), which a subject that does nothing also passes; an expected value computed by the code under test; a restated constant, config default or prompt string; assertions on data the test built, with no call to the subject. → call the subject with one concrete input and assert the literal output or effect (for a mock, the payload it received); delete the test when no such assertion exists. Cross-row relations between tables and compile-time type tests stay.
 
 The **comment policy** is the part of `AGENTS.md` or `CODING_STANDARDS.md` (root or nearest to the changed files) that says which comments to write or keep. Note the file and heading when one exists; it goes to the Comments sub-agent, which applies it over its default keep list.
 
@@ -75,7 +74,7 @@ Issue all four sub-agent calls together, in the foreground, and aggregate the re
 
 - The full diff command and commit list.
 - The list of standards-source files you found in step 3, **plus the smell baseline from step 3** pasted in full (the sub-agent has no other access to it).
-- The brief: "Report, per file/hunk where relevant, (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. Distinguish hard violations from judgement calls: documented-standard breaches can be hard, but baseline smells are always judgement calls, and a documented repo standard overrides the baseline. Skip anything tooling enforces. Under 400 words."
+- The brief: "Report, per file/hunk where relevant, (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. Distinguish hard violations from judgement calls: documented-standard breaches can be hard, but baseline smells are always judgement calls, and a documented repo standard overrides the baseline. Skip anything tooling enforces, and leave whether a test can fail to the Correctness axis. Under 400 words."
 
 **Spec sub-agent prompt** should include:
 
@@ -91,7 +90,7 @@ Issue all four sub-agent calls together, in the foreground, and aggregate the re
   - **Query a UI renders**: does a failed load look different from an empty one? Does a failed refresh still report success?
   - **Form**: does Enter submit it before it is ready? Does a disabled control show why? Does the unsaved-changes check compare values, so an edit undone by hand reads as clean?
   - **Boundary value**: does it hold at zero, empty and nil? Are protocol tokens compared case-insensitively where the protocol says so? Does each `ORDER BY … LIMIT` have a tie-breaker? Does the server repeat the client's validation? Do a write and its audit row share a transaction?
-  - **Test**: does it run the mechanism its name claims, and would it fail if the code under test returned nothing?
+  - **Test**: does it run the mechanism its name claims, and would it fail if the code under test returned nothing or a wrong value? It cannot when it asserts loosely or not at all (`toBeDefined`, `toBeTruthy`, `not.toThrow`); asserts only a call or an empty result (`toHaveBeenCalled` without its payload, `toEqual([])`), which a subject that does nothing also passes; expects a value computed by the code under test; restates a constant, config default or prompt string; or asserts on data the test built, with no call to the subject. Fix: call the subject with one concrete input and assert the literal output or effect (for a mock, the payload it received); delete the test when no such assertion exists. Cross-row relations between tables and compile-time type tests stay.
   - **Changed doc line** (ADR, glossary, AGENTS.md): does the code it describes back it?
   For each finding, name the trigger (the crash point, the value, the order of events) and what the user or the data ends up with. Under 400 words."
 
