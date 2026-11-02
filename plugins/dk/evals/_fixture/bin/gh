@@ -5,7 +5,8 @@ State lives in <workspace>/.tracker/state.json. Every call is logged to
 .tracker/calls.log; what the graders read is written as plain text:
 .tracker/issue-<N>.md (labels, state and every comment), .tracker/pr.md
 (the last PR opened, with the acceptance result for its head branch) and
-.tracker/pulls/<N>.md (the last PR for issue N, read from a <type>/<N>-<slug> head).
+.tracker/pulls/<N>.md (the last PR for issue N, read from a <type>/<N>-<slug> head); "last" is
+the highest PR number, in whatever order their checks finish.
 Calls hold a lock on the state, so parallel agents do not lose each other's writes; `pr create` lets
 go of it while the acceptance check runs (at most CHECK_TIMEOUT seconds per run).
 """
@@ -237,6 +238,15 @@ def acceptance(head, num):
             (acc.stdout + acc.stderr).strip()]
 
 
+def write_record(path, num, record):
+    """Write PR num's record unless path holds a newer PR's: checks run unlocked and can finish out of order."""
+    if path.exists():
+        held = re.match(r"# PR #(\d+)", path.read_text())
+        if held and int(held.group(1)) > num:
+            return
+    path.write_text(record)
+
+
 def cmd_pr(sub, args, state):
     pos, o = opts(args, VALUE_FLAGS, MULTI)
     if sub == "create":
@@ -253,10 +263,10 @@ def cmd_pr(sub, args, state):
         fcntl.flock(LOCK, fcntl.LOCK_EX)
         lines = [f"# PR #{num} {pr['title']}", f"base: {base}", f"head: {head}"] + checks
         record = "\n".join(lines) + "\n\n## Body\n\n" + pr["body"] + "\n"
-        (TRACKER / "pr.md").write_text(record)
+        write_record(TRACKER / "pr.md", num, record)
         if issue:
             (TRACKER / "pulls").mkdir(exist_ok=True)
-            (TRACKER / "pulls" / f"{issue}.md").write_text(record)
+            write_record(TRACKER / "pulls" / f"{issue}.md", num, record)
         print(f"https://github.com/{state['repo']}/pull/{num}")
     elif sub in ("view", "list"):
         prs = state["prs"]
