@@ -268,7 +268,8 @@ def stub_coderabbit(ws):
 
 ws = review_ws()
 r, calls = run_review(ws)
-check("no coderabbit on PATH: exits 4 and says so", r.returncode == 4 and "coderabbit" in r.stdout,
+check("no coderabbit on PATH: exits 4 and says so",
+      r.returncode == 4 and r.stdout == "No local review: coderabbit is not on PATH.\n",
       (r.returncode, r.stdout, r.stderr))
 check("no coderabbit on PATH: writes nothing", not ws.out.exists() or not any(ws.out.iterdir()), r.stdout)
 ws.remove()
@@ -277,10 +278,9 @@ ws = review_ws()
 stub_coderabbit(ws)
 r, calls = run_review(ws)
 check("coderabbit on PATH: exits 0", r.returncode == 0, (r.returncode, r.stdout, r.stderr))
-check("coderabbit on PATH: one agent review of the committed batch against the merge base",
+check("coderabbit on PATH: one agent review of the committed batch against the merge base, without --use-credits",
       calls[:1] == [f"review --agent --committed --base-commit {ws.base}"], calls)
 check("coderabbit on PATH: reviews origin/pre-main's head", calls[1:2] == [ws.head], (calls, ws.head))
-check("coderabbit on PATH: never --use-credits", not any("--use-credits" in c for c in calls), calls)
 found = list(ws.out.glob("*")) if ws.out.exists() else []
 check("coderabbit on PATH: the finding lands in the scratch directory, and its path is printed",
       len(found) == 1 and "first is missing its trailing period" in found[0].read_text() and str(found[0]) in r.stdout,

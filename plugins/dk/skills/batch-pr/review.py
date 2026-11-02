@@ -6,8 +6,8 @@ checks origin/pre-main out in a detached worktree under <out-dir>, and runs ther
 
   coderabbit review --agent --committed --base-commit <merge base of origin/main and origin/pre-main>
 
-The findings go to <out-dir>/review-<merge base>.txt, whose path it prints; the
-worktree is removed. --use-credits is never passed.
+The findings go to <out-dir>/review-<merge base, 12 characters>.txt, whose path it
+prints; the worktree is removed. --use-credits is never passed.
 
 Exit 0: reviewed. Exit 4: coderabbit is not on PATH; nothing ran. Exit 3: <out-dir>
 already holds this batch's review (same merge base), whose path it prints: one
@@ -23,8 +23,8 @@ import sys
 BRANCHES = ("main", "pre-main")
 
 
-def sh(*cmd, cwd=None):
-    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+def sh(*cmd):
+    r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode:
         sys.exit(f"{' '.join(cmd)}: {(r.stderr or r.stdout).strip() or r.returncode}")
     return r.stdout.strip()
@@ -42,24 +42,26 @@ def main():
 
     sh("git", "fetch", "-q", "origin", *(f"+refs/heads/{b}:refs/remotes/origin/{b}" for b in BRANCHES))
     base = sh("git", "merge-base", "origin/main", "origin/pre-main")
-    findings = out / f"review-{base[:12]}.txt"
+    short = base[:12]
+    findings = out / f"review-{short}.txt"
     if findings.exists():
         print(f"This batch was reviewed already: {findings}")
         return 3
 
     out.mkdir(parents=True, exist_ok=True)
-    tree = out / f"pre-main-{base[:12]}"
+    tree = out / f"pre-main-{short}"
     sh("git", "worktree", "add", "-q", "--detach", str(tree), "origin/pre-main")
     try:
         r = subprocess.run(["coderabbit", "review", "--agent", "--committed", "--base-commit", base],
                            cwd=tree, capture_output=True, text=True)
     finally:
-        subprocess.run(["git", "worktree", "remove", "--force", str(tree)], capture_output=True)
-        subprocess.run(["git", "worktree", "prune"], capture_output=True)
+        gone = subprocess.run(["git", "worktree", "remove", "--force", str(tree)], capture_output=True, text=True)
+        if gone.returncode:
+            print(f"The review's worktree is left at {tree}: {gone.stderr.strip()}", file=sys.stderr)
     if r.returncode:
         sys.exit(f"coderabbit review failed ({r.returncode}): {(r.stderr + r.stdout).strip()}")
     findings.write_text(r.stdout + r.stderr)
-    print(f"Reviewed origin/pre-main against {base[:12]}: {findings}")
+    print(f"Reviewed origin/pre-main against {short}: {findings}")
     return 0
 
 
