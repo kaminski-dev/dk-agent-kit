@@ -1063,17 +1063,45 @@ def modifier_words(segs):
 
 # zsh does not word-split a variable: `G="git grep -n"; $G foo` runs a command named `git grep -n`.
 VARIABLE_COMMAND = ("deny", "zsh does not word-split a variable, so a command kept in a string runs as one word "
-                    "(\"command not found: git grep -n\"). Use a function with a descriptive name, or an array: "
-                    "`cmd=(git grep -n); $cmd foo`.")
-SPACED_RAW = re.compile(r"(?:^|[\s;&|(])([A-Za-z_]\w*)=(?:\"[^\"]*\s[^\"]*\"|'[^']*\s[^']*')")
+                    "(\"command not found: git grep -n\"). Use a function with a descriptive name, an array "
+                    "(`cmd=(git grep -n); $cmd foo`), or `${=name}`, which splits it (the fix for a loop "
+                    "over quoted commands).")
+SPACED_ITEM = r"\"[^\"]*\s[^\"]*\"|'[^']*\s[^']*'"
+SPACED_RAW = re.compile(r"(?:^|[\s;&|(])([A-Za-z_]\w*)=(?:" + SPACED_ITEM + ")")
+# a for or foreach header, `in` or zsh's parenthesised list, up to the first word that is not an item
+LOOP_ITEMS_RAW = re.compile(START + r"(?:for|foreach)\s+((?:[A-Za-z_]\w*\s+)*?[A-Za-z_]\w*)(?:\s+in\b|\s*\()"
+                            + r"((?:\s*(?:\"[^\"]*\"|'[^']*'|[^\s;&|()\"']+))*)")
 
 
 def check_command_variable(cmd):
-    for m in SPACED_RAW.finditer(cmd):
-        use = START + PREFIX + r"[\"']?\$\{?" + m.group(1) + r"\}?[\"']?(?=\s|[;&|)]|$)"
-        if not quoted_text(cmd, m.start(1), shell=ZSH_SCRIPT_OPENER) and re.search(use, cmd[m.end():]):
-            return [VARIABLE_COMMAND]
+    spaced = [(m.start(1), m.end(), [m.group(1)]) for m in SPACED_RAW.finditer(cmd)]
+    spaced += [(m.start(1), m.end(), m.group(1).split()) for m in LOOP_ITEMS_RAW.finditer(cmd)
+               if re.search(SPACED_ITEM, m.group(2))]
+    for start, end, names in spaced:
+        if quoted_text(cmd, start, shell=ZSH_SCRIPT_OPENER):
+            continue
+        for name in names:
+            use = START + PREFIX + r"[\"']?\$\{?" + name + r"\}?[\"']?(?=\s|[;&|)]|$)"
+            if re.search(use, cmd[end:]):
+                return [VARIABLE_COMMAND]
     return []
+
+
+def loop_header(words):
+    """(names, items) when `words` open a for or foreach loop over a word list, else None."""
+    words = list(itertools.dropwhile(lambda w: w in LEAD, words))
+    if words[:1] not in (["for"], ["foreach"]):
+        return None
+    names = list(itertools.takewhile(lambda w: w != "in" and not w.startswith("("), words[1:]))
+    rest = words[1 + len(names):]
+    if not names or not rest:
+        return None
+    if rest[0] == "in":
+        return names, rest[1:]
+    try:
+        return names, shlex.split(rest[0][1:-1])  # zsh's `for c (a "b c")` keeps its list as raw text
+    except ValueError:
+        return names, rest[0][1:-1].split()
 
 
 def command_variable_words(segs):
@@ -1083,10 +1111,15 @@ def command_variable_words(segs):
         m = re.fullmatch(r"\$\{?([A-Za-z_]\w*)\}?", words[0]) if words else None
         if m and m.group(1) in spaced:
             return [VARIABLE_COMMAND]
-        for name, op, value in assignments(seg.words):
-            if op and not value.startswith("(") and re.search(r"\s", value):
+        sets = [(name, "" if value.startswith("(") else value) for name, op, value in assignments(seg.words) if op]
+        loop = loop_header(seg.words)
+        if loop:  # a loop variable holds each item in turn, so one item with a space is enough
+            spaced_item = next((i for i in loop[1] if re.search(r"\s", i)), "")
+            sets += [(name, spaced_item) for name in loop[0]]
+        for name, value in sets:
+            if re.search(r"\s", value):
                 spaced.add(name)
-            elif op:
+            else:
                 spaced.discard(name)
     return []
 
