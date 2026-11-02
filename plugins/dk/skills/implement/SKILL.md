@@ -18,3 +18,9 @@ When the code is done, call the Skill tool with `dk:verify` and prove the change
 Then call the Skill tool with `dk:code-review` to review the work, and fix what it finds.
 
 Finally open the PR with the body from the `dk:pr` skill, per `dk:issue-flow`.
+
+## Several tickets
+
+With more than one ticket, each gets an implementer subagent that runs the sequence above in its own worktree, launched by the fan-out rules in `dk:issue-flow` step 2.
+
+Before reporting, dry-merge the tickets' branches: fetch, then run `git merge-tree --write-tree --name-only` on each branch against `origin/<base>` (the base from `docs/agents/workflow.md`, `pre-main` unless it names another) and on each pair of branches. Exit status 1 is a conflict, with the conflicting files listed after the tree id. The report names each conflict by its two tickets and its files, or says the branches merge cleanly.

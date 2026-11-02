@@ -25,6 +25,12 @@ When `ls-remote` prints nothing, `pre-main` is missing: ask the maintainer to re
 
 Scratch files live in `$SCRATCH/<N>/` (`$SCRATCH` = the session's scratchpad directory), one directory per agent, never in the tree. Parallel agents each get their own worktree and their own scratch directory; a shared one is how two agents overwrote each other's `network-failure.ts`. `git stash` is one list across all worktrees, so set work aside with a WIP commit or a patch file in `$SCRATCH`.
 
+**Fan-out.** An orchestrator that runs agents in parallel, one ticket each, keeps three rules:
+
+- **Worktrees**: it creates every worktree itself, one `git worktree add` after another (parallel adds collide on the `.git/config` lock), and hands each subagent its path. The subagent launches as a plain one, with no `isolation` parameter: harness isolation gives it a worktree of its own and blocks its edits in the one it was handed.
+- **Briefs**: a brief names only skills a subagent can call: `dk:issue-flow`, `dk:tdd`, `dk:verify`, `dk:code-review`, `dk:pr`. A skill with `disable-model-invocation: true`, such as `dk:implement`, answers a subagent with an error, so the brief spells out the sequence through those five.
+- **Waves**: at most 20 subagents run at once, the harness's limit; the remaining tickets start as slots free up.
+
 ## 3. Scope intake
 
 Something new turns up mid-work: a bug next door, a missing case, a cleanup. Decide once, then move on.
