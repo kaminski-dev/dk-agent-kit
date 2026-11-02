@@ -359,6 +359,30 @@ check("ready: the API names #372 as #371's open blocker",
       [(b["number"], b["state"]) for b in blockers] == [(372, "open")], blockers)
 summary = json.loads(run(ws, "gh api repos/acme/ledger/issues/373 --jq .issue_dependencies_summary").stdout)
 check("ready: #373's only blocker is closed", summary == {"blocked_by": 0, "total_blocked_by": 1}, summary)
+
+# The tracker doc's blocking write, as written there: #370 blocked by the open #372.
+db_id = run(ws, "gh api repos/acme/ledger/issues/372 --jq .id").stdout.strip()
+r = run(ws, f"gh api --method POST repos/acme/ledger/issues/370/dependencies/blocked_by -F issue_id={db_id}")
+check("ready: the doc's blocking write reaches the stand-in", r.returncode == 0, r.stderr)
+check("ready: -is:blocked then leaves out #370 too", numbers(ready + " --search '-is:blocked'") == [372, 373],
+      numbers(ready + " --search '-is:blocked'"))
+
+# Past gh's default page of 30: every ready-list command the docs and dk:triage carry, run as written.
+state_file = ws / ".tracker" / "state.json"
+state = json.loads(state_file.read_text())
+for n in range(400, 440):
+    state["issues"][str(n)] = {"title": f"Issue {n}", "body": "", "state": "open", "labels": ["ready-for-agent"],
+                               "comments": []}
+state_file.write_text(json.dumps(state))
+sources = [ROOT / "docs/agents/issue-tracker.md", ROOT / "plugins/dk/skills/setup/issue-tracker.md",
+           EVALS / "_fixture/app/docs/agents/issue-tracker.md", ROOT / "plugins/dk/skills/triage/SKILL.md"]
+commands = [(src, c) for src in sources for c in re.findall(r"`(gh issue list [^`]*ready-for-agent[^`]*)`", src.read_text())]
+check("ready: the docs and dk:triage carry ready-list commands", len(commands) >= 4, commands)
+for src, cmd in commands:
+    want = 42 if "-is:blocked" in cmd else 44  # 40 added; #370 and #371 blocked
+    got = numbers(cmd)
+    check(f"ready: {src.relative_to(ROOT)} lists all {want}", isinstance(got, list) and len(got) == want,
+          (cmd, got if isinstance(got, str) else len(got)))
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
 # --- #1091 fixture: govulncheck red on go1.27.1 and x/net v0.59.0 --------------------------------

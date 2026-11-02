@@ -170,6 +170,7 @@ def cmd_issue(sub, args, state):
             if want_blocked is not None and bool(open_blockers(state, num)) != want_blocked:
                 continue
             rows.append(issue_json(state, num))
+        rows = rows[:int(o.get("--limit") or o.get("-L") or 30)]
         if "--json" in o:
             emit([pick(r, o) for r in rows], o)
         else:

@@ -67,9 +67,9 @@ class Workspace:
         (self.root / ".tracker" / "state.json").write_text(json.dumps(
             {"repo": "acme/ledger", "labels": [], "issues": {}, "prs": prs}))
 
-    def run(self):
-        r = subprocess.run([sys.executable, "-I", str(SCRIPT)], cwd=self.repo, env=self.env, capture_output=True,
-                           text=True)
+    def run(self, cwd=None):
+        r = subprocess.run([sys.executable, "-I", str(SCRIPT)], cwd=cwd or self.repo, env=self.env,
+                           capture_output=True, text=True)
         log = self.root / ".tracker" / "calls.log"
         return r, log.read_text() if log.exists() else ""
 
@@ -143,6 +143,50 @@ r, calls = ws.run()
 check("pre-main level with main: exits 4", r.returncode == 4, (r.returncode, r.stdout, r.stderr))
 check("pre-main level with main: says so", "not ahead of main" in r.stdout, r.stdout)
 check("pre-main level with main: opens no PR", "pr create" not in calls, calls)
+ws.remove()
+
+# A long pre-main history: 600 PRs from earlier batches, two in this one.
+ws = Workspace()
+earlier = ws.commit("earlier")
+ws.git("branch", "pre-main")
+ws.git("checkout", "-q", "pre-main")
+first, second = ws.commit("first"), ws.commit("second")
+ws.push()
+ws.state([pr(n, "pre-main", f"fix/{n}", "MERGED", f"Closes #{n}", earlier) for n in range(1000, 1600)]
+         + [pr(1601, "pre-main", "fix/1601", "MERGED", "Closes #1601", first),
+            pr(1602, "pre-main", "fix/1602", "MERGED", "Refs #1602", second)])
+r, _ = ws.run()
+check("600 earlier PRs: the batch is still collected",
+      r.returncode == 0 and "Closes #1601\nRefs #1602\n" in r.stdout and "#1000" not in r.stdout,
+      (r.returncode, r.stdout[-300:], r.stderr[-300:]))
+ws.remove()
+
+# A shallow checkout: the first PR's merge commit is below the clone's depth.
+ws = Workspace()
+ws.git("branch", "pre-main")
+ws.git("checkout", "-q", "pre-main")
+first, second = ws.commit("first"), ws.commit("second")
+ws.push()
+ws.state([pr(41, "pre-main", "fix/401-first", "MERGED", "Closes #401", first),
+          pr(42, "pre-main", "fix/402-second", "MERGED", "Closes #402", second)])
+ws.git_in(ws.root, "clone", "-q", "--depth", "1", "--no-single-branch", f"file://{ws.root / 'origin.git'}", "shallow")
+r, _ = ws.run(cwd=ws.root / "shallow")
+check("shallow checkout: both PRs and both lines",
+      r.returncode == 0 and "#41 PR 41" in r.stdout and "Closes #401\nCloses #402\n" in r.stdout,
+      (r.returncode, r.stdout, r.stderr))
+ws.remove()
+
+# A merged PR whose merge commit origin does not hold: stop and name it, rather than leave its line out.
+ws = Workspace()
+ws.git("branch", "pre-main")
+ws.git("checkout", "-q", "pre-main")
+known = ws.commit("known")
+ws.push()
+ws.state([pr(51, "pre-main", "fix/501-known", "MERGED", "Closes #501", known),
+          pr(52, "pre-main", "fix/502-lost", "MERGED", "Closes #502", "0123456789abcdef0123456789abcdef01234567")])
+r, _ = ws.run()
+check("unknown merge commit: exits 1 and names the PR",
+      r.returncode == 1 and "#52" in r.stderr and "## Lines" not in r.stdout, (r.returncode, r.stdout, r.stderr))
 ws.remove()
 
 print(f"{len(failures)} failures")
