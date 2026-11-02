@@ -787,18 +787,26 @@ def wait_words(segs):
     loops = []  # innermost last
     for seg in segs:
         _, words = command(seg)
-        if seg.words[:1] == ["repeat"] and "do" in seg.words:  # zsh: `repeat N do cmd` keeps cmd in this segment
-            _, words = command_words(seg.words[seg.words.index("do") + 1:])
+        keywords = list(itertools.takewhile(lambda w: w in LEAD or w in LOOP_KEYWORDS and w != "repeat", seg.words))
+        rest = seg.words[len(keywords):]
+        if rest[:1] == ["repeat"]:
+            # zsh keeps `repeat N do cmd` in one segment; the short form `repeat N cmd` repeats cmd alone, no loop
+            long_form = rest[2:3] == ["do"]
+            _, words = command_words(rest[3:] if long_form else rest[2:])
+            keywords += ["repeat"] if long_form else []
         elif seg.words == ["end"] and loops and loops[-1].keyword == "foreach":  # zsh: foreach x (…) … end
             if loops.pop().waits():
                 return [FOREGROUND_WAIT]
         if watches(words):
             return [FOREGROUND_WAIT]
-        for kw in itertools.takewhile(lambda w: w in LEAD or w in LOOP_KEYWORDS, seg.words):
+        for kw in keywords:
             if kw in LOOP_KEYWORDS:
                 loop = Loop(kw, in_condition=kw in ("while", "until"))
-                # the condition's substitutions came before it in segs
-                loop.condition_polls = loop.in_condition and any(polls(command(s)[1]) for sub in seg.subs for s in sub)
+                # this segment's substitutions came before it in segs: the condition of a while or until, the first
+                # body command of a repeat, the word list of a for (read once)
+                sub_polls = any(polls(command(s)[1]) for sub in seg.subs for s in sub)
+                loop.condition_polls = loop.in_condition and sub_polls
+                loop.body_polls = kw == "repeat" and sub_polls
                 loops.append(loop)
             elif kw == "do" and loops:
                 loops[-1].in_condition = False

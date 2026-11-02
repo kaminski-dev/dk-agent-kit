@@ -229,5 +229,9 @@
   {"cmd": "foreach n (1 2 3)\n  gh pr checks $n\n  sleep 10\nend", "expect": "deny"},
   {"cmd": "foreach n (1 2)\n  gh pr view $n\nend\nsleep 5", "expect": "allow"},
   {"cmd": "/usr/bin/watch -n 30 gh pr checks 12", "expect": "deny"},
-  {"cmd": "repeat 3 do gh pr view 1; done; sleep 5", "expect": "allow"}
+  {"cmd": "repeat 3 do gh pr view 1; done; sleep 5", "expect": "allow"},
+  {"why": "PR #55 review: repeat's short form, repeat after then, a substitution in its first command", "cmd": "repeat 3 gh run watch 123", "expect": "deny"},
+  {"cmd": "if true; then repeat 60 do gh pr checks 12; sleep 10; done; fi", "expect": "deny"},
+  {"cmd": "repeat 3 echo ok; sleep 5; gh pr checks 12", "expect": "allow"},
+  {"cmd": "repeat 100 do s=$(gh pr checks 3); sleep 10; done", "expect": "deny"}
 ]
