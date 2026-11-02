@@ -410,5 +410,7 @@
   {"why": "PR review (#59): a list ends at its line, select sets its variable the same way, and zsh deals the items of a multi-name loop to the names in turn", "cmd": "for c in git ls\ndo echo \"x y\"; $c; done 'unterminated", "expect": "allow"},
   {"cmd": "select c in \"git status\" \"git log\"; do $c; done", "expect": "deny"},
   {"cmd": "for k v in \"git status\" foo; do $v; done", "expect": "allow"},
-  {"cmd": "for k v in \"git status\" foo; do $k; done", "expect": "deny"}
+  {"cmd": "for k v in \"git status\" foo; do $k; done", "expect": "deny"},
+  {"why": "PR #82 CodeRabbit: the raw-string check deals a multi-name loop's items to the names in turn too", "cmd": "for k v in \"git status\" foo; do $v; done 'unterminated", "expect": "allow"},
+  {"cmd": "for k v in \"git status\" foo; do $k; done 'unterminated", "expect": "deny"}
 ]
