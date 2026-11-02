@@ -83,6 +83,12 @@ CASES = {
     "paused after the head commit": (dict(heads=AT_NOON, notes=[summary(notice=paused(OLD, HEAD))]), 3, "paused"),
     "pause older than the head commit": (dict(
         heads=AT_NOON, notes=[summary(notice=paused(OLD, OLD), updated="2026-11-02T11:00:00Z")]), 1, "no verdict"),
+    "rate-limit notice in the recent-review block": (dict(
+        heads=AT_NOON, notes=[summary(rate_limited(HEAD) + reviewed(OLD))]), 3, "rate limited"),
+    "recent review of the head without a verdict": (dict(
+        heads=AT_NOON, notes=[summary(reviewed(HEAD, verdict=""))]), 1, "no verdict"),
+    "pause naming an older commit, written after the head commit was made": (dict(
+        heads=AT_NOON, notes=[summary(notice=paused(OLD, OLD), updated="2026-11-02T12:30:00Z")]), 1, "no verdict"),
     "gh failure stops the wait": (dict(heads=AT_NOON, fail="reviews"), 2, ""),
     "head moves after a match": (dict(
         heads=[[HEAD, "2026-11-02T12:00:00Z"], [NEW, "2026-11-02T12:10:00Z"]],
