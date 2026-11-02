@@ -95,6 +95,8 @@ for what, pattern in (
 ):
     if not re.search(pattern, bot, re.S):
         errors.append(f"skills/issue-flow: its **Review bot.** paragraph in step 6 does not name {what}")
+if not re.search(r"pulls/\S+/comments\" --jq '[^']*in_reply_to_id == null", bot):
+    errors.append("skills/issue-flow: item 2's inline query must keep the bot's thread starters only (in_reply_to_id == null)")
 if "wait-review.py" not in bot:
     errors.append("skills/issue-flow: its **Review bot.** paragraph must start wait-review.py, whose cases tests/test_wait_review.py runs")
 step7 = re.search(r"^## 7\..*?(?=^## )", flow, re.M | re.S)

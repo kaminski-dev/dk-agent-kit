@@ -25,6 +25,9 @@ if args[:2] == ["pr", "view"]:
 else:
     path = next(a for a in args if a.startswith("repos/"))
     name = "reviews" if path.endswith("/reviews") else "inline" if "/pulls/" in path else "notes"
+if fix.get("stall") == name:
+    import time
+    time.sleep(10)
 if fix.get("fail") == name:
     print('{"message":"API rate limit exceeded"}')
     print("gh: API rate limit exceeded (HTTP 403)", file=sys.stderr)
@@ -89,7 +92,8 @@ CASES = {
         heads=AT_NOON, notes=[summary(reviewed(HEAD, verdict=""))]), 1, "no verdict"),
     "pause naming an older commit, written after the head commit was made": (dict(
         heads=AT_NOON, notes=[summary(notice=paused(OLD, OLD), updated="2026-11-02T12:30:00Z")]), 1, "no verdict"),
-    "gh failure stops the wait": (dict(heads=AT_NOON, fail="reviews"), 2, ""),
+    "stalled gh call stops the wait": (dict(heads=AT_NOON, stall="reviews", args=["--gh-timeout", "1"], err="timed out"), 2, ""),
+    "gh failure stops the wait": (dict(heads=AT_NOON, fail="reviews", err="rate limit"), 2, ""),
     "head moves after a match": (dict(
         heads=[[HEAD, "2026-11-02T12:00:00Z"], [NEW, "2026-11-02T12:10:00Z"]],
         reviews=[{"id": 9, "user": BOT, "commit_id": HEAD, "body": "x"}]), 1, f"on {NEW}"),
@@ -105,7 +109,7 @@ def run(root, name, fix):
     with open(os.path.join(case, "fix.json"), "w") as f:
         json.dump(fix, f)
     env = {"PATH": f"{root}/bin:{os.environ['PATH']}", "FIX": f"{case}/fix.json", "STATE": case}
-    return subprocess.run([sys.executable, "-I", SCRIPT, "1", "--polls", "2", "--interval", "0"],
+    return subprocess.run([sys.executable, "-I", SCRIPT, "1", "--polls", "2", "--interval", "0", *fix.get("args", [])],
                           capture_output=True, text=True, env=env, timeout=30)
 
 
@@ -118,7 +122,7 @@ def main():
         os.chmod(f"{root}/bin/gh", 0o755)
         for name, (fix, code, out) in CASES.items():
             proc = run(root, name, fix)
-            if proc.returncode == code and out in proc.stdout:
+            if proc.returncode == code and out in proc.stdout and fix.get("err", "") in proc.stderr:
                 print(f"ok   {name}")
             else:
                 failed += 1
