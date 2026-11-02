@@ -1075,16 +1075,15 @@ VARIABLE_COMMAND = ("deny", "zsh does not word-split a variable, so a command ke
                     "(\"command not found: git grep -n\"). Use a function with a descriptive name, an array "
                     "(`cmd=(git grep -n); $cmd foo`), or `${=name}`, which splits it (the fix for a loop "
                     "over quoted commands).")
-SPACED_ITEM = r"\"[^\"]*\s[^\"]*\"|'[^']*\s[^']*'"
-SPACED_RAW = re.compile(r"(?:^|[\s;&|(])([A-Za-z_]\w*)=(?:" + SPACED_ITEM + ")")
+SPACED_RAW = re.compile(r"(?:^|[\s;&|(])([A-Za-z_]\w*)=(?:\"[^\"]*\s[^\"]*\"|'[^']*\s[^']*')")
 LOOP_ITEMS_RAW = re.compile(START + r"(?:for|foreach|select)\s+((?:[A-Za-z_]\w*\s+)*?[A-Za-z_]\w*)(?:\s+in\b|\s*\()"
                             + r"((?:[ \t]*(?:" + LOOP_ITEM + "))*)")
 
 
 def check_command_variable(cmd):
     spaced = [(m.start(1), m.end(), [m.group(1)]) for m in SPACED_RAW.finditer(cmd)]
-    spaced += [(m.start(1), m.end(), m.group(1).split()) for m in LOOP_ITEMS_RAW.finditer(cmd)
-               if re.search(SPACED_ITEM, m.group(2))]
+    spaced += [(m.start(1), m.end(), spaced_loop_names(m.group(1).split(), re.findall(LOOP_ITEM, m.group(2))))
+               for m in LOOP_ITEMS_RAW.finditer(cmd)]
     for start, end, names in spaced:
         if quoted_text(cmd, start, shell=ZSH_SCRIPT_OPENER):
             continue
@@ -1095,6 +1094,11 @@ def check_command_variable(cmd):
     return []
 
 
+def spaced_loop_names(names, items):
+    """The loop names that get an item with a space: zsh deals the items to the names in turn."""
+    return [name for k, name in enumerate(names) if any(re.search(r"\s", i) for i in items[k::len(names)])]
+
+
 def command_variable_words(segs):
     spaced = set()
     for seg in (seg for seg in segs if seg.shell == "zsh"):
@@ -1102,14 +1106,14 @@ def command_variable_words(segs):
         m = re.fullmatch(r"\$\{?([A-Za-z_]\w*)\}?", words[0]) if words else None
         if m and m.group(1) in spaced:
             return [VARIABLE_COMMAND]
-        assigned = [(name, "" if value.startswith("(") else value) for name, op, value in assignments(seg.words) if op]
+        assigned = [(name, not value.startswith("(") and bool(re.search(r"\s", value)))
+                    for name, op, value in assignments(seg.words) if op]
         loop = loop_header(seg.words)
-        if loop:  # zsh deals the items to the names in turn; a name holding one item with a space is spaced
+        if loop:
             names, items = loop
-            assigned += [(name, next((i for i in items[k::len(names)] if re.search(r"\s", i)), ""))
-                         for k, name in enumerate(names)]
-        for name, value in assigned:
-            if re.search(r"\s", value):
+            assigned += [(name, name in spaced_loop_names(names, items)) for name in names]
+        for name, holds_spaces in assigned:
+            if holds_spaces:
                 spaced.add(name)
             else:
                 spaced.discard(name)
