@@ -5,7 +5,8 @@ Several sessions share each primary checkout and only the branch pointer moves,
 so parallel sessions collide there. A repo opts in with
 `"env": {"DK_REQUIRE_WORKTREE": "1"}` in its committed .claude/settings.json;
 an edit to a file in its primary checkout is then denied with the worktree
-command from the repo's docs/agents/workflow.md. Linked worktrees, repos that
+command from the repo's docs/agents/workflow.md, or dk:issue-flow step 2's
+command when that file has none. Linked worktrees, repos that
 have not opted in and paths outside a repo are left alone, and so is every
 edit when the hook itself fails: it fails open.
 """

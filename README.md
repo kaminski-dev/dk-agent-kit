@@ -134,8 +134,9 @@ A repo can require worktrees with one committed setting in its
 ```
 
 An Edit or Write to a file in that repo's primary checkout is then denied
-with the worktree command from its `docs/agents/workflow.md`; the same edit in
-a linked worktree goes through. Several sessions share a primary checkout and
+with the worktree command from its `docs/agents/workflow.md`, or, when that
+file has none, `dk:issue-flow`'s command on `origin/pre-main` (the remote's
+default branch without it); the same edit in a linked worktree goes through. Several sessions share a primary checkout and
 only the branch pointer moves, which is where parallel sessions collided.
 Both hooks fail open: a crash never blocks an edit.
 
