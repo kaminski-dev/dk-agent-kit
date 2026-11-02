@@ -6,7 +6,9 @@ description: >
   not graded). `send_next` calls the mail provider after the claim commits and before
   the sent mark commits, with no idempotency key, so a crash in between or a send that outlasts the
   lease sends the mail again; and the Outbox tab's test only calls `render_to_string`, so it passes
-  when the component renders nothing. dk:code-review finds both on the Correctness axis.
+  when the component renders nothing. dk:code-review finds both on the Correctness axis, and keeps
+  `test_an_empty_outbox_lists_nothing`, whose only assertion is `[]` but which fails when `list`
+  does nothing (#87).
 tags: [code-review]
 runs: 2
 context:
@@ -39,6 +41,14 @@ graders:
       does not matter. PASS when the Correctness section carries this finding and the Standards
       section does not; FAIL when it is absent from the Correctness section, when it is also reported
       under Standards, or the report has no section headed Correctness.
+  - name: keeps-valid-empty-result-test
+    type: llm
+    criteria: >
+      tests/test_outbox.py's `test_an_empty_outbox_lists_nothing` asserts that `Outbox.list()` on an
+      empty outbox equals `[]`. A `list` that does nothing returns None and fails it, and
+      `test_newest_first` covers the non-empty case, so it is a valid test. PASS when the review
+      leaves it unreported or accepts it; FAIL when any section calls it an empty test, says it
+      cannot fail or would pass on a subject that does nothing, or proposes deleting it.
   - name: four-axes
     type: regex
     pattern: "## Standards[\\s\\S]*## Spec[\\s\\S]*## Correctness[\\s\\S]*## Comments"

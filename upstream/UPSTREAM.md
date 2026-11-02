@@ -38,7 +38,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 |---|---|---|
 | skills/blast-radius | pstack/skills/blast-radius | model-invoked; shared-modules section; pointers to how/why/arena/unslop dropped |
 | skills/retro correct step, rule-to-check table | pstack/skills/correct | folded into the retro as a step; proposes fixes instead of making them; table in the retro report, not the instruction file |
-| code-review Empty Test, Defensive Interior | pstack/skills/principle-test-behavior-not-implementation, pstack/skills/principle-boundary-discipline | condensed: Defensive Interior into a baseline entry, Empty Test into the Correctness axis's test question |
+| code-review Empty Test, Defensive Interior | pstack/skills/principle-test-behavior-not-implementation, pstack/skills/principle-boundary-discipline | condensed: Defensive Interior into a baseline entry, Empty Test into the Correctness axis's test question, where an empty-result-only assertion counts as empty only when a subject that does nothing still returns that result (#87) |
 | skills/verify-doc-check | pstack/skills/maintain-verification-skill | target is `docs/agents/verify.md` under `dk:verify`; readers per doc section; worktree on `origin/pre-main`, `origin/main` without it; fixes in one PR into `pre-main`, product gaps as `needs-triage` issues; teardown proven by `dk-pg status` |
 | agents/comment-reviewer | pstack/agents/comment-sicko.md | scoped to comments on added lines; Restates (Reshape folded in), Narrates history, Stale, Commented-out code findings; Suppression left to Standards; repo comment policy overrides the keep list; report only, persona and `/how` `/why` calls dropped |
 

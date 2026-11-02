@@ -1,15 +1,15 @@
-From 41dda5c014b5c40524f039eaf63c362c4fc61b35 Mon Sep 17 00:00:00 2001
+From 21105c4f596cbe265f2c3d0043d0c8c4e25fe32c Mon Sep 17 00:00:00 2001
 From: Eval Agent <eval@example.com>
 Date: Tue, 20 Oct 2026 10:12:00 +0200
 Subject: [PATCH] Send the accountant's queued mail (#388)
 
 ---
  ledger/__main__.py      | 11 +++++++-
- ledger/mail_provider.py | 18 +++++++++++++
- ledger/outbox.py        | 60 +++++++++++++++++++++++++++++++++++++++++
- ledger/web.py           | 23 ++++++++++++++++
- tests/test_outbox.py    | 54 +++++++++++++++++++++++++++++++++++++
- 5 files changed, 165 insertions(+), 1 deletion(-)
+ ledger/mail_provider.py | 18 ++++++++++++
+ ledger/outbox.py        | 60 +++++++++++++++++++++++++++++++++++++++
+ ledger/web.py           | 23 +++++++++++++++
+ tests/test_outbox.py    | 62 +++++++++++++++++++++++++++++++++++++++++
+ 5 files changed, 173 insertions(+), 1 deletion(-)
  create mode 100644 ledger/mail_provider.py
  create mode 100644 ledger/outbox.py
  create mode 100644 ledger/web.py
@@ -177,10 +177,10 @@ index 0000000..5d3d457
 +        return f'<table class="outbox">{rows}</table>'
 diff --git a/tests/test_outbox.py b/tests/test_outbox.py
 new file mode 100644
-index 0000000..44bba6c
+index 0000000..c85a929
 --- /dev/null
 +++ b/tests/test_outbox.py
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,62 @@
 +import sqlite3
 +import unittest
 +from datetime import datetime, timedelta, timezone
@@ -206,6 +206,14 @@ index 0000000..44bba6c
 +    o.queue("accountant@example.com", "Week 41", "3 Customers changed", "2026-10-12T08:00:00Z")
 +    o.queue("accountant@example.com", "Week 42", "1 Customer changed", "2026-10-19T08:00:00Z")
 +    return o
++
++
++class OutboxList(unittest.TestCase):
++    def test_newest_first(self):
++        self.assertEqual([m["subject"] for m in outbox(Provider()).list()], ["Week 42", "Week 41"])
++
++    def test_an_empty_outbox_lists_nothing(self):
++        self.assertEqual(Outbox(sqlite3.connect(":memory:"), Provider()).list(), [])
 +
 +
 +class SendNext(unittest.TestCase):
