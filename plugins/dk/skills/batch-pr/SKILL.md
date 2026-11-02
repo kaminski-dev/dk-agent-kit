@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Batch PR
 
-The batch PR takes everything merged into `pre-main` since the last batch into `main`, and its merge deploys. GitHub acts on `Closes #N` only in a PR into the default branch, so the batch PR repeats every merged PR's `Closes #N` or `Refs #N` line (the `dk:issue-flow` skill, step 6): its merge closes each `Closes` issue and leaves each `Refs` issue open for its post-deploy check. This skill opens the PR; the maintainer merges it and moves both branches.
+The batch PR takes everything merged into `pre-main` since the last batch into `main`, and its merge deploys. It carries every merged PR's `Closes #N` or `Refs #N` line, for the reason the `dk:issue-flow` skill gives in step 6. This skill opens the PR; the maintainer merges it and moves both branches.
 
 ## 1. Collect
 
@@ -32,9 +32,9 @@ Call the Skill tool with `dk:pr` and write the body to `batch-pr.md` in the sess
 - **Summary**: the `## PRs` list as printed. A PR from `## Without a line` gets `(no issue)` after its title.
 - **Evidence**: the latest CI run on `pre-main` (`gh run list --branch pre-main --limit 1 --json workflowName,conclusion,url`); each PR carries its own evidence.
 - **Merge Danger**: read each PR's own Merge Danger (`gh pr view N --json body`). The batch is a one-way door when any of them is, and names that PR.
-- **Last lines**: every line under `## Lines`, exactly as printed.
+- **Closing lines**: every line under `## Lines`, exactly as printed, as the body's last lines.
 
-Done when every PR from step 1 appears in the Summary and every line in the closing block.
+Done when every PR from step 1 appears in the Summary and every line under `## Lines` in the closing lines.
 
 ## 3. Open
 

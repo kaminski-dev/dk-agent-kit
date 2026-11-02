@@ -32,8 +32,6 @@ def pr(number, base, head, state, body, merge_commit=None):
 
 
 class Workspace:
-    """A repo whose origin has main and pre-main, and a gh stand-in holding the PRs."""
-
     def __init__(self):
         self.root = pathlib.Path(tempfile.mkdtemp(prefix="dk-batch-"))
         (self.root / ".bin").mkdir()
@@ -122,7 +120,6 @@ check("Closes and Refs for one issue: Refs alone",
       "Refs #201\n" in r.stdout and "Closes #201" not in r.stdout, r.stdout)
 ws.remove()
 
-# A batch PR already open: print its URL, open nothing.
 ws = Workspace()
 ws.git("branch", "pre-main")
 ws.git("checkout", "-q", "pre-main")
@@ -138,7 +135,6 @@ check("open batch PR: prints its URL", "https://github.com/acme/ledger/pull/32" 
 check("open batch PR: opens no PR", "pr create" not in calls, calls)
 ws.remove()
 
-# pre-main level with main: nothing to batch.
 ws = Workspace()
 ws.git("branch", "pre-main")
 ws.push()

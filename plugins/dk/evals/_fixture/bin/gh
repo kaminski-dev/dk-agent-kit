@@ -110,7 +110,11 @@ def open_blockers(state, num):
 def blocked_filter(search):
     """is:blocked (an open blocker) or -is:blocked in a --search; other search terms are ignored."""
     words = (search or "").split()
-    return True if "is:blocked" in words else False if "-is:blocked" in words else None
+    if "is:blocked" in words:
+        return True
+    if "-is:blocked" in words:
+        return False
+    return None
 
 
 def pick(d, o):
@@ -267,7 +271,6 @@ def pr_json(state, pr):
 
 
 def cmd_api(args, state):
-    """GET an issue or its native blockers; nothing else is served."""
     pos, o = opts(args, VALUE_FLAGS, MULTI)
     method = (o.get("--method") or o.get("-X") or "GET").upper()
     parts = pos[0].strip("/").split("/") if pos else []

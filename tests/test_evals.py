@@ -350,11 +350,10 @@ def numbers(cmd):
 
 
 ready = "gh issue list --state open --label ready-for-agent --json number"
-check("ready: the label alone lists the blocked #371 too", numbers(ready) == [370, 371, 372, 373], numbers(ready))
-check("ready: -is:blocked leaves out #371 alone", numbers(ready + " --search '-is:blocked'") == [370, 372, 373],
-      numbers(ready + " --search '-is:blocked'"))
-check("ready: is:blocked counts only an open blocker", numbers(ready + " --search is:blocked") == [371],
-      numbers(ready + " --search is:blocked"))
+by_label, unblocked, blocked = numbers(ready), numbers(ready + " --search '-is:blocked'"), numbers(ready + " --search is:blocked")
+check("ready: the label alone lists the blocked #371 too", by_label == [370, 371, 372, 373], by_label)
+check("ready: -is:blocked leaves out #371 alone", unblocked == [370, 372, 373], unblocked)
+check("ready: is:blocked counts only an open blocker", blocked == [371], blocked)
 blockers = json.loads(run(ws, "gh api repos/acme/ledger/issues/371/dependencies/blocked_by").stdout)
 check("ready: the API names #372 as #371's open blocker",
       [(b["number"], b["state"]) for b in blockers] == [(372, "open")], blockers)
