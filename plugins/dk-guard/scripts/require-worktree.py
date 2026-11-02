@@ -49,9 +49,19 @@ def opted_in(root):
 
 
 def base(root):
-    """dk:issue-flow's base from local refs only: a fetch here could outlast the hook's timeout."""
-    refs = (git(root, "for-each-ref", "--format=%(refname)", "refs/remotes/origin/pre-main") or "").splitlines()
-    return "origin/pre-main" if "refs/remotes/origin/pre-main" in refs else "origin/main"
+    """dk:issue-flow's base from local refs only: a fetch here could outlast the hook's timeout.
+
+    origin/pre-main, else the remote's default branch (origin/HEAD), else origin/main.
+    """
+    out = git(root, "for-each-ref", "--format=%(refname) %(symref)",
+              "refs/remotes/origin/pre-main", "refs/remotes/origin/HEAD") or ""
+    refs = dict((line.split(" ", 1) + [""])[:2] for line in out.splitlines())
+    if "refs/remotes/origin/pre-main" in refs:
+        return "origin/pre-main"
+    default = refs.get("refs/remotes/origin/HEAD", "")
+    if default.startswith("refs/remotes/origin/"):
+        return default[len("refs/remotes/"):]
+    return "origin/main"
 
 
 def worktree_command(root):
