@@ -9,6 +9,7 @@ not red before the fix would let an eval pass without the skill doing its job.
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -89,6 +90,68 @@ left = sorted(p.name for p in (ws / ".tracker").glob("pr-*"))
 check("353: a failed extraction leaves no checkout in .tracker", left == [], left)
 
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
+# --- Fan-out fixture: #353 and #376 in one run, their fixes editing the same query --------------
+
+
+def pull_on(ws, num, ref):
+    """Open a PR for ticket num from ref through the stand-in and return what it recorded for num."""
+    git(ws, "app", "push", "-q", "-f", "origin", f"{ref}:refs/heads/fix/{num}-check")
+    r = run(ws, f"gh pr create --base pre-main --head fix/{num}-check --title t --body 'Closes #{num}'", cwd=ws / "app")
+    pull = ws / ".tracker" / "pulls" / f"{num}.md"
+    return pull.read_text() if pull.exists() else r.stderr
+
+
+ws = scaffold("implement-wave")
+ready = json.loads(run(ws, "gh issue list --label ready-for-agent --json number").stdout or "[]")
+check("wave: both tickets are briefed and ready", sorted(i["number"] for i in ready) == [353, 376], ready)
+for num in ("353", "376"):
+    pr = pull_on(ws, num, "origin/pre-main")
+    check(f"wave: #{num}'s acceptance fails on the pre-fix state", "acceptance: fail" in pr, pr)
+    git(ws, "app", "checkout", "-q", "-b", f"reference-{num}", "origin/pre-main")
+    patch = run(ws, f"git apply '{REFERENCE / f'reference-{num}.patch'}'", cwd=ws / "app")
+    check(f"wave: #{num}'s reference fix applies", patch.returncode == 0, patch.stderr)
+    git(ws, "app", "commit", "-qam", f"reference {num}")
+    pr = pull_on(ws, num, f"reference-{num}")
+    check(f"wave: #{num}'s acceptance passes on its reference fix",
+          "acceptance: pass" in pr and "unit tests: pass" in pr, pr)
+merge = git(ws, "app", "merge-tree", "--write-tree", "--name-only", "reference-353", "reference-376")
+check("wave: the two reference fixes conflict in a dry merge",
+      merge.returncode == 1 and "ledger/audit_store.py" in merge.stdout, (merge.returncode, merge.stdout, merge.stderr))
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
+
+def input_matches(case):
+    """{grader name: input_match} from a case.yaml, whose graders quote input_match in single quotes."""
+    text = (EVALS / case / "case.yaml").read_text()
+    out = {}
+    for block in re.split(r"\n  - ", text)[1:]:
+        name = re.search(r"name: (\S+)", block)
+        pattern = re.search(r"input_match: '((?:[^']|'')*)'", block)
+        if name and pattern:
+            out[name.group(1)] = pattern.group(1).replace("''", "'")
+    return out
+
+
+def brief(prompt, **extra):
+    """An Agent call's input as the grader sees it: the tool input serialised as JSON."""
+    return json.dumps({"description": "Implement a ticket", "prompt": prompt, **extra}, separators=(",", ":"))
+
+
+matches = input_matches("implement-wave")
+user_only = sorted(p.parent.name for p in (EVALS.parent / "skills").glob("*/SKILL.md")
+                   if "\ndisable-model-invocation: true\n" in p.read_text())
+named = matches.get("briefs-name-no-user-only-skill", "(?!)")
+missed = [s for s in user_only if not re.search(named, brief(f"Call the Skill tool with dk:{s} for #353."))]
+check("wave: the brief grader catches every user-only skill", user_only and not missed, missed)
+flagged = [s for s in ("issue-flow", "tdd", "verify", "code-review", "pr")
+           if re.search(named, brief(f"Call the Skill tool with dk:{s}."))]
+check("wave: the brief grader passes the skills a brief should name", not flagged, flagged)
+isolated = matches.get("no-harness-isolation", "(?!)")
+check("wave: the isolation grader catches a brief with worktree isolation",
+      re.search(isolated, brief("Work in ../app-353.", isolation="worktree")) is not None, isolated)
+check("wave: the isolation grader passes a brief without it", re.search(isolated, brief("Work in ../app-353.")) is None,
+      isolated)
 
 # The review fixture: a branch that fixes #353 correctly but breaks one documented standard.
 ws = scaffold("code-review-353")
