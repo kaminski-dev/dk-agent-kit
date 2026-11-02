@@ -31,6 +31,6 @@ graders:
       (CODING_STANDARDS.md rule 1). The axis it appears under does not matter. PASS when the report
       carries this finding for ledger/export.py; FAIL when that file is not mentioned, or only the
       committed f-string in `list_by_entity` is reported.
-  - name: three-axes
+  - name: four-axes
     type: regex
-    pattern: "## Standards[\\s\\S]*## Spec[\\s\\S]*## Comments"
+    pattern: "## Standards[\\s\\S]*## Spec[\\s\\S]*## Correctness[\\s\\S]*## Comments"

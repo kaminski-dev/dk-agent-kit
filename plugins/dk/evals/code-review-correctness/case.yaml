@@ -1,0 +1,50 @@
+schema_version: "1.1"
+name: code-review-correctness
+description: >
+  #388 on a stand-in repo: the branch sends queued mail and follows every documented standard, but
+  carries two seeded runtime defects (a third, `send-mail` stopping at the first failed send, is
+  not graded). `send_next` calls the mail provider after the claim commits and before
+  the sent mark commits, with no idempotency key, so a crash in between or a send that outlasts the
+  lease sends the mail again; and the Outbox tab's test only calls `render_to_string`, so it passes
+  when the component renders nothing. dk:code-review finds both on the Correctness axis.
+tags: [code-review]
+runs: 2
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 60
+  timeout_seconds: 1200
+  allowed_tools: [Read, Glob, Grep, Skill, Agent, TodoWrite, Bash]
+graders:
+  - name: finds-crash-window
+    type: llm
+    criteria: >
+      The review's Correctness section reports that `Outbox.send_next` in ledger/outbox.py calls the
+      mail provider outside the transaction that claims the message: the claim commits, then the
+      send runs, then `sent_at` commits separately, so a process that dies after the send and before
+      the `sent_at` commit (or a send that outlasts the lease) leaves the message to be claimed and
+      sent again. Naming the missing idempotency key, or proposing one, counts as the same finding.
+      Whether it also appears under another axis does not matter. PASS when the Correctness section
+      carries this finding; FAIL when it is absent from the Correctness section, or the
+      report has no section headed Correctness.
+  - name: finds-empty-test
+    type: llm
+    criteria: >
+      The review's Correctness section reports that the Outbox tab's test in tests/test_outbox.py
+      (`test_lists_each_message_and_whether_it_went_out`) only calls `render_to_string` and asserts
+      nothing, so it would pass if the component rendered nothing and does not check the rows its
+      name claims. Whether it also appears under another axis does not matter. PASS when the
+      Correctness section carries this finding; FAIL when it is absent from the Correctness section, or the
+      report has no section headed Correctness.
+  - name: four-axes
+    type: regex
+    pattern: "## Standards[\\s\\S]*## Spec[\\s\\S]*## Correctness[\\s\\S]*## Comments"
+  - name: standards-spec-correctness-reviewers
+    type: tool_used
+    tool: Agent
+    input_match: '"subagent_type"\s*:\s*"dk:reviewer"'
+    min: 3
+  - name: comments-reviewer
+    type: tool_used
+    tool: Agent
+    input_match: '"subagent_type"\s*:\s*"dk:comment-reviewer"'

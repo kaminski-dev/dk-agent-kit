@@ -55,7 +55,7 @@ solution.
 flowchart LR
   ready(["ready-for-agent"]) --> implement["dk:implement<br/>worktree off pre-main"]
   implement --> verify["dk:verify<br/>control run, teardown"]
-  verify --> review["dk:code-review<br/>Standards, Spec, Comments"]
+  verify --> review["dk:code-review<br/>Standards, Spec, Correctness, Comments"]
   review --> pr["dk:pr<br/>PR into pre-main"]
   implement -. "side finding" .-> intake{"scope<br/>intake"}
   intake -- "small, same place" --> implement
@@ -188,7 +188,8 @@ bash tests/test_sync.sh
 claude plugin validate .
 ```
 
-The evals for `dk:implement`, `dk:triage`, `dk:code-review` and `dk:verify` live in
+The evals for `dk:implement`, `dk:triage`, `dk:code-review` (a report on all four axes, with
+seeded Standards and Correctness defects) and `dk:verify` live in
 `plugins/dk/evals/` and need a model, so they run by hand (the command is in
 `docs/agents/workflow.md`), not in CI.
 
