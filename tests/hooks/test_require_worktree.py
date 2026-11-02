@@ -46,7 +46,6 @@ def add_worktree(repo, path):
 
 
 def add_remote_ref(repo, branch, default=False):
-    """A remote-tracking ref as a fetch leaves it; no remote is ever contacted."""
     subprocess.run(["git", "-C", repo, "update-ref", f"refs/remotes/origin/{branch}", "HEAD"], check=True)
     if default:
         subprocess.run(["git", "-C", repo, "symbolic-ref", "refs/remotes/origin/HEAD",

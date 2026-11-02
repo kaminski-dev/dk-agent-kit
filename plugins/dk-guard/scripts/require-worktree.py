@@ -50,13 +50,13 @@ def opted_in(root):
 
 
 def base(root):
-    """dk:issue-flow's base from local refs only: a fetch here could outlast the hook's timeout.
-
-    origin/pre-main, else the remote's default branch (origin/HEAD), else origin/main.
-    """
+    """dk:issue-flow's base from local refs only: a fetch here could outlast the hook's timeout."""
     out = git(root, "for-each-ref", "--format=%(refname) %(symref)",
               "refs/remotes/origin/pre-main", "refs/remotes/origin/HEAD") or ""
-    refs = dict((line.split(" ", 1) + [""])[:2] for line in out.splitlines())
+    refs = {}
+    for line in out.splitlines():
+        name, _, target = line.partition(" ")
+        refs[name] = target
     if "refs/remotes/origin/pre-main" in refs:
         return "origin/pre-main"
     default = refs.get("refs/remotes/origin/HEAD", "")
