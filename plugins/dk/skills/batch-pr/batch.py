@@ -11,7 +11,8 @@ Exit 0: collected. Exit 3: a PR from pre-main into main is already open; its
 URL is printed. Exit 4: nothing to batch (no pre-main on origin, or pre-main
 holds no commit that main lacks). Exit 1: git or gh failed, or a PR merged
 into pre-main has a merge commit this clone does not hold; it names them.
-A shallow or single-branch clone is deepened and given both branches first.
+Both branches are fetched by name, so a single-branch clone gets pre-main too;
+a shallow clone is deepened first.
 
 An issue named by both a Closes and a Refs line gets Refs: a post-deploy
 check outranks closing on merge.

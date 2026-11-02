@@ -416,7 +416,7 @@ for src, cmd in commands:
 got = ready_py()
 check("ready.py: lists all 43 past 30", isinstance(got, tuple) and len(got[0]) == 43, got)
 
-# Past the blocker read's page of 30: #379's 30 closed blockers fill page one, the open #372 is on page two.
+# Past the blocker read's page of 30, GitHub's default.
 state = json.loads(state_file.read_text())
 for n in range(440, 470):
     state["issues"][str(n)] = {"title": f"Issue {n}", "body": "", "state": "closed", "labels": [], "comments": []}
