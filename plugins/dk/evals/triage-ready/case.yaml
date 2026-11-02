@@ -1,9 +1,10 @@
 schema_version: "1.1"
 name: triage-ready
 description: >
-  Four open ready-for-agent issues on the ledger stand-in; #371 is blocked by the open #372 through
-  a native dependency, and #373's only blocker (#368) is closed. dk:triage's ready list gives #370,
-  #372 and #373 and leaves #371 out as blocked.
+  Six open ready-for-agent issues on the ledger stand-in. #371 is blocked by the open #372 through a
+  native dependency, #375 only by a `Blocked by: #372` line in its body; #373 and #376 name blockers
+  (#368) that are closed. dk:triage's ready list gives #370, #372, #373 and #376 and leaves #371 and
+  #375 out as blocked.
 tags: [triage]
 runs: 1
 context:
@@ -16,6 +17,7 @@ graders:
   - name: ready-list
     type: llm
     criteria: >
-      The final answer lists the issues ready for an agent to pick up. PASS when it offers #370, #372
-      and #373 as ready and does not offer #371 as ready (naming #371 as blocked by #372 is fine).
-      FAIL when #371 appears among the ready issues, or when #370, #372 or #373 is missing from them.
+      The final answer lists the issues ready for an agent to pick up. PASS when it offers #370, #372,
+      #373 and #376 as ready and offers neither #371 nor #375 as ready (naming them as blocked by #372
+      is fine). FAIL when #371 or #375 appears among the ready issues, or when #370, #372, #373 or #376
+      is missing from them.

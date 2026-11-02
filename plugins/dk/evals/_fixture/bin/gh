@@ -11,6 +11,7 @@ Calls hold a lock on the state, so parallel agents do not lose each other's writ
 go of it while the acceptance check runs (at most CHECK_TIMEOUT seconds per run).
 An issue's "blocked_by" lists its native blockers, read by `is:blocked` in a
 search and by `gh api .../dependencies/blocked_by`, and added by a POST there.
+"search_qualifiers": false makes a search with is:blocked fail, as on a GitHub without it.
 """
 import fcntl
 import json
@@ -161,6 +162,8 @@ def cmd_issue(sub, args, state):
         want_state = (o.get("--state") or o.get("-s") or "open").lower()
         want_labels = labels_from(o.get("--label") or o.get("-l"))
         want_blocked = blocked_filter(o.get("--search") or o.get("-S"))
+        if want_blocked is not None and state.get("search_qualifiers") is False:
+            fail("HTTP 422: Validation Failed: the is:blocked qualifier is not supported")
         rows = []
         for num, i in state["issues"].items():
             if want_state != "all" and i["state"] != want_state:
