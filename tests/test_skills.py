@@ -9,7 +9,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DK = ROOT / "plugins" / "dk"
-ORIGINAL = {"issue-flow", "post-deploy-check", "verify"}  # written for the kit, no upstream row
+ORIGINAL = {"batch-pr", "issue-flow", "post-deploy-check", "verify"}  # written for the kit, no upstream row
 CLIENT_REPOS = ("jetztbar", "clientdata", "kaminski-advies")  # their facts live in their own docs/agents/
 
 errors = []
