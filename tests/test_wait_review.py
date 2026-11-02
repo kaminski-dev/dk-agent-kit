@@ -26,9 +26,10 @@ if args[:2] == ["pr", "view"]:
 else:
     path = next(a for a in args if a.startswith("repos/"))
     name = "reviews" if path.endswith("/reviews") else "inline" if "/pulls/" in path else "notes"
-if name in (fix.get("stall"), fix.get("slow")):
+delays = {fix.get("stall"): 10, fix.get("slow"): 3}
+if name in delays:
     import time
-    time.sleep(10 if fix.get("stall") == name else 3)
+    time.sleep(delays[name])
 if fix.get("fail") == name:
     print('{"message":"API rate limit exceeded"}')
     print("gh: API rate limit exceeded (HTTP 403)", file=sys.stderr)
@@ -128,13 +129,13 @@ def main():
         os.chmod(f"{root}/bin/gh", 0o755)
         for name, (fix, code, out) in CASES.items():
             proc, took = run(root, name, fix)
-            on_time = took <= fix.get("within", 25)
-            if proc.returncode == code and out in proc.stdout and fix.get("err", "") in proc.stderr and on_time:
+            within = fix.get("within", 25)
+            if proc.returncode == code and out in proc.stdout and fix.get("err", "") in proc.stderr and took <= within:
                 print(f"ok   {name}")
             else:
                 failed += 1
                 print(f"FAIL {name}: exit {proc.returncode} (want {code}), stdout {proc.stdout.strip()!r} "
-                      f"(want {out!r}), stderr {proc.stderr.strip()[-200:]!r}, {took:.1f} s (want <= {fix.get('within', 25)} s)")
+                      f"(want {out!r}), stderr {proc.stderr.strip()[-200:]!r}, {took:.1f} s (want <= {within} s)")
     print(f"\n{len(CASES) - failed}/{len(CASES)} passed")
     sys.exit(1 if failed else 0)
 

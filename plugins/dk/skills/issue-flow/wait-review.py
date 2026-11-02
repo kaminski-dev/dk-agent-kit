@@ -26,7 +26,7 @@ NO_FINDINGS = "No actionable comments were generated in the recent review."
 
 
 GH_TIMEOUT = 60
-deadline = float("inf")  # time.monotonic() at which the wait gives up
+deadline = float("inf")
 
 
 class GhFailed(Exception):
@@ -109,7 +109,7 @@ def wait(pr, bot, minutes, interval):
     try:
         while True:
             sha = head(pr)
-            if sha != current:  # a new head restarts the deadline
+            if sha != current:
                 current, deadline = sha, time.monotonic() + minutes * 60
             found = reviews_of(pr, bot, sha)
             verdict = (0, "reviews " + " ".join(found)) if found else summary_verdict(pr, bot, sha)
