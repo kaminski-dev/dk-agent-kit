@@ -3,12 +3,18 @@
 
 State lives in <workspace>/.tracker/state.json. Every call is logged to
 .tracker/calls.log; what the graders read is written as plain text:
-.tracker/issue-<N>.md (labels, state and every comment) and .tracker/pr.md
-(the last PR opened, with the acceptance result for its head branch).
+.tracker/issue-<N>.md (labels, state and every comment), .tracker/pr.md
+(the last PR opened, with the acceptance result for its head branch) and
+.tracker/pulls/<N>.md (the last PR for issue N, read from a <type>/<N>-<slug> head); "last" is
+the highest PR number, in whatever order their checks finish.
+Calls hold a lock on the state, so parallel agents do not lose each other's writes; `pr create` lets
+go of it while the acceptance check runs (at most CHECK_TIMEOUT seconds per run).
 """
+import fcntl
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -18,6 +24,8 @@ WS = pathlib.Path(__file__).resolve().parent.parent
 TRACKER = WS / ".tracker"
 STATE = TRACKER / "state.json"
 NOW = "2026-10-13T09:00:00Z"
+CHECK_TIMEOUT = 300
+LOCK = None
 
 
 def load():
@@ -196,10 +204,18 @@ def current_branch(cwd):
     return r.stdout.strip()
 
 
-def acceptance(head):
-    """Check out head from the workspace's origin and run the repo's tests and the hidden acceptance check."""
-    check = TRACKER / "acceptance.py"
-    if not check.exists():
+def issue_of(head):
+    m = re.match(r"[^/]+/(\d+)-", head)
+    return m.group(1) if m else None
+
+
+def acceptance(head, num):
+    """Check out head from the workspace's origin and run the repo's tests and issue num's hidden acceptance check.
+
+    No lines when the issue has no check: the PR record then carries no verdict for it.
+    """
+    check = TRACKER / f"acceptance-{num}.py"
+    if num is None or not check.exists():
         return []
     origin = WS / "origin.git"
     archive = subprocess.run(["git", "--git-dir", str(origin), "archive", f"refs/heads/{head}"], capture_output=True)
@@ -210,13 +226,25 @@ def acceptance(head):
         if subprocess.run(["tar", "-x", "-C", str(src)], input=archive.stdout, capture_output=True).returncode != 0:
             return [f"acceptance: fail (could not extract {head})"]
         unit = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-q"], cwd=src,
-                              capture_output=True, text=True)
-        acc = subprocess.run([sys.executable, str(check), str(src)], capture_output=True, text=True)
+                              capture_output=True, text=True, timeout=CHECK_TIMEOUT)
+        acc = subprocess.run([sys.executable, str(check), str(src)], capture_output=True, text=True,
+                             timeout=CHECK_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return [f"acceptance: fail (a check ran past {CHECK_TIMEOUT} s)"]
     finally:
         shutil.rmtree(src, ignore_errors=True)
     return [f"unit tests: {'pass' if unit.returncode == 0 else 'fail'}",
             f"acceptance: {'pass' if acc.returncode == 0 else 'fail'}",
             (acc.stdout + acc.stderr).strip()]
+
+
+def write_record(path, num, record):
+    """Write PR num's record unless path holds a newer PR's: checks run unlocked and can finish out of order."""
+    if path.exists():
+        held = re.match(r"# PR #(\d+)", path.read_text())
+        if held and int(held.group(1)) > num:
+            return
+    path.write_text(record)
 
 
 def cmd_pr(sub, args, state):
@@ -229,8 +257,16 @@ def cmd_pr(sub, args, state):
               "base": base, "head": head, "state": "OPEN"}
         state["prs"].append(pr)
         save(state)
-        lines = [f"# PR #{num} {pr['title']}", f"base: {base}", f"head: {head}"] + acceptance(head)
-        (TRACKER / "pr.md").write_text("\n".join(lines) + "\n\n## Body\n\n" + pr["body"] + "\n")
+        issue = issue_of(head)
+        fcntl.flock(LOCK, fcntl.LOCK_UN)
+        checks = acceptance(head, issue)
+        fcntl.flock(LOCK, fcntl.LOCK_EX)
+        lines = [f"# PR #{num} {pr['title']}", f"base: {base}", f"head: {head}"] + checks
+        record = "\n".join(lines) + "\n\n## Body\n\n" + pr["body"] + "\n"
+        write_record(TRACKER / "pr.md", num, record)
+        if issue:
+            (TRACKER / "pulls").mkdir(exist_ok=True)
+            write_record(TRACKER / "pulls" / f"{issue}.md", num, record)
         print(f"https://github.com/{state['repo']}/pull/{num}")
     elif sub in ("view", "list"):
         prs = state["prs"]
@@ -249,6 +285,9 @@ def cmd_pr(sub, args, state):
 
 
 def main(argv):
+    global LOCK
+    LOCK = open(TRACKER / ".lock", "w")
+    fcntl.flock(LOCK, fcntl.LOCK_EX)
     with open(TRACKER / "calls.log", "a") as log:
         log.write(" ".join(argv) + "\n")
     if not argv:

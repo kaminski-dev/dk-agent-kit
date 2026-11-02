@@ -131,6 +131,17 @@ for n, line in enumerate(upstream.splitlines(), 1):
         elif i and "/" in paths[0] and "/" not in path:
             errors.append(f"{where}: shorthand upstream path {path!r}; write it from the repo root")
 
+# issue-flow's worktree, rebase and PR commands name the base (step 2), which a repo's workflow.md can set,
+# so a repo without pre-main gets its own branch and no needless ask to restore pre-main.
+for n, line in enumerate(skills["issue-flow"].read_text().splitlines(), 1):
+    if re.search(r"git ls-remote|git worktree add|gh pr create|^Rebase onto|is missing:", line) and "pre-main" in line:
+        errors.append(f"skills/issue-flow/SKILL.md:{n}: names pre-main where the base belongs")
+# Steps 6 and 7 describe the pre-main batch; step 2 says which parts lapse when the base is main.
+step2 = re.search(r"^## 2\..*?(?=^## 3\.)", skills["issue-flow"].read_text(), re.M | re.S)
+if not step2 or not re.search(r"When the base is `main`, there is no batch PR: `Closes #N` closes the issue on merge, "
+                              r"and step 6's batch-PR note and step 7's batch-review bullet do not apply\.", step2.group(0)):
+    errors.append("skills/issue-flow/SKILL.md: step 2 does not say what lapses when the base is main")
+
 for e in errors:
     print("FAIL", e)
 print(f"{len(skills)} skills, {len(agents)} agents, {len(errors)} problems")

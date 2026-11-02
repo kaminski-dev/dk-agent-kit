@@ -1,0 +1,72 @@
+schema_version: "1.1"
+name: implement-wave
+description: >
+  dk:implement with two briefed tickets (#353 and #376), worked by parallel subagents. The fixture
+  makes their branches conflict: #353 changes list_by_entity's ORDER BY and #376's brief drops the
+  row LIMIT on the line below it, so any pair of branches that meets both briefs conflicts
+  (tests/test_evals.py checks both facts and that the reference fixes conflict). The briefs must
+  name no user-only skill and ask for no harness worktree isolation, the wave stays within the
+  20-subagent limit, each ticket reaches a PR into pre-main, and the report names the conflict. The tracker is the
+  workspace's gh stand-in, so the PRs are files, never real ones.
+tags: [implement]
+runs: 1
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 150
+  timeout_seconds: 3600
+  allowed_tools: [Read, Glob, Grep, Skill, Agent, TodoWrite, Bash, Write, Edit]
+graders:
+  - name: briefs-name-no-user-only-skill
+    type: tool_used
+    tool: Agent
+    input_match: 'dk:(grill-with-docs|handoff|implement|implement-spec|improve-codebase-architecture|research-codebase|retro|setup|teach|to-spec|to-tickets|triage|verify-doc-check)\b'
+    min: 0
+    max: 0
+    arm: both
+  - name: no-harness-isolation
+    type: tool_used
+    tool: Agent
+    input_match: '"isolation"\s*:\s*"worktree"'
+    min: 0
+    max: 0
+    arm: both
+  - name: two-to-twenty-subagents
+    type: tool_used
+    tool: Agent
+    min: 2
+    max: 20
+    arm: both
+  - name: dry-merges
+    type: tool_used
+    tool: Bash
+    input_match: 'merge-tree'
+    arm: both
+  - name: pr-353-into-pre-main
+    type: regex
+    target: { source: file, path: .tracker/pulls/353.md }
+    pattern: "^base: pre-main$"
+    flags: m
+  - name: acceptance-353
+    type: regex
+    target: { source: file, path: .tracker/pulls/353.md }
+    pattern: "^acceptance: pass$"
+    flags: m
+  - name: pr-376-into-pre-main
+    type: regex
+    target: { source: file, path: .tracker/pulls/376.md }
+    pattern: "^base: pre-main$"
+    flags: m
+  - name: acceptance-376
+    type: regex
+    target: { source: file, path: .tracker/pulls/376.md }
+    pattern: "^acceptance: pass$"
+    flags: m
+  - name: reports-the-merge
+    type: llm
+    criteria: >
+      The tickets' briefs make their branches conflict in ledger/audit_store.py (#353 changes the
+      ORDER BY of list_by_entity, #376 drops the row LIMIT on the adjacent line). PASS when
+      the final message names that conflict: #353 and #376 (or their branches) together with
+      ledger/audit_store.py. FAIL when it reports no dry-merge result, says the branches merge cleanly,
+      or mentions a conflict without naming both tickets and the file.

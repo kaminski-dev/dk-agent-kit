@@ -9,10 +9,12 @@ not red before the fix would let an eval pass without the skill doing its job.
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 EVALS = ROOT / "plugins" / "dk" / "evals"
@@ -51,11 +53,15 @@ def git(ws, repo, *args):
     return run(ws, "git " + " ".join(args), cwd=ws / repo)
 
 
-def acceptance_on(ws, ref):
-    """Push ref as a branch and open a PR through the stand-in, which runs the acceptance check."""
-    git(ws, "app", "push", "-q", "origin", f"{ref}:refs/heads/fix/353-check")
-    r = run(ws, "gh pr create --base pre-main --head fix/353-check --title t --body 'Closes #353'", cwd=ws / "app")
-    return r, (ws / ".tracker" / "pr.md").read_text() if (ws / ".tracker" / "pr.md").exists() else ""
+def pull_on(ws, num, ref):
+    """Push ref as ticket num's branch and open a PR through the stand-in, which runs num's acceptance check.
+
+    Returns the stand-in's record of the PR, or gh's stderr when it recorded none.
+    """
+    git(ws, "app", "push", "-q", "-f", "origin", f"{ref}:refs/heads/fix/{num}-check")
+    r = run(ws, f"gh pr create --base pre-main --head fix/{num}-check --title t --body 'Closes #{num}'", cwd=ws / "app")
+    pull = ws / ".tracker" / "pulls" / f"{num}.md"
+    return pull.read_text() if pull.exists() else r.stderr
 
 
 # --- #353 fixture: Customer History order -------------------------------------------------------
@@ -66,15 +72,15 @@ check("353: origin has main and pre-main", "refs/heads/main" in heads and "refs/
 tests = run(ws, "python3 -m unittest discover -s tests -q", cwd=ws / "app")
 check("353: fixture's own tests pass", tests.returncode == 0, tests.stderr[-500:])
 
-r, pr = acceptance_on(ws, "origin/pre-main")
-check("353: acceptance fails on the pre-fix state", "acceptance: fail" in pr, pr or r.stderr)
+pr = pull_on(ws, "353", "origin/pre-main")
+check("353: acceptance fails on the pre-fix state", "acceptance: fail" in pr, pr)
 
 git(ws, "app", "checkout", "-q", "-b", "reference", "origin/pre-main")
 patch = run(ws, f"git apply '{REFERENCE / 'reference-353.patch'}'", cwd=ws / "app")
 check("353: reference fix applies", patch.returncode == 0, patch.stderr)
 git(ws, "app", "commit", "-qam", "reference")
-r, pr = acceptance_on(ws, "reference")
-check("353: acceptance passes on the reference fix", "acceptance: pass" in pr and "unit tests: pass" in pr, pr or r.stderr)
+pr = pull_on(ws, "353", "reference")
+check("353: acceptance passes on the reference fix", "acceptance: pass" in pr and "unit tests: pass" in pr, pr)
 
 # A head that cannot be extracted still gets a PR and an acceptance line, and leaves no checkout behind.
 broken = ws.parent / "broken-tar"
@@ -90,14 +96,107 @@ check("353: a failed extraction leaves no checkout in .tracker", left == [], lef
 
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
+# --- Fan-out fixture: #353 and #376 in one run, their fixes editing the same query --------------
+
+ws = scaffold("implement-wave")
+ready = json.loads(run(ws, "gh issue list --label ready-for-agent --json number").stdout or "[]")
+check("wave: both tickets are briefed and ready", sorted(i["number"] for i in ready) == [353, 376], ready)
+for num in ("353", "376"):
+    pr = pull_on(ws, num, "origin/pre-main")
+    check(f"wave: #{num}'s acceptance fails on the pre-fix state", "acceptance: fail" in pr, pr)
+    git(ws, "app", "checkout", "-q", "-b", f"reference-{num}", "origin/pre-main")
+    patch = run(ws, f"git apply '{REFERENCE / f'reference-{num}.patch'}'", cwd=ws / "app")
+    check(f"wave: #{num}'s reference fix applies", patch.returncode == 0, patch.stderr)
+    git(ws, "app", "commit", "-qam", f"reference-{num}")
+    pr = pull_on(ws, num, f"reference-{num}")
+    check(f"wave: #{num}'s acceptance passes on its reference fix",
+          "acceptance: pass" in pr and "unit tests: pass" in pr, pr)
+merge = git(ws, "app", "merge-tree", "--write-tree", "--name-only", "reference-353", "reference-376")
+check("wave: the two reference fixes conflict in a dry merge",
+      merge.returncode == 1 and "ledger/audit_store.py" in merge.stdout, (merge.returncode, merge.stdout, merge.stderr))
+# The conflict is a constraint of the tickets, not of the reference fixes alone: #353 changes the ORDER BY,
+# #376's brief has it drop the row LIMIT on the line below, and git conflicts on edits to adjacent lines.
+# So every pair of branches that meets both briefs conflicts, and the report grader can require it.
+store = git(ws, "app", "show", "origin/pre-main:ledger/audit_store.py").stdout
+check("wave: list_by_entity's ORDER BY and row LIMIT are adjacent lines",
+      '" ORDER BY changed_at DESC"\n            " LIMIT ?",' in store, store[-500:])
+brief376 = json.loads(run(ws, "gh issue view 376 --json comments").stdout)["comments"][-1]["body"]
+check("wave: #376's brief cuts the page in list_by_entity's statement, dropping its row LIMIT",
+      "in the `list_by_entity` statement itself: its row `LIMIT ?` goes" in brief376, brief376)
+
+# Parallel agents share the stand-in: a PR whose acceptance check is slow leaves every other gh call free,
+# and when it finishes after a newer PR for the same ticket, the newer PR's record stays.
+tracker = ws / ".tracker"
+(tracker / "acceptance-353.py").write_text(
+    "import pathlib, time\n"
+    "t = pathlib.Path(__file__).parent\n"
+    "if (t / 'slow-once').exists():\n"
+    "    (t / 'slow-once').unlink()\n"
+    "    (t / 'slow-started').write_text('')\n"
+    "    time.sleep(6)\n")
+(tracker / "slow-once").write_text("")
+slow = subprocess.Popen(["bash", "-c", '. "$HOME/.bashrc"; gh pr create --base pre-main --head fix/353-check --title old --body old'],
+                        cwd=ws / "app", env={"PATH": os.environ["PATH"], "HOME": str(ws.parent), "TERM": "dumb"},
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+deadline = time.monotonic() + 30
+while not (tracker / "slow-started").exists() and time.monotonic() < deadline:
+    time.sleep(0.1)
+started = time.monotonic()
+r = run(ws, "gh issue view 376 --json title")
+took = time.monotonic() - started
+check("wave: a gh call answers while another PR's acceptance check runs",
+      (tracker / "slow-started").exists() and r.returncode == 0 and took < 3 and slow.poll() is None,
+      (round(took, 1), r.stderr, slow.poll()))
+run(ws, "gh pr create --base pre-main --head fix/353-check --title new --body new", cwd=ws / "app")
+check("wave: the newer PR finished while the older one's check still ran", slow.poll() is None, slow.poll())
+slow.communicate(timeout=60)
+for record in (tracker / "pulls" / "353.md", tracker / "pr.md"):
+    text = record.read_text()
+    check(f"wave: an older PR's late check leaves the newer record in {record.name}",
+          text.startswith("# PR #") and " new\n" in text.splitlines(True)[0] and "## Body\n\nnew\n" in text, text[:200])
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
+
+def input_matches(case):
+    """{grader name: input_match} from a case.yaml; stdlib only, so input_match stays single-quoted there."""
+    text = (EVALS / case / "case.yaml").read_text()
+    out = {}
+    for block in re.split(r"\n  - ", text)[1:]:
+        name = re.search(r"name: (\S+)", block)
+        pattern = re.search(r"input_match: '((?:[^']|'')*)'", block)
+        if name and pattern:
+            out[name.group(1)] = pattern.group(1).replace("''", "'")
+    return out
+
+
+def brief(prompt, **extra):
+    """An Agent call's input as the grader sees it: the tool input serialised as JSON."""
+    return json.dumps({"description": "Implement a ticket", "prompt": prompt, **extra}, separators=(",", ":"))
+
+
+matches = input_matches("implement-wave")
+user_only = sorted(p.parent.name for p in (EVALS.parent / "skills").glob("*/SKILL.md")
+                   if "\ndisable-model-invocation: true\n" in p.read_text())
+named = matches.get("briefs-name-no-user-only-skill", "(?!)")
+missed = [s for s in user_only if not re.search(named, brief(f"Call the Skill tool with dk:{s} for #353."))]
+check("wave: the brief grader catches every user-only skill", user_only and not missed, missed)
+flagged = [s for s in ("issue-flow", "tdd", "verify", "code-review", "pr")
+           if re.search(named, brief(f"Call the Skill tool with dk:{s}."))]
+check("wave: the brief grader passes the skills a brief should name", not flagged, flagged)
+isolated = matches.get("no-harness-isolation", "(?!)")
+check("wave: the isolation grader catches a brief with worktree isolation",
+      re.search(isolated, brief("Work in ../app-353.", isolation="worktree")) is not None, isolated)
+check("wave: the isolation grader passes a brief without it", re.search(isolated, brief("Work in ../app-353.")) is None,
+      isolated)
+
 # The review fixture: a branch that fixes #353 correctly but breaks one documented standard.
 ws = scaffold("code-review-353")
 branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
 check("353 review: the fix branch is checked out", branch == "fix/353-history-order", branch)
 diff = git(ws, "app", "diff", "origin/pre-main...HEAD").stdout
 check("353 review: the diff seeds a value interpolated into SQL", "entity_type = '{entity_type}'" in diff, diff[:300])
-r, pr = acceptance_on(ws, "HEAD")
-check("353 review: the seeded branch still meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr or r.stderr)
+pr = pull_on(ws, "353", "HEAD")
+check("353 review: the seeded branch still meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr)
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
 # The review fixture with work in progress: the same branch, plus an uncommitted edit and an untracked
