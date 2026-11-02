@@ -43,7 +43,8 @@ KEEP_LINE_NAMES = 5  # ignored entries a "keep" line names before it counts the 
 
 def run(args, cwd=None):
     try:
-        out = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+        # git prints paths as raw bytes; surrogateescape keeps a name that is not UTF-8 intact
+        out = subprocess.run(args, cwd=cwd, capture_output=True, encoding="utf-8", errors="surrogateescape")
     except OSError:
         return None
     return out.stdout if out.returncode == 0 else None
