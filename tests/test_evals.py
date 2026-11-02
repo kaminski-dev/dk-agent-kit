@@ -113,6 +113,15 @@ for num in ("353", "376"):
 merge = git(ws, "app", "merge-tree", "--write-tree", "--name-only", "reference-353", "reference-376")
 check("wave: the two reference fixes conflict in a dry merge",
       merge.returncode == 1 and "ledger/audit_store.py" in merge.stdout, (merge.returncode, merge.stdout, merge.stderr))
+# The conflict is a constraint of the tickets, not of the reference fixes alone: #353 changes the ORDER BY,
+# #376's brief has it drop the row LIMIT on the line below, and git conflicts on edits to adjacent lines.
+# So every pair of branches that meets both briefs conflicts, and the report grader can require it.
+store = git(ws, "app", "show", "origin/pre-main:ledger/audit_store.py").stdout
+check("wave: list_by_entity's ORDER BY and row LIMIT are adjacent lines",
+      '" ORDER BY changed_at DESC"\n            " LIMIT ?",' in store, store[-500:])
+brief376 = json.loads(run(ws, "gh issue view 376 --json comments").stdout)["comments"][-1]["body"]
+check("wave: #376's brief cuts the page in list_by_entity's statement, dropping its row LIMIT",
+      "in the `list_by_entity` statement itself: its row `LIMIT ?` goes" in brief376, brief376)
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
 
