@@ -161,6 +161,14 @@ git -C "$ws/app-26" push -q origin feat/26-bytes
 bytes26=$(git -C "$ws/app-26" rev-parse HEAD)
 mkdir -p "$ws/app-26/build"
 echo 'only copy' >"$ws/app-26/build/plan.local.md"
+# An ignored file whose name holds a byte that is not UTF-8 (app-27): the keep line names it escaped,
+# even on a strict UTF-8 stdout. Some file systems (APFS) refuse the name; there the case is skipped.
+bytes_pr=
+if (: >"$tmp/probe-$(printf '\xff')") 2>/dev/null; then
+  ignored27=$(worktree app-27 feat/27-ignored-bytes '*.local.md')
+  echo 'only copy' >"$ws/app-27/note-$(printf '\xff').local.md"
+  bytes_pr=", $(pr 37 feat/27-ignored-bytes "$ignored27" main)"
+fi
 # On origin only: a base of an open PR, and one pushed to after its merge. pre-main, the batch
 # branch, is on origin and checked out in a worktree.
 main=$(git -C "$app" rev-parse main)
@@ -182,7 +190,7 @@ echo "[$(pr 11 feat/1-done "$done1" main), $(pr 12 feat/2-dirty "$dirty2" main),
   $(pr 28 feat/18-scratch "$scratch18" main), $(pr 30 feat/20-output "$output20" main),
   $(pr 31 feat/21-results "$results21" main), $(pr 32 feat/22-port "$port22" main),
   $(pr 33 feat/23-tanstack "$tanstack23" main), $(pr 34 feat/24-evals "$evals24" main),
-  $(pr 35 feat/25-tracked "$tracked25" main), $(pr 36 feat/26-bytes "$bytes26" main)]" \
+  $(pr 35 feat/25-tracked "$tracked25" main), $(pr 36 feat/26-bytes "$bytes26" main)$bytes_pr]" \
   >"$fx/acme_app/pr-merged.json"
 # A second checkout of acme/app: its remote branches are the same ones, handled once.
 git clone -q https://github.com/acme/app.git "$ws/app-copy"
@@ -263,6 +271,14 @@ has "$out" "keep remote origin/pre-master (PR #24 merged; base of PR #25)"
 [[ "$(grep -c "remove remote origin/feat/1-done " <<<"$out")" == 1 ]] || fail "remote branch listed once per checkout"
 has "$out" "Dry run: nothing changed."
 [[ "$(state)" == "$before" ]] || fail "dry run changed something"
+if [[ -n "$bytes_pr" ]]; then
+  out=$(PYTHONIOENCODING=utf-8:strict "$dkgc" --dry-run --workspace "$ws") || fail "dry run on a strict UTF-8 stdout failed"
+  has "$out" "keep worktree $ws/app-27 (feat/27-ignored-bytes, PR #37 merged; ignored files outside the regenerable list: note-\xff.local.md)"
+  has "$out" "Dry run: nothing changed."
+  echo "dk-gc: the ignored name that is not UTF-8 ran"
+else
+  echo "dk-gc: skipped the ignored name that is not UTF-8: this file system refuses it"
+fi
 
 # Without a yes on stdin, nothing changes.
 out=$("$dkgc" --workspace "$ws" </dev/null)
