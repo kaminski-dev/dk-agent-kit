@@ -10,7 +10,7 @@ Issues and PRs live on GitHub (`acme/ledger`). Use `gh`, always with `--json` fo
 - **Comment**: `gh issue comment N --body-file <file>`.
 - **Labels**: `gh issue edit N --add-label <a> --remove-label <b>`.
 - **Close**: `gh issue close N --comment "…"`.
-- **Blocking**: a `Blocked by: #n` line at the top of the body.
+- **Blocking**: native dependencies. `gh api --method POST repos/acme/ledger/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where the database id is `gh api repos/acme/ledger/issues/<n> --jq .id`.
 - **Scope amendment**: a comment starting `Scope amendment:` records work folded into the current PR.
 
 ## Pull requests
