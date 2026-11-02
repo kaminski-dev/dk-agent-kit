@@ -68,7 +68,7 @@ Show counts and a one-line summary per item. Let the maintainer pick.
 
 ## Show what's ready
 
-The ready list is a read: open `ready-for-agent` issues with no open blocker, whether a native dependency or a `Blocked by: #n` line in the body. From the repo's checkout, with `<base directory>` the one this skill's header names, written out literally:
+The ready list is a read: open `ready-for-agent` issues with no open blocker, whether a native dependency or a `Blocked by: #n` line in the body (`owner/repo#n` for another repo's issue). From the repo's checkout, with `<base directory>` the one this skill's header names, written out literally:
 
 ```sh
 python3 -I <base directory>/ready.py
