@@ -782,8 +782,11 @@ LOOP_KEYWORDS = ("for", "foreach", "select", "while", "until", "repeat")
 GH_REPO_FLAG = r"(?:\s+(?:-R\s*\S+|--repo[=\s]\S+))*"
 # the gh calls that read PR or run state, the ones a wait repeats; writes such as `gh pr comment` wait on nothing
 READS = {"pr": ("checks", "view", "status", "list"), "run": ("view", "list", "watch")}
-GH_POLL = r"\bgh" + GH_REPO_FLAG + r"\s+(?:" + "|".join(
-    rf"{group}\s+(?:{'|'.join(subs)})" for group, subs in READS.items()) + r")\b"
+# `gh api` reads unless it names a method other than GET or sends fields or a body (fields alone make it a POST)
+API_FIELDS = ("--field", "--raw-field", "--input")  # and their short forms -f and -F
+API_WRITE = r"\s(?:(?:-X\s*|--method[=\s]\s*)(?=\S)(?!['\"]?(?i:get)\b)|-[fF]|--(?:field|raw-field|input)\b)"
+GH_POLL = r"\bgh" + GH_REPO_FLAG + r"\s+(?:(?:" + "|".join(
+    rf"{group}\s+(?:{'|'.join(subs)})" for group, subs in READS.items()) + r")\b|api\b(?!" + END + API_WRITE + r"))"
 RAW_WAITS = [re.compile(p, re.S) for p in (
     START + PREFIX + r"(gh)" + GH_REPO_FLAG + r"\s+(?:pr\s+checks\b" + END + r"\s--watch\b(?!=false)|run\s+watch\b)",
     START + PREFIX + r"(watch)\s" + END + GH_POLL,
@@ -804,7 +807,23 @@ def gh_args(words):
 
 def polls(words):
     args = gh_args(words)
+    if args and args[0] == "api":
+        return api_reads(args[1:])
     return args is not None and len(args) > 1 and args[1] in READS.get(args[0], ())
+
+
+def api_reads(args):
+    method = "GET"
+    for i, w in enumerate(args):
+        if w[:2] in ("-f", "-F") or w.split("=", 1)[0] in API_FIELDS:
+            return False
+        if w in ("-X", "--method"):
+            method = args[i + 1] if i + 1 < len(args) else method
+        elif w.startswith("--method="):
+            method = w.split("=", 1)[1]
+        elif w.startswith("-X"):
+            method = w[2:]
+    return method.upper() == "GET"
 
 
 def watches(words):
