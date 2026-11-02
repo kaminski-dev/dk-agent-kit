@@ -9,7 +9,8 @@ special parameter such as `path` as a loop, read or assigned variable, `$name:`
 before a zsh modifier, a variable holding a spaced command as the command, a
 function named like one of the user's zsh aliases) or blocked the session (a CI
 or merge wait outside run_in_background) or dropped the issue body (`gh issue
-view --comments`), ask for
+view --comments`) or a dk:verify run's evidence (`rm` inside a verify.XXXXXX run
+directory), ask for
 rewriting the shared pre-main branch, a push to the current branch when the
 guard cannot tell which branch that is, or answering dk-gc's question for the
 human (--yes, piped input), and
@@ -1228,17 +1229,84 @@ def credential_words(segs):
     return []
 
 
+# dk:verify gives each run a fresh `mktemp -d "$SCRATCH/<N>/verify.XXXXXX"`, so nothing in one needs deleting: an
+# `rm` there loses the control run's evidence. The six random characters are rarely all lowercase, which keeps
+# `verify.output` out; a glob over the runs counts only under the issue number's directory.
+RUN_DIR = re.compile(r"(?:^|/)(?:verify\.(?=[a-z]{0,5}[A-Z0-9])[A-Za-z0-9]{6}|\d+/verify\.\*)(?:/|$)")
+VERIFY_RM = ("deny", "This deletes inside a dk:verify run directory (verify.XXXXXX), and a rerun needs no cleanup: "
+             "screenshots overwrite by name, and a rerun takes a new `mktemp -d \"$SCRATCH/<N>/verify.XXXXXX\"` "
+             "while the earlier runs stay as evidence. The control worktree goes with `git worktree remove`.")
+VARIABLE = re.compile(r"\$\{(\w+)\}|\$(\w+)")
+RAW_ASSIGN = re.compile(r"(?:^|[\s;&|(])(?:export\s+)?([A-Za-z_]\w*)=(\"[^\"]*\"|'[^']*'|[^\s;&|)]*)")
+RAW_CD = re.compile(START + r"cd\s+(\"[^\"]*\"|'[^']*'|[^\s;&|)]+)")
+
+
+def run_path(cwd, target, known):
+    """The path `target` names from `cwd`, with the variables this command set (`known`) filled in; one it did not
+    set stays as written."""
+    text = os.path.expanduser(VARIABLE.sub(lambda m: known.get(m.group(1) or m.group(2), m.group()), target))
+    return text if cwd is None or text.startswith(("/", "$")) else os.path.join(cwd, text)
+
+
+def rm_targets(words):
+    """The operands of one `rm` invocation (`words[0]` is rm)."""
+    options = True
+    for w in words[1:]:
+        if options and w == "--":
+            options = False
+        elif not (options and w.startswith("-") and len(w) > 1):
+            yield w
+
+
+def removes_run(words, cwd, known):
+    return bool(words) and os.path.basename(words[0]) == "rm" \
+        and any(RUN_DIR.search(run_path(cwd, t, known)) for t in rm_targets(words))
+
+
+def verify_rm_words(segs, cwd):
+    known = {}
+    for seg in segs:
+        for name, op, value in assignments(seg.words):
+            if op == "=":
+                known[name] = run_path(None, value, known)
+        _, words = command(seg)
+        if words[:1] == ["cd"]:
+            cwd = run_path(cwd, words[1], known) if len(words) > 1 and words[1] != "-" else None
+        if removes_run(words, cwd, known):
+            return [VERIFY_RM]
+    return []
+
+
+def check_verify_rm(cmd, cwd):
+    steps = sorted([(m.start(1), "set", m.group(1), m.group(2)) for m in RAW_ASSIGN.finditer(cmd)]
+                   + [(m.start(1), "cd", None, m.group(1)) for m in RAW_CD.finditer(cmd)])
+    for offset, tokens in segments(cmd, r"(?:[\w./~-]*/)?rm"):
+        if quoted_text(cmd, offset):
+            continue
+        known, here = {}, cwd
+        for pos, kind, name, value in (s for s in steps if s[0] < offset and not quoted_text(cmd, s[0])):
+            if kind == "set":
+                known[name] = run_path(None, value.strip("'\""), known)
+            else:
+                here = run_path(here, value.strip("'\""), known)
+        if removes_run(tokens, here, known):
+            return [VERIFY_RM]
+    return []
+
+
 def decide(cmd, cwd, background=False):
     segs = split(cmd)
     if segs is None:  # a command the splitter cannot read gets the raw-string checks, so the guard never fails open
         raw = strip_heredocs(cmd)
         findings = check_docker(raw) + check_git(raw, cwd) + check_credentials(raw) + check_gh(raw) \
             + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw) + check_waits(raw) \
-            + check_modifiers(raw) + check_command_variable(raw) + check_function_names(raw)
+            + check_modifiers(raw) + check_command_variable(raw) + check_function_names(raw) \
+            + check_verify_rm(raw, cwd)
     else:
         findings = docker_words(segs) + git_words(segs, cwd) + credential_words(segs) + gh_words(segs) \
             + postgres_words(segs) + dk_gc_words(segs) + zsh_name_words(segs) + wait_words(segs) \
-            + modifier_words(segs) + command_variable_words(segs) + function_name_words(segs)
+            + modifier_words(segs) + command_variable_words(segs) + function_name_words(segs) \
+            + verify_rm_words(segs, cwd)
     if background:  # the same wait started with run_in_background blocks nothing
         findings = [f for f in findings if f is not FOREGROUND_WAIT]
     for level in ("deny", "ask"):
