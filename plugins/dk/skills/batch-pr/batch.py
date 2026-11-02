@@ -9,7 +9,9 @@ Run from inside the repo. It fetches origin's main and pre-main, then prints:
 
 Exit 0: collected. Exit 3: a PR from pre-main into main is already open; its
 URL is printed. Exit 4: nothing to batch (no pre-main on origin, or pre-main
-holds no commit that main lacks). Exit 1: git or gh failed.
+holds no commit that main lacks). Exit 1: git or gh failed, or a PR merged
+into pre-main has a merge commit this clone does not hold; it names them.
+A shallow clone is deepened first.
 
 An issue named by both a Closes and a Refs line gets Refs: a post-deploy
 check outranks closing on merge.
@@ -18,8 +20,8 @@ import json
 import re
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 
-LIMIT = 500
 ISSUE_LINE = re.compile(r"^\s*(close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs)\s+#(\d+)\s*$", re.I | re.M)
 
 
@@ -32,6 +34,17 @@ def sh(*cmd, ok=(0,)):
 
 def gh_json(*args):
     return json.loads(sh("gh", *args).stdout or "[]")
+
+
+def merged_since(day):
+    """PRs merged into pre-main on or after day, re-asked with a doubled limit until gh returns fewer."""
+    limit = 100
+    while True:
+        merged = gh_json("pr", "list", "--base", "pre-main", "--state", "merged", "--search", f"merged:>={day}",
+                         "--limit", str(limit), "--json", "number,title,body,mergeCommit")
+        if len(merged) < limit:
+            return merged
+        limit *= 2
 
 
 def main():
@@ -47,24 +60,31 @@ def main():
     if not sh("git", "ls-remote", "--heads", "origin", "pre-main").stdout.strip():
         print("Nothing to batch: origin has no pre-main.")
         return 4
+    if sh("git", "rev-parse", "--is-shallow-repository").stdout.strip() == "true":
+        sh("git", "fetch", "-q", "--unshallow", "origin", "main", "pre-main")
     sh("git", "fetch", "-q", "origin", "main", "pre-main")
-    ahead = int(sh("git", "rev-list", "--count", "origin/main..origin/pre-main").stdout)
-    if not ahead:
+    in_batch = set(sh("git", "rev-list", "origin/main..origin/pre-main").stdout.split())
+    if not in_batch:
         print("Nothing to batch: pre-main is not ahead of main.")
         return 4
+    # A merge lands on pre-main's first-parent line when it is merged, so no batch PR was merged before
+    # the oldest of those commit times; a day earlier absorbs the time zone of search's merged: date.
+    merged_at = sh("git", "log", "--first-parent", "--format=%ct", "origin/main..origin/pre-main").stdout.split()
+    since = (datetime.fromtimestamp(min(map(int, merged_at)), timezone.utc) - timedelta(days=1)).date().isoformat()
 
-    def holds(ref, oid):
-        # 128: git does not know the oid. Both branches were just fetched, so neither holds it
-        # (the merge commit of a PR from a batch before pre-main was last brought level).
-        return sh("git", "merge-base", "--is-ancestor", oid, ref, ok=(0, 1, 128)).returncode == 0
-
-    merged = gh_json("pr", "list", "--base", "pre-main", "--state", "merged", "--limit", str(LIMIT),
-                     "--json", "number,title,body,mergeCommit")
-    if len(merged) == LIMIT:
-        sys.exit(f"gh returned {LIMIT} merged PRs, its limit here: raise LIMIT in {__file__} and run again.")
-    batch = sorted((p for p in merged if p.get("mergeCommit")
-                    and holds("origin/pre-main", p["mergeCommit"]["oid"])
-                    and not holds("origin/main", p["mergeCommit"]["oid"])), key=lambda p: p["number"])
+    merged = merged_since(since)
+    batch, unknown = [], []
+    for p in merged:
+        oid = (p.get("mergeCommit") or {}).get("oid")
+        if oid in in_batch:
+            batch.append(p)
+        elif not oid or sh("git", "cat-file", "-e", f"{oid}^{{commit}}", ok=(0, 1, 128)).returncode != 0:
+            unknown.append(p)
+    if unknown:
+        names = ", ".join(f"#{p['number']}" for p in unknown)
+        sys.exit(f"Merged into pre-main since {since}, but their merge commit is not in this clone: {names}. "
+                 "Fetch it, or check whether pre-main was rewritten, before opening the batch PR.")
+    batch.sort(key=lambda p: p["number"])
 
     kind_of, without = {}, []
     for p in batch:

@@ -21,7 +21,7 @@ It reads origin and opens nothing. Act on its exit code:
 - **0**: it printed `## PRs` (merged into `pre-main`, not yet in `main`), `## Lines` (one `Closes` or `Refs` line per issue) and, when a PR names no issue, `## Without a line`. Go on to step 2.
 - **3**: a batch PR is already open. Give the user the URL it printed, and stop.
 - **4**: nothing to batch (`pre-main` holds nothing that `main` lacks, or origin has no `pre-main`). Pass its line on, and stop.
-- **1**: `git` or `gh` failed. Show the error, and stop.
+- **1**: `git` or `gh` failed, or a merged PR's merge commit is missing from the clone (it names the PRs). Show its message, and stop.
 
 Done when you hold the PR list and the lines.
 
