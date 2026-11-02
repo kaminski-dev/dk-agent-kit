@@ -83,7 +83,6 @@ for ref in sorted(set(re.findall(r'subagent_type: "dk:([a-z][a-z-]*)"', review))
     elif WRITE_TOOLS & {t.strip() for t in tools.split(",")}:
         errors.append(f"agents/{ref}: code-review spawns it, so its tools must exclude {sorted(WRITE_TOOLS)}")
 
-# The review-bot wait (#44): without these the agent leaves the findings for the maintainer to paste.
 flow = skills["issue-flow"].read_text()
 bot = re.search(r"^\*\*Review bot\.\*\*.*?(?=^## )", flow, re.M | re.S)
 bot = bot.group(0) if bot else ""
@@ -92,7 +91,7 @@ for what, pattern in (
     ("the 20-minute give-up", r"20 minutes"),
     ("the head-SHA filter", r"headRefOid.*commit_id|commit_id.*headRefOid"),
     ("the inline-comment endpoint", r"repos/\S+/pulls/\S+/comments"),
-    ("the review-body endpoint", r"repos/\S+/pulls/\S+/reviews"),
+    ("the review-body endpoint", r"repos/\S+/pulls/\S+/reviews/\S+"),
 ):
     if not re.search(pattern, bot, re.S):
         errors.append(f"skills/issue-flow: its **Review bot.** paragraph in step 6 does not name {what}")
