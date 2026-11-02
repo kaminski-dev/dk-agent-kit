@@ -377,4 +377,16 @@ out=$("$dkgc" --in-use "$ws/notes-1") || fail "--in-use exited non-zero on a wor
 out=$(PATH="$fx/no-lsof:$PATH" "$dkgc" --in-use "$ws/notes-1") && fail "--in-use exited 0 when lsof could not tell"
 has "$out" "$ws/notes-1: cannot tell whether a process runs in it: lsof did not answer"
 [[ -d "$ws/notes-1" ]] || fail "--in-use removed something"
+# A worktree path outside ASCII matches the process in it whatever the locale (lsof escapes it in C).
+git -C "$ws/notes" worktree add -q -b feat/2-cafe "$ws/notes-2-café"
+pidc=$(start_in "$ws/notes-2-café")
+busy_pids="$busy_pids $pidc"
+for loc in C en_US.UTF-8; do
+  out=$(LC_ALL=$loc "$dkgc" --in-use "$ws/notes-2-café") && fail "--in-use under LC_ALL=$loc missed the process in a non-ASCII path"
+  has "$out" "in use by sleep (pid $pidc)"
+done
+stop "$pidc"
+# A path that is no worktree is no all-clear: a typo stops the removal by hand.
+out=$("$dkgc" --in-use "$ws/notes-9") && fail "--in-use exited 0 on a path that does not exist"
+has "$out" "$ws/notes-9: no such directory"
 echo "dk-gc: all checks passed"
