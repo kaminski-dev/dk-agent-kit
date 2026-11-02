@@ -192,6 +192,21 @@ check("shallow checkout: both PRs and both lines",
       (r.returncode, r.stdout, r.stderr))
 ws.remove()
 
+# A single-branch shallow clone, the usual CI checkout: only main is in its fetch refspec.
+ws = Workspace()
+ws.git("branch", "pre-main")
+ws.git("checkout", "-q", "pre-main")
+first, second = ws.commit("first"), ws.commit("second")
+ws.push()
+ws.state([pr(43, "pre-main", "fix/403-first", "MERGED", "Closes #403", first),
+          pr(44, "pre-main", "fix/404-second", "MERGED", "Closes #404", second)])
+ws.git_in(ws.root, "clone", "-q", "--depth", "1", "--branch", "main", f"file://{ws.root / 'origin.git'}", "single")
+r, _ = ws.run(cwd=ws.root / "single")
+check("single-branch shallow clone: both PRs and both lines",
+      r.returncode == 0 and "#43 PR 43" in r.stdout and "Closes #403\nCloses #404\n" in r.stdout,
+      (r.returncode, r.stdout, r.stderr))
+ws.remove()
+
 # A merged PR whose merge commit origin does not hold: stop and name it, rather than leave its line out.
 ws = Workspace()
 ws.git("branch", "pre-main")
