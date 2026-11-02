@@ -50,7 +50,9 @@ url() {
 }
 
 status() {
-  if [[ -n "$(running)" ]]; then url; else echo "dk-pg: $repo #$issue none running"; fi
+  local ids
+  ids=$(running)
+  if [[ -n "$ids" ]]; then url; else echo "dk-pg: $repo #$issue none running"; fi
 }
 
 up() {
