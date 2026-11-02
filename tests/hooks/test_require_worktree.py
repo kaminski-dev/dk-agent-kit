@@ -45,6 +45,14 @@ def add_worktree(repo, path):
     return path
 
 
+def add_remote_ref(repo, branch, default=False):
+    """A remote-tracking ref as a fetch leaves it; no remote is ever contacted."""
+    subprocess.run(["git", "-C", repo, "update-ref", f"refs/remotes/origin/{branch}", "HEAD"], check=True)
+    if default:
+        subprocess.run(["git", "-C", repo, "symbolic-ref", "refs/remotes/origin/HEAD",
+                        f"refs/remotes/origin/{branch}"], check=True)
+
+
 def run(file_path, tool="Edit", cwd=None, raw=None):
     tool_input = {"file_path": file_path, "old_string": "foo", "new_string": "bar"} if tool == "Edit" \
         else {"file_path": file_path, "content": "bar\n"}
@@ -81,11 +89,14 @@ def case_relative_path_resolves_against_cwd(root):
     assert denied(out)[0], out
 
 
-def case_without_workflow_doc_the_hint_is_generic(root):
+def case_without_workflow_doc_the_fallback_is_issue_flows_command_on_pre_main(root):
     repo = make_repo(root, "acme-bare", OPT_IN)
+    add_remote_ref(repo, "main", default=True)
+    add_remote_ref(repo, "pre-main")
     _, out, _ = run(os.path.join(repo, "src", "a.ts"))
     deny, reason = denied(out)
-    assert deny and "git worktree add " in reason, out
+    assert deny, out
+    assert "git worktree add ~/workspace/acme-bare-<issue> -b <type>/<issue>-<slug> origin/pre-main " in reason, reason
 
 
 def case_same_edit_in_a_linked_worktree_goes_through(root):
