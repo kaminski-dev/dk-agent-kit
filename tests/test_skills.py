@@ -105,6 +105,15 @@ for line in wait.splitlines():
         errors.append(f"skills/issue-flow: the review-bot wait must stop on a failed gh call: {line.strip()[:60]}")
 if "Reviews paused" in wait and "updated_at" not in wait:
     errors.append("skills/issue-flow: the review-bot wait counts a pause only when the bot wrote it after the head commit")
+if wait.count("gh pr view") < 2:
+    errors.append("skills/issue-flow: the review-bot wait must read the head again after a match, so a moved head keeps it waiting")
+if "review in progress" not in wait:
+    errors.append("skills/issue-flow: the review-bot wait must not take a summary whose review is still in progress as a clean round")
+step7 = re.search(r"^## 7\..*?(?=^## )", flow, re.M | re.S)
+step7 = step7.group(0) if step7 else ""
+if "<PR>-<thread>" in step7 or "one at a time" not in step7:
+    errors.append("skills/issue-flow: step 7's push route needs a worktree key unique per finding, "
+                  "body findings of one review included, and works findings one at a time")
 
 readme = (ROOT / "README.md").read_text()
 for block in re.findall(r"```mermaid\n(.*?)```", readme, re.S):
