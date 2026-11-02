@@ -224,6 +224,25 @@ check("unknown merge commit: exits 1 and names the PR",
       r.returncode == 1 and "#52" in r.stderr and "## Lines" not in r.stdout, (r.returncode, r.stdout, r.stderr))
 ws.remove()
 
+ws = Workspace()
+ws.git("branch", "pre-main")
+ws.git("checkout", "-q", "pre-main")
+first = ws.commit("first")
+ws.push()
+batch_prs = [pr(61, "pre-main", "fix/601-first", "MERGED", "Closes #601", first)]
+ws.state(batch_prs)
+before, _ = ws.run()
+fix = ws.commit("fix")
+ws.push()
+ws.state(batch_prs + [pr(62, "pre-main", "fix/batch-review-1-period", "MERGED", "Review fix.\n\nCloses #602\n", fix)])
+after, _ = ws.run()
+check("fix PR merged after the first collection: the first run lacks it",
+      before.returncode == 0 and "#62" not in before.stdout and "#602" not in before.stdout, before.stdout)
+check("fix PR merged after the first collection: the second run lists it and its line",
+      after.returncode == 0 and "- #62 PR 62" in after.stdout and "Closes #601\nCloses #602\n" in after.stdout,
+      (after.returncode, after.stdout, after.stderr))
+ws.remove()
+
 # The local review. The stand-in logs its argv, its directory's HEAD and its branch, then
 # reports one finding; CODERABBIT_FAIL makes it fail the way a rate limit does.
 CODERABBIT = """#!/bin/sh

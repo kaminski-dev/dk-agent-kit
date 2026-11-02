@@ -37,13 +37,13 @@ Act on its exit code:
 
 - **0**: it printed the findings file. Read it and list every finding before fixing any, then work them through the route `docs/agents/workflow.md` sets as **Batch-review fixes** (`pr` when it sets none), as `dk:issue-flow` step 7 describes it, with these changes, since no PR exists yet:
   - `push`: the k-th finding's worktree takes `batch-review-<k>` for `<N>`, and the pushed commit's SHA is the fix's record, kept for the body in place of a thread reply.
-  - `pr`: one fix PR into `pre-main` for the findings. Give the user its URL and hold step 4 until they say it is merged, so the fixes are on `pre-main` before the batch PR opens.
+  - `pr`: one fix PR into `pre-main` for the findings. Give the user its URL and hold step 4 until they say it is merged, so the fixes are on `pre-main` before the batch PR opens. Once it is merged, run step 1 again and write step 3's body from its new output, since the first collection predates the fix PR.
   - A finding you skip, or that fails a fold-in test and becomes its own issue, keeps its reason for the body.
 - **3**: this batch was reviewed in this session already; work the file it names as under **0**, if that is not done.
 - **4**: the `coderabbit` CLI is not on PATH. Tell the user there is no local review, and go on with the body.
 - **1**: `git` or the CLI failed (a rate limit, a login). Show its message and ask the user whether to run it once more later or open the PR without it.
 
-Done when every finding is fixed on `pre-main` (a pushed SHA or a merged fix PR), filed as an issue, or skipped with a reason, or when the review did not run and the user knows why.
+Done when every finding is fixed on `pre-main` (a pushed SHA, or a merged fix PR that a second run of step 1 lists), filed as an issue, or skipped with a reason, or when the review did not run and the user knows why.
 
 ## 3. Write the body
 

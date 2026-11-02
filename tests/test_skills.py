@@ -213,6 +213,11 @@ else:
         if not re.search(pattern, done):
             errors.append(f"skills/triage: step 3's Done when line does not name {what}")
 
+pr_route = re.search(r"^\s*- `pr`: .*", skills["batch-pr"].read_text(), re.M)
+if not pr_route or "Once it is merged, run step 1 again and write step 3's body from its new output, since the first " \
+                   "collection predates the fix PR." not in pr_route.group(0):
+    errors.append("skills/batch-pr: step 2's `pr` route does not run step 1 again after the fix PR merges")
+
 for e in errors:
     print("FAIL", e)
 print(f"{len(skills)} skills, {len(agents)} agents, {len(errors)} problems")
