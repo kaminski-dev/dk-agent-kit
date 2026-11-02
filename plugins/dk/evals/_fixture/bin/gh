@@ -3,12 +3,16 @@
 
 State lives in <workspace>/.tracker/state.json. Every call is logged to
 .tracker/calls.log; what the graders read is written as plain text:
-.tracker/issue-<N>.md (labels, state and every comment) and .tracker/pr.md
-(the last PR opened, with the acceptance result for its head branch).
+.tracker/issue-<N>.md (labels, state and every comment), .tracker/pr.md
+(the last PR opened, with the acceptance result for its head branch) and
+.tracker/pulls/<N>.md (the last PR for issue N, read from a <type>/<N>-<slug> head).
+Calls hold a lock on the state, so parallel agents do not lose each other's writes.
 """
+import fcntl
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -196,9 +200,14 @@ def current_branch(cwd):
     return r.stdout.strip()
 
 
+def issue_of(head):
+    m = re.match(r"[^/]+/(\d+)-", head)
+    return m.group(1) if m else None
+
+
 def acceptance(head):
-    """Check out head from the workspace's origin and run the repo's tests and the hidden acceptance check."""
-    check = TRACKER / "acceptance.py"
+    """Check out head from the workspace's origin and run the repo's tests and its issue's hidden acceptance check."""
+    check = TRACKER / f"acceptance-{issue_of(head)}.py"
     if not check.exists():
         return []
     origin = WS / "origin.git"
@@ -230,7 +239,11 @@ def cmd_pr(sub, args, state):
         state["prs"].append(pr)
         save(state)
         lines = [f"# PR #{num} {pr['title']}", f"base: {base}", f"head: {head}"] + acceptance(head)
-        (TRACKER / "pr.md").write_text("\n".join(lines) + "\n\n## Body\n\n" + pr["body"] + "\n")
+        record = "\n".join(lines) + "\n\n## Body\n\n" + pr["body"] + "\n"
+        (TRACKER / "pr.md").write_text(record)
+        if issue_of(head):
+            (TRACKER / "pulls").mkdir(exist_ok=True)
+            (TRACKER / "pulls" / f"{issue_of(head)}.md").write_text(record)
         print(f"https://github.com/{state['repo']}/pull/{num}")
     elif sub in ("view", "list"):
         prs = state["prs"]
@@ -249,6 +262,8 @@ def cmd_pr(sub, args, state):
 
 
 def main(argv):
+    lock = open(TRACKER / ".lock", "w")
+    fcntl.flock(lock, fcntl.LOCK_EX)
     with open(TRACKER / "calls.log", "a") as log:
         log.write(" ".join(argv) + "\n")
     if not argv:

@@ -111,7 +111,7 @@ for num in ("353", "376"):
     git(ws, "app", "checkout", "-q", "-b", f"reference-{num}", "origin/pre-main")
     patch = run(ws, f"git apply '{REFERENCE / f'reference-{num}.patch'}'", cwd=ws / "app")
     check(f"wave: #{num}'s reference fix applies", patch.returncode == 0, patch.stderr)
-    git(ws, "app", "commit", "-qam", f"reference {num}")
+    git(ws, "app", "commit", "-qam", f"reference-{num}")
     pr = pull_on(ws, num, f"reference-{num}")
     check(f"wave: #{num}'s acceptance passes on its reference fix",
           "acceptance: pass" in pr and "unit tests: pass" in pr, pr)

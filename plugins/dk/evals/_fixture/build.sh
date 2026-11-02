@@ -3,7 +3,7 @@
 # makes $HOME/cwd. usage: build.sh <repo dir under _fixture> <issues state file> [branch slug [wip slug]]
 #
 # The workspace gets the repo (main and pre-main, origin a bare repo beside it), the
-# tracker stand-in's state in .tracker/, and .bin/ first on PATH through the temp HOME's
+# tracker stand-in's state in .tracker/ with the acceptance check of each issue in it, and .bin/ first on PATH through the temp HOME's
 # shell rc: .bin/gh and .bin/govulncheck are stand-ins, so no call reaches GitHub or the
 # vulnerability database; .bin/dk-pg, docker and the Postgres binaries only log the attempt
 # to .tracker/postgres.log; and .bin/git* call git by absolute path, because the macOS
@@ -38,7 +38,10 @@ PATH="$WS/.bin:$PATH"
 
 cp "$F/issues/$issues.json" .tracker/state.json
 num=${issues%%-*}
-[ -f "$F/acceptance-$num.py" ] && cp "$F/acceptance-$num.py" .tracker/acceptance.py
+for check in "$F"/acceptance-*.py; do
+  n=${check##*/acceptance-}; n=${n%.py}
+  if grep -q "\"$n\": {" .tracker/state.json; then cp "$check" .tracker/; fi
+done
 
 git init -q --bare origin.git
 cp -R "$F/$repo" "$repo"
