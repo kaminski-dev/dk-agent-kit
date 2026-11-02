@@ -96,9 +96,24 @@ def worktrees(root):
     return out
 
 
-def regenerable(entry):
-    """True when any path component of an ignored entry is on the REGENERABLE list."""
-    return any(fnmatch.fnmatchcase(name, pattern) for name in entry.rstrip("/").split("/") for pattern in REGENERABLE)
+def regenerable(entry, tracked_dirs):
+    """True when a path component of an ignored entry is on the REGENERABLE list and names a
+    folder with no tracked file in it: a tool's output, not a tracked build/ holding notes."""
+    parts = entry.rstrip("/").split("/")
+    return any(fnmatch.fnmatchcase(name, pattern) and "/".join(parts[:i + 1]) not in tracked_dirs
+               for i, name in enumerate(parts) for pattern in REGENERABLE)
+
+
+def tracked_dirs(path):
+    """Every folder that holds a tracked file, at any depth; None when git fails."""
+    out = git(path, "ls-files", "-z")
+    if out is None:
+        return None
+    dirs = set()
+    for file in out.split("\0"):
+        parts = file.split("/")[:-1]
+        dirs.update("/".join(parts[:i + 1]) for i in range(len(parts)))
+    return dirs
 
 
 def worktree_blocker(path):
@@ -110,7 +125,12 @@ def worktree_blocker(path):
     entries = [e for e in out.split("\0") if e]
     if any(not e.startswith("!! ") for e in entries):
         return "uncommitted changes"
-    at_risk = [e[3:] for e in entries if not regenerable(e[3:])]
+    if not entries:
+        return None
+    tracked = tracked_dirs(path)
+    if tracked is None:
+        return "git ls-files failed"
+    at_risk = [e[3:] for e in entries if not regenerable(e[3:], tracked)]
     if not at_risk:
         return None
     more = f" and {len(at_risk) - KEEP_LINE_NAMES} more" if len(at_risk) > KEEP_LINE_NAMES else ""
