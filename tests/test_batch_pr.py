@@ -120,6 +120,22 @@ check("Closes and Refs for one issue: Refs alone",
       "Refs #201\n" in r.stdout and "Closes #201" not in r.stdout, r.stdout)
 ws.remove()
 
+# GitHub reads a colon after the keyword as the plain form: `Closes: #N` keeps its line.
+ws = Workspace()
+ws.git("branch", "pre-main")
+ws.git("checkout", "-q", "pre-main")
+colon, fixes = ws.commit("colon"), ws.commit("fixes")
+ws.push()
+ws.state([
+    pr(24, "pre-main", "fix/12-colon", "MERGED", "Colon.\n\nCloses: #12\n", colon),
+    pr(25, "pre-main", "fix/13-fixes", "MERGED", "Fixes:  #13", fixes),
+])
+r, _ = ws.run()
+check("a colon after the keyword: the line is kept",
+      r.returncode == 0 and "Closes #12\nCloses #13\n" in r.stdout and "Without a line" not in r.stdout,
+      (r.returncode, r.stdout, r.stderr))
+ws.remove()
+
 ws = Workspace()
 ws.git("branch", "pre-main")
 ws.git("checkout", "-q", "pre-main")
