@@ -119,6 +119,7 @@ class Segment:
         self.words, self.redirects, self.subs, self.scripts = [], [], [], set()
         self.modifier_names = []  # `$name:x`, x a zsh modifier, unquoted or double-quoted
         self.defines = None  # the function name when the segment is `f()`, `f ()` or `function f`
+        self.loop_last = None  # for a one-line `for x (a b) cmd` header, the last segment of the sublist it repeats
         self.piped_in = self.piped_out = self.started = False
         self.pipe_to = None
 
@@ -145,7 +146,7 @@ class Splitter:
         return self.s.startswith(("$(", "${", "`"), self.i)
 
     def parse(self, end, substituted):
-        seg = Segment(self.shell, substituted)
+        seg, open_short_fors = Segment(self.shell, substituted), []
         while True:
             c = self.peek()
             if not c:
@@ -163,11 +164,18 @@ class Splitter:
                 self.i += 1
                 seg = self.close(seg)
                 self.read_heredocs()
+                self.end_sublist(open_short_fors)
             elif c == ")":
                 self.i += 1
                 if end == ")":
                     break
                 seg = self.close(seg)  # a case pattern's `)`
+            elif (keyword := list_loop(seg.words)) and not REDIRECT.match(self.s, self.i) \
+                    and not OPERATOR.match(self.s, self.i):
+                # zsh's one-line `for x (a b) cmd` and `foreach x (a b) cmd; …; end`: the body gets its own segment
+                if keyword == "for" and not re.match(r"(?:do|\{)(?=[\s;&|<>()]|$)", self.s[self.i:]):
+                    open_short_fors.append(seg)
+                seg = self.close(seg)
             elif c in "<>" and self.peek(1) == "(":
                 self.i += 2
                 seg.subs.append(self.nested())
@@ -180,6 +188,8 @@ class Splitter:
                 op = OPERATOR.match(self.s, self.i).group()
                 self.i += len(op)
                 seg = self.close(seg, piped=op in ("|", "|&"))
+                if op not in ("&&", "||", "|", "|&"):
+                    self.end_sublist(open_short_fors)
             elif c == "(" and not seg.started and self.peek(1) != "(":
                 self.i += 1
                 seg = self.close(seg)
@@ -192,6 +202,12 @@ class Splitter:
                 if self.add_word(seg, word, quoted):
                     seg = self.close(seg)
         self.close(seg)
+        self.end_sublist(open_short_fors)
+
+    def end_sublist(self, open_short_fors):
+        for header in open_short_fors:
+            header.loop_last = self.out[-1]
+        open_short_fors.clear()
 
     def add_word(self, seg, word, quoted=False):
         """Add a word; True when it ends a function's name (`f() {`, `f () {`, `function f {`), so its body starts
@@ -430,6 +446,17 @@ class Splitter:
             self.i += 1
             if depth == 0:
                 return self.s[start:self.i]
+
+
+def list_loop(words):
+    """`for` or `foreach` when `words` are a loop header up to its zsh word list (`for x y (a b)`, `for ((…))`),
+    so a word after it starts the body; else None."""
+    words = list(itertools.dropwhile(lambda w: w in LEAD, words))
+    names = words[1:-1]
+    if words[:1] in (["for"], ["foreach"]) and len(words) > 1 and words[-1].startswith("(") \
+            and "in" not in names and all(re.fullmatch(r"[A-Za-z_]\w*", n) for n in names):
+        return words[0]
+    return None
 
 
 def split(cmd):
@@ -783,14 +810,23 @@ LOOP_KEYWORDS = ("for", "foreach", "select", "while", "until", "repeat")
 GH_REPO_FLAG = r"(?:\s+(?:-R\s*\S+|--repo[=\s]\S+))*"
 # the gh calls that read PR or run state, the ones a wait repeats; writes such as `gh pr comment` wait on nothing
 READS = {"pr": ("checks", "view", "status", "list"), "run": ("view", "list", "watch")}
-# `gh api` reads unless it names a method other than GET or sends fields or a body (fields alone make it a POST)
+# `gh api` reads with no method and no fields or body (fields alone make it a POST), with GET named last (the fields
+# become query parameters), or as a GraphQL query
 API_FIELDS = ("--field", "--raw-field", "--input")
 API_SHORT_FIELDS = ("-f", "-F")
+API_VALUE_OPTIONS = ("-H", "--header", "-q", "--jq", "-t", "--template", "--cache", "-p", "--preview", "--hostname")
+# a GraphQL document that opens with a query (`{ … }` or `query …`) reads; a mutation, a subscription, or a document
+# the guard cannot see (`-F query=@q.graphql`, a substitution) may write
+GRAPHQL_QUERY = re.compile(r"\s*(?:#[^\n]*\n\s*)*(?:\{|query\b)")
 # gh keeps the last method flag, so a method writes only when no later one replaces it
 API_WRITE = r"\s(?:(?:-X\s*=?|--method[=\s]\s*)(?=[^\s=])(?!['\"]?(?i:get)\b)(?!" + END + r"\s(?:-X|--method\b))|" \
     + "|".join(API_SHORT_FIELDS) + r"|(?:" + "|".join(API_FIELDS) + r")\b)"
+API_GET = r"\s(?:-X\s*=?|--method[=\s]\s*)['\"]?(?i:get)\b(?!" + END + r"\s(?:-X|--method\b))"
+API_QUERY = r"(?=" + END + r"\sgraphql\b)(?=" + END + r"\s(?:-[fF]\s*|--(?:raw-)?field[=\s]\s*)['\"]?query=['\"]?" \
+    + GRAPHQL_QUERY.pattern + ")"
 GH_POLL = r"\bgh" + GH_REPO_FLAG + r"\s+(?:(?:" + "|".join(
-    rf"{group}\s+(?:{'|'.join(subs)})" for group, subs in READS.items()) + r")\b|api\b(?!" + END + API_WRITE + r"))"
+    rf"{group}\s+(?:{'|'.join(subs)})" for group, subs in READS.items()) + r")\b|api\b(?:" + API_QUERY \
+    + r"|(?!" + END + r"\sgraphql\b)(?:(?!" + END + API_WRITE + r")|(?=" + END + API_GET + r"))))"
 RAW_WAITS = [re.compile(p, re.S) for p in (
     START + PREFIX + r"(gh)" + GH_REPO_FLAG + r"\s+(?:pr\s+checks\b" + END + r"\s--watch\b(?!=false)|run\s+watch\b)",
     START + PREFIX + r"(watch)\s" + END + GH_POLL,
@@ -817,17 +853,27 @@ def polls(words):
 
 
 def api_reads(args):
-    method = "GET"
-    for i, w in enumerate(args):
-        if w[:2] in API_SHORT_FIELDS or w.split("=", 1)[0] in API_FIELDS:
-            return False
+    method, fields, endpoint, it = None, [], None, iter(args)
+    for w in it:
         if w in ("-X", "--method"):
-            method = args[i + 1] if i + 1 < len(args) else ""
+            method = next(it, "")
         elif w.startswith("-X"):
             method = w[2:].lstrip("=")
         elif w.startswith("--method="):
             method = w.split("=", 1)[1]
-    return method.upper() == "GET"
+        elif w in API_SHORT_FIELDS or w in API_FIELDS:
+            fields.append(next(it, ""))
+        elif w[:2] in API_SHORT_FIELDS:
+            fields.append(w[2:])
+        elif w.split("=", 1)[0] in API_FIELDS:
+            fields.append(w.split("=", 1)[1])
+        elif w in API_VALUE_OPTIONS:
+            next(it, None)
+        elif endpoint is None and not w.startswith("-"):
+            endpoint = w
+    if endpoint == "graphql":
+        return any(f.startswith("query=") and GRAPHQL_QUERY.match(f[len("query="):]) for f in fields)
+    return (method or "GET").upper() == "GET" and (method is not None or not fields)
 
 
 def watches(words):
@@ -850,6 +896,7 @@ class Loop:
     condition_polls: bool = False
     body_polls: bool = False
     sleeps: bool = False
+    loop_last: object = None
 
     def waits(self):
         return self.condition_polls or (self.body_polls and self.sleeps)
@@ -875,7 +922,7 @@ def wait_words(segs):
             return [FOREGROUND_WAIT]
         for kw in keywords:
             if kw in LOOP_KEYWORDS:
-                loop = Loop(kw, in_condition=kw in ("while", "until"))
+                loop = Loop(kw, in_condition=kw in ("while", "until"), loop_last=seg.loop_last)
                 # this segment's substitutions came before it in segs: the condition of a while or until, the first
                 # body command of a repeat, the word list of a for (read once)
                 sub_polls = any(polls(command(s)[1]) for sub in seg.subs for s in sub)
@@ -891,6 +938,9 @@ def wait_words(segs):
         for loop in loops:
             loop.body_polls = loop.body_polls or polls(words)
             loop.sleeps = loop.sleeps or words[:1] == ["sleep"]
+        while loops and loops[-1].loop_last is seg:
+            if loops.pop().waits():
+                return [FOREGROUND_WAIT]
     return [FOREGROUND_WAIT] if any(loop.waits() for loop in loops) else []
 
 
@@ -1111,14 +1161,15 @@ LOOP_ITEMS_RAW = re.compile(START + r"(?:for|foreach|select)\s+((?:[A-Za-z_]\w*\
 
 
 def check_command_variable(cmd):
-    spaced = [(m.start(1), m.end(), [m.group(1)]) for m in SPACED_RAW.finditer(cmd)]
-    spaced += [(m.start(1), m.end(), spaced_loop_names(m.group(1).split(), re.findall(LOOP_ITEM, m.group(2))))
-               for m in LOOP_ITEMS_RAW.finditer(cmd)]
-    for start, end, names in spaced:
+    spaced = [(m.start(1), m.end(), [m.group(1)], START) for m in SPACED_RAW.finditer(cmd)]
+    # the one-line `for c (…) $c` starts its body right after the list's `)`
+    spaced += [(m.start(1), m.end(), spaced_loop_names(m.group(1).split(), re.findall(LOOP_ITEM, m.group(2))),
+                r"(?:" + START + r"|^\)\s*)") for m in LOOP_ITEMS_RAW.finditer(cmd)]
+    for start, end, names, opener in spaced:
         if quoted_text(cmd, start, shell=ZSH_SCRIPT_OPENER):
             continue
         for name in names:
-            use = START + PREFIX + r"[\"']?\$\{?" + name + r"\}?[\"']?(?=\s|[;&|)]|$)"
+            use = opener + PREFIX + r"[\"']?\$\{?" + name + r"\}?[\"']?(?=\s|[;&|)]|$)"
             if re.search(use, cmd[end:]):
                 return [VARIABLE_COMMAND]
     return []
