@@ -103,19 +103,23 @@ check("two merged PRs: the earlier batch's and the open PR's lines left out",
 check("two merged PRs: opens no PR", "pr create" not in calls, calls)
 ws.remove()
 
-# A merged PR whose body carries no Closes or Refs line is named, so the batch body can say so.
+# A merged PR whose body carries no Closes or Refs line is named, so the batch body can say so;
+# an issue one PR closes and a later one only refers to keeps its Refs line for the post-deploy check.
 ws = Workspace()
 ws.git("branch", "pre-main")
 ws.git("checkout", "-q", "pre-main")
-lined, bare = ws.commit("lined"), ws.commit("bare")
+lined, bare, follow_up = ws.commit("lined"), ws.commit("bare"), ws.commit("follow-up")
 ws.push()
 ws.state([
     pr(21, "pre-main", "fix/201-lined", "MERGED", "Closes #201", lined),
     pr(22, "pre-main", "chore/ci", "MERGED", "CI bump, no issue.", bare),
+    pr(23, "pre-main", "fix/201-follow-up", "MERGED", "refs #201", follow_up),
 ])
 r, _ = ws.run()
 check("a PR without a line: named under its own heading",
-      r.returncode == 0 and "## Without a line\n- #22 PR 22" in r.stdout and "Closes #201\n" in r.stdout, r.stdout)
+      r.returncode == 0 and "## Without a line\n- #22 PR 22" in r.stdout, r.stdout)
+check("Closes and Refs for one issue: Refs alone",
+      "Refs #201\n" in r.stdout and "Closes #201" not in r.stdout, r.stdout)
 ws.remove()
 
 # A batch PR already open: print its URL, open nothing.
