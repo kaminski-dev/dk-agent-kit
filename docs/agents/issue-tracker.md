@@ -15,7 +15,7 @@ Issues, specs and PRs for this repo live on GitHub (`kaminski-dev/dk-agent-kit`,
 ## Epics and links
 
 - **Spec (epic)**: an issue labelled `spec`. Its tickets are sub-issues: `gh issue create --parent <spec> …`, or `gh issue edit <spec> --add-sub-issue <child>`.
-- **Blocking**: native dependencies. `gh api --method POST repos/kaminski-dev/dk-agent-kit/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where the database id is `gh api repos/kaminski-dev/dk-agent-kit/issues/<n> --jq .id`. Read an issue's blockers with `gh api repos/kaminski-dev/dk-agent-kit/issues/<n>/dependencies/blocked_by --jq '.[] | "#\(.number) \(.state)"'`. Without them, a `Blocked by: #n` line at the top of the body.
+- **Blocking**: native dependencies. `gh api --method POST repos/kaminski-dev/dk-agent-kit/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where the database id is `gh api repos/kaminski-dev/dk-agent-kit/issues/<n> --jq .id`. Read an issue's blockers with `gh api --paginate repos/kaminski-dev/dk-agent-kit/issues/<n>/dependencies/blocked_by --jq '.[] | "#\(.number) \(.state)"'`. Without them, a `Blocked by: #n` line at the top of the body.
 - **Scope amendment**: a comment on the issue starting `Scope amendment:` records work folded into the current PR; the PR lists it under "Also in this PR".
 
 ## Pull requests
