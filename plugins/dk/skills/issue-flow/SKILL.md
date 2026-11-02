@@ -85,13 +85,14 @@ A failed check is fixed on the branch and watched again before you report.
 
 **Review bot.** A PR into a base that `workflow.md` lists under **Review bot** gets a review from the bot it names; with no such line, that is `coderabbitai[bot]` on PRs into `main`, the batch PR. You fetch its findings yourself, so the maintainer never pastes them:
 
-1. Wait in the background for the bot's review of the head SHA: start this with `run_in_background` (or run its check as a Monitor until-loop) and keep answering. A review counts when its `commit_id` is the `headRefOid` and it has a body or inline comments of its own; a bot review holding only replies to threads (`in_reply_to_id` set) is not one. A round with no findings leaves no review, only the bot's summary comment, whose recent-review block now ends its range at the SHA (`between <old> and <sha>`) once no review is in progress. A rate-limit notice in that comment names the SHA too, but means no review ran. A match counts only while the head is still that SHA; a push meanwhile starts the wait on the new head.
+1. Wait in the background for the bot's review of the head SHA: start this with `run_in_background` (or run its check as a Monitor until-loop) and keep answering. A review counts when its `commit_id` is the `headRefOid` and it has a body or inline comments of its own; a bot review holding only replies to threads (`in_reply_to_id` set) is not one. A round with no findings leaves no review, only the bot's summary comment, whose recent-review block now ends its range at the SHA (`between <old> and <sha>`) once no review is in progress. A rate-limit notice in that comment names the SHA too, but means no review ran. It reads the head on every poll, and a match counts only while the head is still that SHA; a push meanwhile moves the wait to the new head and restarts its 20 minutes.
 
    ```sh
    export bot='coderabbitai[bot]'   # or the login workflow.md names
-   head=$(gh pr view <PR> --json headRefOid,commits --jq '"\(.headRefOid) \(.commits[-1].committedDate)"') || exit 2
-   read -r sha since <<<"$head"; export sha since
-   for i in $(seq 40); do
+   head=; i=0
+   while [ $i -lt 40 ]; do
+     now=$(gh pr view <PR> --json headRefOid,commits --jq '"\(.headRefOid) \(.commits[-1].committedDate)"') || exit 2
+     [ "$now" = "$head" ] || { head=$now; read -r sha since <<<"$head"; export sha since; i=0; }   # a new head restarts the 20 minutes
      reviews=$(gh api --paginate "repos/{owner}/{repo}/pulls/<PR>/reviews" --jq '.[] | select(.user.login == env.bot and .commit_id == env.sha) | "\(.id) \(.body | length > 0)"') || exit 2
      own=$(gh api --paginate "repos/{owner}/{repo}/pulls/<PR>/comments" --jq '.[] | select(.user.login == env.bot and .in_reply_to_id == null) | .pull_request_review_id') || exit 2
      hit=$(while read -r id body; do [ "$body" = true ] || grep -qx "$id" <<<"$own" && echo "$id"; done <<<"$reviews")
@@ -101,9 +102,9 @@ A failed check is fixed on the branch and watched again before you report.
      if [ -n "$hit" ]; then
        now=$(gh pr view <PR> --json headRefOid,commits --jq '"\(.headRefOid) \(.commits[-1].committedDate)"') || exit 2
        [ "$now" = "$head" ] && { echo "$hit"; exit 0; }
-       head=$now; read -r sha since <<<"$head"; export sha since   # the head moved: wait for its round
+       continue   # the head moved: the next poll takes it
      fi
-     sleep 30
+     i=$((i + 1)); sleep 30
    done
    echo "no review by $bot on $sha after 20 minutes"; exit 1
    ```
