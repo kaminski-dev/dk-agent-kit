@@ -7,9 +7,9 @@ mass removal, pushes to main, force pushes, git clean of ignored files),
 leaked a credential (reading a credential file) or broke the shell (a zsh
 special parameter such as `path` as a loop, read or assigned variable, `$name:`
 before a zsh modifier, a variable holding a spaced command as the command, a
-function name of one or two characters) or blocked the session (a CI or merge
-wait outside run_in_background) or dropped the issue body (`gh issue view
---comments`), ask for
+function named like one of the user's zsh aliases) or blocked the session (a CI
+or merge wait outside run_in_background) or dropped the issue body (`gh issue
+view --comments`), ask for
 rewriting the shared pre-main branch, a push to the current branch when the
 guard cannot tell which branch that is, or answering dk-gc's question for the
 human (--yes, piped input), and
@@ -1059,19 +1059,35 @@ def command_variable_words(segs):
     return []
 
 
-# A function named like one of the user's aliases (`g` for git) fails: "defining function based on alias".
-SHORT_FUNCTION = ("deny", "A one- or two-character function name collides with the user's shell aliases (`g` "
-                  "is git): zsh refuses to define it or runs the alias. Use a descriptive name, e.g. `git_in`.")
-FUNCTION_RAW = re.compile(START + r"(?:function\s+([A-Za-z_][\w-]?)(?![\w-])|([A-Za-z_][\w-]?)\s*\(\s*\))")
+# A function named like one of the user's zsh aliases fails: "defining function based on alias", or the alias runs.
+# bootstrap.sh writes the alias names, one per line, beside the private settings overlay; without the file, no deny.
+ALIASES_FILE = "~/.config/dk-agent-kit/zsh-aliases"
+FUNCTION_RAW = re.compile(START + r"(?:function\s+([^\s(){};&|<>'\"$]+)|([^\s(){};&|<>'\"$=]+)\s*\(\s*\))")
+
+
+def alias_names():
+    try:
+        with open(os.path.expanduser(ALIASES_FILE), encoding="utf-8") as f:
+            return {line.strip() for line in f if line.strip() and not line.startswith("#")}
+    except (OSError, UnicodeDecodeError):
+        return set()
+
+
+def alias_function_findings(names):
+    hit = next((n for n in names if n in alias_names()), None) if names else None
+    return [("deny", f"`{hit}` is one of your zsh aliases, so zsh refuses to define a function with that name "
+             "(\"defining function based on alias\") or runs the alias instead. Use a descriptive name, e.g. "
+             "`git_in`.")] if hit else []
 
 
 def check_function_names(cmd):
-    hits = (m.start(1) if m.group(1) else m.start(2) for m in FUNCTION_RAW.finditer(cmd))
-    return [SHORT_FUNCTION] if any(not quoted_text(cmd, pos, shell=ZSH_SCRIPT_OPENER) for pos in hits) else []
+    names = [m.group(1) or m.group(2) for m in FUNCTION_RAW.finditer(cmd)
+             if not quoted_text(cmd, m.start(1) if m.group(1) else m.start(2), shell=ZSH_SCRIPT_OPENER)]
+    return alias_function_findings(names)
 
 
 def function_name_words(segs):
-    return [SHORT_FUNCTION] if any(seg.defines and len(seg.defines) <= 2 for seg in segs if seg.shell == "zsh") else []
+    return alias_function_findings([seg.defines for seg in segs if seg.shell == "zsh" and seg.defines])
 
 
 FILE_CHECKS = {"ls", "stat", "test", "[", "[["}

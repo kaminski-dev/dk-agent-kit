@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Merges the kit's user-settings fragment into ~/.claude/settings.json, adds
-# the zsh options block to ~/.zshenv, installs the kit's plugins from this
-# checkout and adds --isolated to an existing user-scope playwright MCP server.
-# A plugin cannot ship permission rules, autoMode settings, shell options or
-# MCP arguments, so those travel this way.
+# the zsh options block to ~/.zshenv, writes the names of your zsh aliases for
+# dk-guard, installs the kit's plugins from this checkout and adds --isolated
+# to an existing user-scope playwright MCP server. A plugin cannot ship
+# permission rules, autoMode settings, shell options or MCP arguments, so
+# those travel this way.
 #
-#   ./bootstrap.sh            show the settings, .zshenv and MCP diffs, write nothing
-#   ./bootstrap.sh --apply    back up both files, write them, install plugins,
+#   ./bootstrap.sh            show the settings, .zshenv, alias list and MCP diffs, write nothing
+#   ./bootstrap.sh --apply    back up both files, write them and the alias list, install plugins,
 #                             re-register the playwright server
 #
 # Objects merge key by key, arrays gain the entries they lack (nothing is
@@ -69,6 +70,29 @@ else
   diff -u --label "$zshenv" --label "$zshenv (merged)" \
     <(printf '%s\n' "$zsh_current") <(printf '%s\n' "$zsh_merged") || true
   zsh_changed=1
+fi
+
+# zsh refuses a function named like an alias ("defining function based on
+# alias"), and agents write helpers such as g(){ ... }. dk-guard denies those
+# names, read from this list beside the private overlay, where the hook finds
+# it from HOME alone. Names only: the alias bodies never leave the shell.
+aliases_file=$HOME/.config/dk-agent-kit/zsh-aliases
+alias_changed=0
+if ! command -v zsh >/dev/null; then
+  echo "bootstrap: no zsh on PATH, alias list not written"
+else
+  # the marker keeps anything the interactive startup files print out of the list
+  alias_names=$(zsh -ic 'print -rl -- dk-alias:${^${(k)aliases}}' </dev/null 2>/dev/null |
+    sed -n 's/^dk-alias://p' | LC_ALL=C sort -u || true)
+  alias_new=$(printf '# zsh alias names, written by dk-agent-kit bootstrap.sh for dk-guard\n%s' "$alias_names")
+  alias_current=$(cat "$aliases_file" 2>/dev/null || true)
+  if [[ "$alias_current" == "$alias_new" ]]; then
+    echo "bootstrap: zsh alias list already up to date"
+  else
+    diff -u --label "$aliases_file" --label "$aliases_file (new)" \
+      <(printf '%s\n' "$alias_current") <(printf '%s\n' "$alias_new") || true
+    alias_changed=1
+  fi
 fi
 
 # Without --isolated, two sessions started from one directory share the
@@ -139,6 +163,12 @@ if ((zsh_changed)); then
   fi
   printf '%s\n' "$zsh_merged" > "$zshenv"
   echo "bootstrap: wrote the zsh options block to $zshenv"
+fi
+
+if ((alias_changed)); then
+  mkdir -p "$(dirname "$aliases_file")"
+  printf '%s\n' "$alias_new" > "$aliases_file"
+  echo "bootstrap: wrote $(grep -vc '^#' "$aliases_file" || true) zsh alias names to $aliases_file"
 fi
 
 if ! claude plugin marketplace list 2>/dev/null | grep -q 'dk-agent-kit'; then
