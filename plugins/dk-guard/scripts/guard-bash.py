@@ -734,7 +734,10 @@ FOREGROUND_WAIT = ("deny", "This waits on CI or a merge in the foreground, and t
                    "answering the user; a single `gh pr checks <N>` without --watch reads the state once.")
 LOOP_KEYWORDS = ("for", "foreach", "select", "while", "until", "repeat")
 GH_REPO_FLAG = r"(?:\s+(?:-R\s*\S+|--repo[=\s]\S+))*"
-GH_POLL = r"\bgh" + GH_REPO_FLAG + r"\s+(?:pr|run)\b"
+# the gh calls that read PR or run state, the ones a wait repeats; writes such as `gh pr comment` wait on nothing
+READS = {"pr": ("checks", "view", "status", "list"), "run": ("view", "list", "watch")}
+GH_POLL = r"\bgh" + GH_REPO_FLAG + r"\s+(?:" + "|".join(
+    rf"{group}\s+(?:{'|'.join(subs)})" for group, subs in READS.items()) + r")\b"
 RAW_WAITS = [re.compile(p, re.S) for p in (
     START + PREFIX + r"(gh)" + GH_REPO_FLAG + r"\s+(?:pr\s+checks\b" + END + r"\s--watch\b(?!=false)|run\s+watch\b)",
     START + PREFIX + r"(watch)\s" + END + GH_POLL,
@@ -755,7 +758,7 @@ def gh_args(words):
 
 def polls(words):
     args = gh_args(words)
-    return args is not None and args[:1] in (["pr"], ["run"])
+    return args is not None and len(args) > 1 and args[1] in READS.get(args[0], ())
 
 
 def watches(words):
