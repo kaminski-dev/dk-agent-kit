@@ -2,7 +2,8 @@ schema_version: "1.1"
 name: code-review-correctness
 description: >
   #388 on a stand-in repo: the branch sends queued mail and follows every documented standard, but
-  carries two runtime defects. `send_next` calls the mail provider after the claim commits and before
+  carries two seeded runtime defects (a third, `send-mail` stopping at the first failed send, is
+  not graded). `send_next` calls the mail provider after the claim commits and before
   the sent mark commits, with no idempotency key, so a crash in between or a send that outlasts the
   lease sends the mail again; and the Outbox tab's test only calls `render_to_string`, so it passes
   when the component renders nothing. dk:code-review finds both on the Correctness axis.
@@ -38,7 +39,7 @@ graders:
   - name: four-axes
     type: regex
     pattern: "## Standards[\\s\\S]*## Spec[\\s\\S]*## Correctness[\\s\\S]*## Comments"
-  - name: three-reviewers
+  - name: standards-spec-correctness-reviewers
     type: tool_used
     tool: Agent
     input_match: '"subagent_type"\s*:\s*"dk:reviewer"'

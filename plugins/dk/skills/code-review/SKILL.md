@@ -35,7 +35,7 @@ Look for the originating spec, in this order:
 
 ### 3. Identify the standards sources
 
-Read `CODING_STANDARDS.md` first (at the root and nearest to the changed files), then every doc it links or names; add `CONTRIBUTING.md` and the standards section of `AGENTS.md` when they exist. Those paths are the list the Standards sub-agent gets, so it reads them instead of guessing where standards live. A repo with none of them documents no standards, and the baseline below stands alone.
+Read `CODING_STANDARDS.md` first (at the root and nearest to the changed files), then every doc it links or names. Then add `CONTRIBUTING.md`, the `AGENTS.md` sections that set rules for code, and any other doc in the repo on how code should be written, such as a skill `AGENTS.md` requires for edits. Those paths are the list the Standards sub-agent gets, so it reads them instead of guessing where standards live.
 
 On top of whatever the repo documents, the Standards axis always carries the **smell baseline** below: a fixed set of Fowler code smells (_Refactoring_, ch.3) that applies even when a repo documents nothing. Two rules bind it:
 
@@ -89,8 +89,8 @@ Issue all four sub-agent calls together, in the foreground, and aggregate the re
 - The brief: "Report what breaks at runtime. Walk every item of these kinds the diff adds or changes, and answer each question for it:
   - **Side effect** (provider call, mail, webhook): what happens if the process dies between the effect and its commit? Does a retry past the lease repeat it? Does one tenant's or runner's failure block the others? Can a reader run before the lock?
   - **Query a UI renders**: does a failed load look different from an empty one? Does a failed refresh still report success?
-  - **Form**: implicit submit, a disabled control with no reason shown, unsaved-state equality.
-  - **Boundary value**: zero, empty, nil; protocol tokens compared case-sensitively; `ORDER BY … LIMIT` with no tie-breaker; validation only on the client; a write and its audit row in separate transactions.
+  - **Form**: does Enter submit it before it is ready? Does a disabled control show why? Does the unsaved-changes check compare values, so an edit undone by hand reads as clean?
+  - **Boundary value**: does it hold at zero, empty and nil? Are protocol tokens compared case-insensitively where the protocol says so? Does each `ORDER BY … LIMIT` have a tie-breaker? Does the server repeat the client's validation? Do a write and its audit row share a transaction?
   - **Test**: does it run the mechanism its name claims, and would it fail if the code under test returned nothing?
   - **Changed doc line** (ADR, glossary, AGENTS.md): does the code it describes back it?
   For each finding, name the trigger (the crash point, the value, the order of events) and what the user or the data ends up with. Under 400 words."

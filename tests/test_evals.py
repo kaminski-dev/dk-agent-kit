@@ -146,7 +146,8 @@ RENDER_NOTHING = ("import sys, unittest, ledger.web as w; w.render_to_string = l
 
 
 def sends_after_crash(ws, tag):
-    """Subjects and idempotency keys the provider saw: a sender dies right after its send, a second runs past the lease."""
+    """A sender dies right after its send, a second runs past the lease: the first one's exit code, the id the
+    second sent, and each send the provider saw as subject|idempotency_key."""
     script, db, log = ws.parent / "send_once.py", ws.parent / f"{tag}.db", ws.parent / f"{tag}.log"
     script.write_text(SEND_ONCE)
     crash = run(ws, f"PYTHONPATH=. python3 '{script}' '{db}' '{log}' crash", cwd=ws / "app")
@@ -177,7 +178,8 @@ check("388 review: on the reference fix the repeat carries the first send's idem
       code == 9 and retried == "1" and sent == ["Week 41|outbox-1", "Week 41|outbox-1"], (code, retried, sent))
 empty = run(ws, f'python3 -c "{RENDER_NOTHING}"', cwd=ws / "app")
 check("388 review: on the reference fix the Outbox tab's test fails when rendering returns nothing",
-      empty.returncode != 0, empty.stderr[-500:])
+      empty.returncode != 0 and "test_lists_each_message_and_whether_it_went_out" in empty.stderr
+      and "TypeError" in empty.stderr, empty.stderr[-500:])
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
 # The verify fixture: a clean #353 fix in a repo whose verify doc says there is no database to start.
