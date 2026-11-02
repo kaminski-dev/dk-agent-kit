@@ -121,6 +121,16 @@ echo 1 >"$ws/app-17/node_modules/index.js"
 # Seven ignored scratch files (app-18): the keep line names five and counts the rest.
 scratch18=$(worktree app-18 feat/18-scratch 'scratch-*')
 for i in 1 2 3 4 5 6 7; do echo "$i" >"$ws/app-18/scratch-$i.txt"; done
+# Build output that tools write and rebuild (app-20 to app-22): a server bundle in .output/, a test
+# runner's test-results/, a dev server's .api-port.
+output20=$(worktree app-20 feat/20-output .output/)
+mkdir -p "$ws/app-20/.output/server"
+echo bundle >"$ws/app-20/.output/server/index.mjs"
+results21=$(worktree app-21 feat/21-results test-results/)
+mkdir -p "$ws/app-21/test-results"
+echo report >"$ws/app-21/test-results/report.json"
+port22=$(worktree app-22 feat/22-port .api-port)
+echo 8123 >"$ws/app-22/.api-port"
 # On origin only: a base of an open PR, and one pushed to after its merge. pre-main, the batch
 # branch, is on origin and checked out in a worktree.
 main=$(git -C "$app" rev-parse main)
@@ -139,7 +149,8 @@ echo "[$(pr 11 feat/1-done "$done1" main), $(pr 12 feat/2-dirty "$dirty2" main),
   $(pr 19 feat/8-loose "$loose8" main), $(pr 20 feat/10-base "$main" main), $(pr 22 pre-main "$main" main),
   $(pr 23 feat/11-moved "$moved11" main), $(pr 24 pre-master "$main" main), $(pr 25 feat/13-batched "$main" pre-master),
   $(pr 26 feat/16-regen "$regen16" main), $(pr 27 feat/17-docs "$docs17" main),
-  $(pr 28 feat/18-scratch "$scratch18" main)]" \
+  $(pr 28 feat/18-scratch "$scratch18" main), $(pr 30 feat/20-output "$output20" main),
+  $(pr 31 feat/21-results "$results21" main), $(pr 32 feat/22-port "$port22" main)]" \
   >"$fx/acme_app/pr-merged.json"
 # A second checkout of acme/app: its remote branches are the same ones, handled once.
 git clone -q https://github.com/acme/app.git "$ws/app-copy"
@@ -200,6 +211,9 @@ has "$out" "remove worktree $ws/app-16 (feat/16-regen, PR #26 merged)"
 has "$out" "keep worktree $ws/app-17 (feat/17-docs, PR #27 merged; ignored files outside the regenerable list: docs/)"
 lacks "$out" "remove branch feat/17-docs"
 has "$out" "keep worktree $ws/app-18 (feat/18-scratch, PR #28 merged; ignored files outside the regenerable list: scratch-1.txt, scratch-2.txt, scratch-3.txt, scratch-4.txt, scratch-5.txt and 2 more)"
+has "$out" "remove worktree $ws/app-20 (feat/20-output, PR #30 merged)"
+has "$out" "remove worktree $ws/app-21 (feat/21-results, PR #31 merged)"
+has "$out" "remove worktree $ws/app-22 (feat/22-port, PR #32 merged)"
 has "$out" "remove database dk-pg-app-1 (issue #1 closed)"
 lacks "$out" "dk-pg-app-3"
 has "$out" "keep database dk-pg-gone-9 (issue #9; no GitHub checkout at $tmp/gone)"
@@ -232,6 +246,7 @@ git -C "$app" rev-parse -q --verify refs/heads/feat/1-done >/dev/null && fail "b
 [[ -d "$ws/notes-1" && -d "$ws/other-1" ]] || fail "worktree of a repo without PRs removed"
 [[ ! -e "$ws/app-7" ]] || fail "worktree behind its merged PR still there"
 [[ ! -e "$ws/app-16" ]] || fail "worktree with only regenerable ignored files still there"
+for gone in app-20 app-21 app-22; do [[ ! -e "$ws/$gone" ]] || fail "worktree $gone with only build output still there"; done
 git -C "$app" rev-parse -q --verify refs/heads/pre-master >/dev/null || fail "integration branch pre-master removed"
 for kept in app-pre-main:pre-main app-2:feat/2-dirty app-3:feat/3-open app-4:feat/4-again app-5:feat/5-ahead app-6:verify-assets/6; do
   [[ -d "$ws/${kept%%:*}" ]] || fail "worktree ${kept%%:*} removed"
