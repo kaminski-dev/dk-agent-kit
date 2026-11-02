@@ -956,6 +956,7 @@ def dk_gc_words(segs):
 ZSH_SPECIAL = {"path", "PATH", "fpath", "module_path", "cdpath", "manpath", "status", "pipestatus", "argv",
                "commands", "functions", "aliases", "options", "parameters", "history"}
 LOOP = re.compile(START + r"(?:for|foreach|select)\s+((?:[A-Za-z_]\w*\s+)*?[A-Za-z_]\w*)\b(?=\s+in\b|\s*[(;\n]|\s*$)")
+LOOP_ITEM = r"\"[^\"]*\"|'[^']*'|[^\s;&|()\"']+"
 ZSH_SCRIPT_OPENER = r"\bzsh\s+(?:(?:[-+]o\s+\w+|[-+][a-zA-Z]+)\s+)*"
 DECLARE = {"local", "typeset", "declare", "export", "readonly", "integer", "float"}
 ASSIGN_PARTS = re.compile(r"([A-Za-z_]\w*)(?:\[[^]]*\])?(\+?=)(.*)", re.S)
@@ -1017,16 +1018,24 @@ def overwritten(words):
             yield name
 
 
+def loop_header(words):
+    """(names, items) when `words` open a for, foreach or select loop, else None; no items when the loop runs over
+    the positional parameters. Items from zsh's `(a "b c")` list keep their quotes."""
+    words = list(itertools.dropwhile(lambda w: w in LEAD, words))
+    if words[:1] not in (["for"], ["foreach"], ["select"]):
+        return None
+    names = list(itertools.takewhile(lambda w: w != "in" and not w.startswith("("), words[1:]))
+    rest = words[1 + len(names):]
+    if rest[:1] == ["in"]:
+        return names, rest[1:]
+    return names, re.findall(LOOP_ITEM, rest[0][1:-1]) if rest else []
+
+
 def zsh_name_words(segs):
     for seg in (seg for seg in segs if seg.shell == "zsh"):
-        words, names = seg.words, list(overwritten(seg.words))
-        while words and words[0] in LEAD:
-            words = words[1:]
-        if words[:1] in (["for"], ["foreach"], ["select"]):
-            for w in words[1:]:
-                if w == "in" or w.startswith("("):
-                    break
-                names.append(w)
+        names, loop = list(overwritten(seg.words)), loop_header(seg.words)
+        if loop:
+            names += loop[0]
         else:
             _, words = command(seg)
             if words[:1] == ["read"]:
@@ -1068,9 +1077,8 @@ VARIABLE_COMMAND = ("deny", "zsh does not word-split a variable, so a command ke
                     "over quoted commands).")
 SPACED_ITEM = r"\"[^\"]*\s[^\"]*\"|'[^']*\s[^']*'"
 SPACED_RAW = re.compile(r"(?:^|[\s;&|(])([A-Za-z_]\w*)=(?:" + SPACED_ITEM + ")")
-# a for or foreach header, `in` or zsh's parenthesised list, up to the first word that is not an item
-LOOP_ITEMS_RAW = re.compile(START + r"(?:for|foreach)\s+((?:[A-Za-z_]\w*\s+)*?[A-Za-z_]\w*)(?:\s+in\b|\s*\()"
-                            + r"((?:\s*(?:\"[^\"]*\"|'[^']*'|[^\s;&|()\"']+))*)")
+LOOP_ITEMS_RAW = re.compile(START + r"(?:for|foreach|select)\s+((?:[A-Za-z_]\w*\s+)*?[A-Za-z_]\w*)(?:\s+in\b|\s*\()"
+                            + r"((?:[ \t]*(?:" + LOOP_ITEM + "))*)")
 
 
 def check_command_variable(cmd):
@@ -1087,23 +1095,6 @@ def check_command_variable(cmd):
     return []
 
 
-def loop_header(words):
-    """(names, items) when `words` open a for or foreach loop over a word list, else None."""
-    words = list(itertools.dropwhile(lambda w: w in LEAD, words))
-    if words[:1] not in (["for"], ["foreach"]):
-        return None
-    names = list(itertools.takewhile(lambda w: w != "in" and not w.startswith("("), words[1:]))
-    rest = words[1 + len(names):]
-    if not names or not rest:
-        return None
-    if rest[0] == "in":
-        return names, rest[1:]
-    try:
-        return names, shlex.split(rest[0][1:-1])  # zsh's `for c (a "b c")` keeps its list as raw text
-    except ValueError:
-        return names, rest[0][1:-1].split()
-
-
 def command_variable_words(segs):
     spaced = set()
     for seg in (seg for seg in segs if seg.shell == "zsh"):
@@ -1111,12 +1102,13 @@ def command_variable_words(segs):
         m = re.fullmatch(r"\$\{?([A-Za-z_]\w*)\}?", words[0]) if words else None
         if m and m.group(1) in spaced:
             return [VARIABLE_COMMAND]
-        sets = [(name, "" if value.startswith("(") else value) for name, op, value in assignments(seg.words) if op]
+        assigned = [(name, "" if value.startswith("(") else value) for name, op, value in assignments(seg.words) if op]
         loop = loop_header(seg.words)
-        if loop:  # a loop variable holds each item in turn, so one item with a space is enough
-            spaced_item = next((i for i in loop[1] if re.search(r"\s", i)), "")
-            sets += [(name, spaced_item) for name in loop[0]]
-        for name, value in sets:
+        if loop:  # zsh deals the items to the names in turn; a name holding one item with a space is spaced
+            names, items = loop
+            assigned += [(name, next((i for i in items[k::len(names)] if re.search(r"\s", i)), ""))
+                         for k, name in enumerate(names)]
+        for name, value in assigned:
             if re.search(r"\s", value):
                 spaced.add(name)
             else:
