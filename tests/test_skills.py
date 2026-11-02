@@ -106,9 +106,13 @@ for what, pattern in (
 ):
     if not re.search(pattern, test_question):
         errors.append(f"skills/code-review: the Correctness brief's **Test** question does not name {what}")
-if not re.search(r"`toEqual\(\[\]\)`[^;]*\bwhen a subject that does nothing\b[^;]*\breturns\b", test_question):
+empty_result = re.search(r"`toEqual\(\[\]\)`[^;]*", test_question)
+empty_result = empty_result.group(0) if empty_result else ""
+if not re.search(r"\bwhen a subject that does nothing\b.*\breturns\b", empty_result) or not re.search(
+        r"`undefined`.*`None`", empty_result):
     errors.append("skills/code-review: the Correctness brief's **Test** question must flag an empty-result-only assertion "
-                  "(`toEqual([])`) only when a subject that does nothing still returns that result, in the same clause (#87)")
+                  "(`toEqual([])`) only when a subject that does nothing still returns that result, and say in the same "
+                  "clause that a no-op returns `undefined` or `None` (#87: reviewers took a no-op to return [])")
 
 flow = skills["issue-flow"].read_text()
 bot = re.search(r"^\*\*Review bot\.\*\*.*?(?=^## )", flow, re.M | re.S)
