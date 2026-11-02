@@ -1,5 +1,5 @@
 {
-  "description": "dk-guard: PreToolUse guard for Bash, fails closed if the script crashes or times out; Stop gate that runs the repo's .claude/gate.sh, fails open; require-worktree on Edit|Write and a SessionStart baseline, both fail open.",
+  "description": "dk-guard: PreToolUse guard for Bash, fails closed if the script crashes or times out; a push gate on Bash that runs the pushed checkout's .claude/gate.sh before git push, fails open; Stop gate that runs the repo's .claude/gate.sh, fails open; require-worktree on Edit|Write and a SessionStart baseline, both fail open.",
   "hooks": {
     "PreToolUse": [
       {
@@ -10,6 +10,16 @@
             "command": "python3 -I \"${CLAUDE_PLUGIN_ROOT}\"/scripts/guard-bash.py",
             "timeout": 10,
             "onFailure": "block"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"${CLAUDE_PLUGIN_ROOT}\"/scripts/push-gate.py",
+            "timeout": 600
           }
         ]
       },
