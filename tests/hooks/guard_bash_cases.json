@@ -406,5 +406,9 @@
   {"cmd": "for c in \"git status\"; do cmd=(${=c}); $cmd; done", "expect": "allow"},
   {"cmd": "bash -c 'for c in \"git status\" \"git log\"; do $c; done'", "expect": "allow"},
   {"cmd": "for f in \"notes a.txt\" b.txt; do cat \"$f\"; done 'unterminated", "expect": "allow"},
-  {"cmd": "echo 'for c in \"git status\"; do $c; done'", "expect": "allow"}
+  {"cmd": "echo 'for c in \"git status\"; do $c; done'", "expect": "allow"},
+  {"why": "PR review (#59): a list ends at its line, select sets its variable the same way, and zsh deals the items of a multi-name loop to the names in turn", "cmd": "for c in git ls\ndo echo \"x y\"; $c; done 'unterminated", "expect": "allow"},
+  {"cmd": "select c in \"git status\" \"git log\"; do $c; done", "expect": "deny"},
+  {"cmd": "for k v in \"git status\" foo; do $v; done", "expect": "allow"},
+  {"cmd": "for k v in \"git status\" foo; do $k; done", "expect": "deny"}
 ]
