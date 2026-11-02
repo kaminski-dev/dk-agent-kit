@@ -6,7 +6,8 @@ State lives in <workspace>/.tracker/state.json. Every call is logged to
 .tracker/issue-<N>.md (labels, state and every comment), .tracker/pr.md
 (the last PR opened, with the acceptance result for its head branch) and
 .tracker/pulls/<N>.md (the last PR for issue N, read from a <type>/<N>-<slug> head).
-Calls hold a lock on the state, so parallel agents do not lose each other's writes.
+Calls hold a lock on the state, so parallel agents do not lose each other's writes; `pr create` lets
+go of it while the acceptance check runs (at most CHECK_TIMEOUT seconds per run).
 """
 import fcntl
 import json
@@ -22,6 +23,8 @@ WS = pathlib.Path(__file__).resolve().parent.parent
 TRACKER = WS / ".tracker"
 STATE = TRACKER / "state.json"
 NOW = "2026-10-13T09:00:00Z"
+CHECK_TIMEOUT = 300
+LOCK = None
 
 
 def load():
@@ -222,8 +225,11 @@ def acceptance(head, num):
         if subprocess.run(["tar", "-x", "-C", str(src)], input=archive.stdout, capture_output=True).returncode != 0:
             return [f"acceptance: fail (could not extract {head})"]
         unit = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-q"], cwd=src,
-                              capture_output=True, text=True)
-        acc = subprocess.run([sys.executable, str(check), str(src)], capture_output=True, text=True)
+                              capture_output=True, text=True, timeout=CHECK_TIMEOUT)
+        acc = subprocess.run([sys.executable, str(check), str(src)], capture_output=True, text=True,
+                             timeout=CHECK_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return [f"acceptance: fail (a check ran past {CHECK_TIMEOUT} s)"]
     finally:
         shutil.rmtree(src, ignore_errors=True)
     return [f"unit tests: {'pass' if unit.returncode == 0 else 'fail'}",
@@ -242,7 +248,10 @@ def cmd_pr(sub, args, state):
         state["prs"].append(pr)
         save(state)
         issue = issue_of(head)
-        lines = [f"# PR #{num} {pr['title']}", f"base: {base}", f"head: {head}"] + acceptance(head, issue)
+        fcntl.flock(LOCK, fcntl.LOCK_UN)
+        checks = acceptance(head, issue)
+        fcntl.flock(LOCK, fcntl.LOCK_EX)
+        lines = [f"# PR #{num} {pr['title']}", f"base: {base}", f"head: {head}"] + checks
         record = "\n".join(lines) + "\n\n## Body\n\n" + pr["body"] + "\n"
         (TRACKER / "pr.md").write_text(record)
         if issue:
@@ -266,8 +275,9 @@ def cmd_pr(sub, args, state):
 
 
 def main(argv):
-    lock = open(TRACKER / ".lock", "w")
-    fcntl.flock(lock, fcntl.LOCK_EX)
+    global LOCK
+    LOCK = open(TRACKER / ".lock", "w")
+    fcntl.flock(LOCK, fcntl.LOCK_EX)
     with open(TRACKER / "calls.log", "a") as log:
         log.write(" ".join(argv) + "\n")
     if not argv:
