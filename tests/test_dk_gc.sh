@@ -297,7 +297,15 @@ mkdir -p "$fx/no-lsof"
 printf '#!/bin/sh\nexit 1\n' >"$fx/no-lsof/lsof"
 chmod +x "$fx/no-lsof/lsof"
 out=$(PATH="$fx/no-lsof:$PATH" "$dkgc" --dry-run --workspace "$ws")
-has "$out" "keep worktree $ws/app-1 (feat/1-done, PR #11 merged; cannot tell whether a process runs in it: lsof did not answer)"
+has "$out" "keep worktree $ws/app-1 (feat/1-done, PR #11 merged; cannot tell whether a process runs in it: lsof failed)"
+lacks "$out" "remove worktree"
+# Nor when lsof lists processes and then reports an error: the listing may be missing one.
+real_lsof=$(command -v lsof)
+mkdir -p "$fx/lsof-error"
+printf '#!/bin/sh\n%s "$@"\nexit 1\n' "$real_lsof" >"$fx/lsof-error/lsof"
+chmod +x "$fx/lsof-error/lsof"
+out=$(PATH="$fx/lsof-error:$PATH" "$dkgc" --dry-run --workspace "$ws")
+has "$out" "keep worktree $ws/app-1 (feat/1-done, PR #11 merged; cannot tell whether a process runs in it: lsof failed)"
 lacks "$out" "remove worktree"
 
 # Once the process is gone, the worktree is finished like any other.
@@ -375,7 +383,7 @@ stop "$pidn"
 out=$("$dkgc" --in-use "$ws/notes-1") || fail "--in-use exited non-zero on a worktree no process runs in: $out"
 [[ -z "$out" ]] || fail "--in-use printed on a free worktree: $out"
 out=$(PATH="$fx/no-lsof:$PATH" "$dkgc" --in-use "$ws/notes-1") && fail "--in-use exited 0 when lsof could not tell"
-has "$out" "$ws/notes-1: cannot tell whether a process runs in it: lsof did not answer"
+has "$out" "$ws/notes-1: cannot tell whether a process runs in it: lsof failed"
 [[ -d "$ws/notes-1" ]] || fail "--in-use removed something"
 # A worktree path outside ASCII matches the process in it whatever the locale (lsof escapes it in C).
 git -C "$ws/notes" worktree add -q -b feat/2-cafe "$ws/notes-2-café"
@@ -386,6 +394,15 @@ for loc in C en_US.UTF-8; do
   has "$out" "in use by sleep (pid $pidc)"
 done
 stop "$pidc"
+# lsof escapes control characters and backslashes in a path (\n, ^A, \\); the match follows its escapes.
+odd="$tmp/odd-a"$'\n'"b"$'\t'"c"$'\x01'"d"$'\x7f'"e\\f"
+mkdir -p "$odd/src"
+pido=$(start_in "$odd/src")
+busy_pids="$busy_pids $pido"
+out=$("$dkgc" --in-use "$odd") && fail "--in-use missed the process in a path with control characters"
+has "$out" "in use by sleep (pid $pido)"
+stop "$pido"
+"$dkgc" --in-use "$odd" >/dev/null || fail "--in-use flagged a free path with control characters"
 # A path that is no worktree is no all-clear: a typo stops the removal by hand.
 out=$("$dkgc" --in-use "$ws/notes-9") && fail "--in-use exited 0 on a path that does not exist"
 has "$out" "$ws/notes-9: no such directory"
