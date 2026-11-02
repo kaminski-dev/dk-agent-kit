@@ -1229,9 +1229,8 @@ def credential_words(segs):
     return []
 
 
-# dk:verify gives each run a fresh `mktemp -d "$SCRATCH/<N>/verify.XXXXXX"`, so nothing in one needs deleting: an
-# `rm` there loses the control run's evidence. The six random characters are rarely all lowercase, which keeps
-# `verify.output` out; a glob over the runs counts only under the issue number's directory.
+# mktemp's six random characters are rarely all lowercase, which keeps `verify.output` out; a glob over the runs
+# counts only under the issue number's directory.
 RUN_DIR = re.compile(r"(?:^|/)(?:verify\.(?=[a-z]{0,5}[A-Z0-9])[A-Za-z0-9]{6}|\d+/verify\.\*)(?:/|$)")
 VERIFY_RM = ("deny", "This deletes inside a dk:verify run directory (verify.XXXXXX), and a rerun needs no cleanup: "
              "screenshots overwrite by name, and a rerun takes a new `mktemp -d \"$SCRATCH/<N>/verify.XXXXXX\"` "
@@ -1248,10 +1247,9 @@ def run_path(cwd, target, known):
     return text if cwd is None or text.startswith(("/", "$")) else os.path.join(cwd, text)
 
 
-def rm_targets(words):
-    """The operands of one `rm` invocation (`words[0]` is rm)."""
+def rm_operands(rm_words):
     options = True
-    for w in words[1:]:
+    for w in rm_words[1:]:
         if options and w == "--":
             options = False
         elif not (options and w.startswith("-") and len(w) > 1):
@@ -1260,7 +1258,7 @@ def rm_targets(words):
 
 def removes_run(words, cwd, known):
     return bool(words) and os.path.basename(words[0]) == "rm" \
-        and any(RUN_DIR.search(run_path(cwd, t, known)) for t in rm_targets(words))
+        and any(RUN_DIR.search(run_path(cwd, t, known)) for t in rm_operands(words))
 
 
 def verify_rm_words(segs, cwd):
