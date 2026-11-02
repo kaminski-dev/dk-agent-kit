@@ -252,6 +252,9 @@ else:
 RENDER_NOTHING = ("import sys, unittest, ledger.web as w; w.render_to_string = lambda c: None; "
                   "s = unittest.defaultTestLoader.loadTestsFromName('tests.test_outbox.OutboxTabTest'); "
                   "sys.exit(not unittest.TextTestRunner().run(s).wasSuccessful())")
+LIST_NOTHING = ("import sys, unittest, ledger.outbox as o; o.Outbox.list = lambda self: None; "
+                "s = unittest.defaultTestLoader.loadTestsFromName('tests.test_outbox.OutboxList.test_an_empty_outbox_lists_nothing'); "
+                "sys.exit(not unittest.TextTestRunner().run(s).wasSuccessful())")
 
 
 def sends_after_crash(ws, tag):
@@ -267,6 +270,9 @@ def sends_after_crash(ws, tag):
 graded = criteria("code-review-correctness").get("finds-empty-test", "")
 check("388 review: the empty-test grader fails the finding under Standards (#63: Correctness owns it)",
       "Correctness section" in graded and re.search(r"FAIL when[^.]*under Standards", graded) is not None, graded)
+kept = criteria("code-review-correctness").get("keeps-valid-empty-result-test", "")
+check("388 review: a grader fails a review that calls the empty-outbox test empty (#87: a no-op returns None, not [])",
+      "test_an_empty_outbox_lists_nothing" in kept and re.search(r"FAIL when[^.]*empty test", kept) is not None, kept)
 
 ws = scaffold("code-review-correctness")
 branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
@@ -280,6 +286,10 @@ check("388 review: a crash after the send leaves the mail to go out again, with 
       code == 9 and retried == "1" and sent == ["Week 41|None", "Week 41|None"], (code, retried, sent))
 empty = run(ws, f'python3 -c "{RENDER_NOTHING}"', cwd=ws / "app")
 check("388 review: the Outbox tab's test passes when rendering returns nothing", empty.returncode == 0, empty.stderr[-500:])
+noop = run(ws, f'python3 -c "{LIST_NOTHING}"', cwd=ws / "app")
+check("388 review: the empty-outbox test fails when Outbox.list does nothing",
+      noop.returncode != 0 and "test_an_empty_outbox_lists_nothing" in noop.stderr and "AssertionError" in noop.stderr,
+      noop.stderr[-500:])
 
 git(ws, "app", "checkout", "-q", "-b", "reference")
 patch = run(ws, f"git apply '{REFERENCE / 'reference-388.patch'}'", cwd=ws / "app")
