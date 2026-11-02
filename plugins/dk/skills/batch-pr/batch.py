@@ -22,7 +22,7 @@ import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
-ISSUE_LINE = re.compile(r"^\s*(close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs)\s+#(\d+)\s*$", re.I | re.M)
+ISSUE_LINE = re.compile(r"^\s*(close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs)(?::\s*|\s+)#(\d+)\s*$", re.I | re.M)
 
 
 def sh(*cmd, ok=(0,)):
