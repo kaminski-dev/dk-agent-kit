@@ -1,12 +1,13 @@
 ---
 name: code-review
-description: "Review the changes since a fixed point (default origin/pre-main) along three axes: Standards (does the code follow this repo's documented coding standards and the review baseline?), Spec (does the code match what the originating issue/spec asked for?) and Comments (do the comments the change adds earn their place?). Runs the reviews in parallel read-only sub-agents and reports them side by side. Use when the user wants to review a branch, a PR, work-in-progress changes, or asks to \"review since X\"."
+description: "Review the changes since a fixed point (default origin/pre-main) along four axes: Standards (does the code follow this repo's documented coding standards and the review baseline?), Spec (does the code match what the originating issue/spec asked for?), Correctness (what breaks at runtime?) and Comments (do the comments the change adds earn their place?). Runs the reviews in parallel read-only sub-agents and reports them side by side. Use when the user wants to review a branch, a PR, work-in-progress changes, or asks to \"review since X\"."
 ---
 
-Three-axis review of the diff between `HEAD` and a fixed point the user supplies:
+Four-axis review of the diff between `HEAD` and a fixed point the user supplies:
 
 - **Standards**: does the code conform to this repo's documented coding standards?
 - **Spec**: does the code faithfully implement the originating issue / spec?
+- **Correctness**: what breaks at runtime: a crash between an effect and its commit, a failure shown as empty, an edge value, a test that cannot fail?
 - **Comments**: does each comment the diff adds earn its place?
 
 The axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
@@ -21,7 +22,7 @@ Whatever the user said is the fixed point (a commit SHA, branch name, tag, `HEAD
 
 Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`. When `git status --porcelain` shows uncommitted work, review it too: add `git diff HEAD` (staged and unstaged changes) and the untracked files from `git ls-files --others --exclude-standard`, which the sub-agents read in full as new files.
 
-Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and there is something to review: a non-empty branch diff, a non-empty `git diff HEAD`, or untracked files. A bad ref or an empty change should fail here, not inside three parallel sub-agents.
+Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and there is something to review: a non-empty branch diff, a non-empty `git diff HEAD`, or untracked files. A bad ref or an empty change should fail here, not inside four parallel sub-agents.
 
 ### 2. Identify the spec source
 
@@ -34,7 +35,7 @@ Look for the originating spec, in this order:
 
 ### 3. Identify the standards sources
 
-Search the repo for every file that documents how code should be written. When `CODING_STANDARDS.md` or `CONTRIBUTING.md` exists, it must be on the list.
+Read `CODING_STANDARDS.md` first (at the root and nearest to the changed files), then every doc it links or names; add `CONTRIBUTING.md` and the standards section of `AGENTS.md` when they exist. Those paths are the list the Standards sub-agent gets, so it reads them instead of guessing where standards live. A repo with none of them documents no standards, and the baseline below stands alone.
 
 On top of whatever the repo documents, the Standards axis always carries the **smell baseline** below: a fixed set of Fowler code smells (_Refactoring_, ch.3) that applies even when a repo documents nothing. Two rules bind it:
 
@@ -68,7 +69,7 @@ The **comment policy** is the part of `AGENTS.md` or `CODING_STANDARDS.md` (root
 
 ### 4. Spawn the sub-agents in parallel
 
-Issue all three sub-agent calls together, in the foreground, and aggregate the reports they return: Standards and Spec with `subagent_type: "dk:reviewer"`, Comments with `subagent_type: "dk:comment-reviewer"`. Both types are read-only, so the reviewers can share one worktree.
+Issue all four sub-agent calls together, in the foreground, and aggregate the reports they return: Standards, Spec and Correctness with `subagent_type: "dk:reviewer"`, Comments with `subagent_type: "dk:comment-reviewer"`. Both types are read-only, so the reviewers can share one worktree.
 
 **Standards sub-agent prompt** should include:
 
@@ -82,6 +83,18 @@ Issue all three sub-agent calls together, in the foreground, and aggregate the r
 - The path or fetched contents of the spec.
 - The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep), where recorded scope amendments count as asked for; (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
 
+**Correctness sub-agent prompt** should include:
+
+- The diff command and commit list, plus the untracked files from step 1, which it reads in full.
+- The brief: "Report what breaks at runtime. Walk every item of these kinds the diff adds or changes, and answer each question for it:
+  - **Side effect** (provider call, mail, webhook): what happens if the process dies between the effect and its commit? Does a retry past the lease repeat it? Does one tenant's or runner's failure block the others? Can a reader run before the lock?
+  - **Query a UI renders**: does a failed load look different from an empty one? Does a failed refresh still report success?
+  - **Form**: implicit submit, a disabled control with no reason shown, unsaved-state equality.
+  - **Boundary value**: zero, empty, nil; protocol tokens compared case-sensitively; `ORDER BY … LIMIT` with no tie-breaker; validation only on the client; a write and its audit row in separate transactions.
+  - **Test**: does it run the mechanism its name claims, and would it fail if the code under test returned nothing?
+  - **Changed doc line** (ADR, glossary, AGENTS.md): does the code it describes back it?
+  For each finding, name the trigger (the crash point, the value, the order of events) and what the user or the data ends up with. Under 400 words."
+
 **Comments sub-agent prompt** should include:
 
 - The diff command and commit list, plus the untracked files from step 1, which it reads in full.
@@ -93,7 +106,7 @@ If the spec is missing, skip the Spec sub-agent and note this in the final repor
 
 ### 5. Aggregate
 
-Present the three reports under `## Standards`, `## Spec` and `## Comments` headings, verbatim or lightly cleaned. Do **not** merge or rerank findings, because the axes are deliberately separate (see _Why separate axes_).
+Present the four reports under `## Standards`, `## Spec`, `## Correctness` and `## Comments` headings, verbatim or lightly cleaned. Do **not** merge or rerank findings, because the axes are deliberately separate (see _Why separate axes_).
 
 End with a one-line summary: total findings per axis, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes: that's the reranking the separation exists to prevent.
 
@@ -103,6 +116,7 @@ A change can pass one axis and fail another:
 
 - Code that follows every standard but implements the wrong thing → **Standards pass, Spec fail.**
 - Code that does exactly what the issue asked but breaks the project's conventions → **Spec pass, Standards fail.**
-- Clean, correct code wrapped in comments that narrate how it was written → **Standards and Spec pass, Comments fail.**
+- Code that follows the standards and does what the issue asked, but mails a customer twice when the process dies after the send → **Standards and Spec pass, Correctness fail.**
+- Clean, correct code wrapped in comments that narrate how it was written → **Standards, Spec and Correctness pass, Comments fail.**
 
 Reporting them separately stops one axis from masking another.

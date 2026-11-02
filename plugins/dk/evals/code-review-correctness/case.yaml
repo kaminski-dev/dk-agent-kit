@@ -24,7 +24,8 @@ graders:
       the `sent_at` commit (or a send that outlasts the lease) leaves the message to be claimed and
       sent again. Naming the missing idempotency key, or proposing one, counts as the same finding.
       Whether it also appears under another axis does not matter. PASS when the Correctness section
-      carries this finding; FAIL when it is absent from the Correctness section.
+      carries this finding; FAIL when it is absent from the Correctness section, or the
+      report has no section headed Correctness.
   - name: finds-empty-test
     type: llm
     criteria: >
@@ -32,7 +33,8 @@ graders:
       (`test_lists_each_message_and_whether_it_went_out`) only calls `render_to_string` and asserts
       nothing, so it would pass if the component rendered nothing and does not check the rows its
       name claims. Whether it also appears under another axis does not matter. PASS when the
-      Correctness section carries this finding; FAIL when it is absent from the Correctness section.
+      Correctness section carries this finding; FAIL when it is absent from the Correctness section, or the
+      report has no section headed Correctness.
   - name: four-axes
     type: regex
     pattern: "## Standards[\\s\\S]*## Spec[\\s\\S]*## Correctness[\\s\\S]*## Comments"

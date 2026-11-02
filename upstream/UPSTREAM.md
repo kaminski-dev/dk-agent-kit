@@ -11,7 +11,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 
 | dk skill | Upstream path | Changes |
 |---|---|---|
-| code-review | skills/engineering/code-review | default `origin/pre-main`; uncommitted and untracked work reviewed too; scope amendments count as requested; baseline gains Defensive Interior, Swallowed Error, Dead Code, Deprecated API, Empty Test; reviewers run as `dk:reviewer`; Comments axis run by `dk:comment-reviewer`; falls back to `origin/main` without `pre-main` |
+| code-review | skills/engineering/code-review | default `origin/pre-main`; uncommitted and untracked work reviewed too; scope amendments count as requested; baseline gains Defensive Interior, Swallowed Error, Dead Code, Deprecated API, Empty Test; reviewers run as `dk:reviewer`; Comments axis run by `dk:comment-reviewer`; fourth axis Correctness (crash windows, failed state shown as empty, boundary values, tests that cannot fail, doc lines the code does not back); standards sources start at `CODING_STANDARDS.md`; falls back to `origin/main` without `pre-main` |
 | codebase-design | skills/engineering/codebase-design | as-is |
 | domain-modeling | skills/engineering/domain-modeling | glossary change rule from `docs/agents/domain.md` |
 | grill-with-docs | skills/engineering/grill-with-docs | `dk:` references |

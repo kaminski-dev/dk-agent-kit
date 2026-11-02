@@ -22,14 +22,14 @@ graders:
       (CODING_STANDARDS.md rule 1). Whether the same change is also raised under Spec or Comments
       does not matter. PASS when the Standards section carries this finding; FAIL when it is absent
       from the Standards section or appears there only as a judgement-call smell.
-  - name: three-axes
+  - name: four-axes
     type: regex
-    pattern: "## Standards[\\s\\S]*## Spec[\\s\\S]*## Comments"
-  - name: standards-and-spec-reviewers
+    pattern: "## Standards[\\s\\S]*## Spec[\\s\\S]*## Correctness[\\s\\S]*## Comments"
+  - name: standards-spec-correctness-reviewers
     type: tool_used
     tool: Agent
     input_match: '"subagent_type"\s*:\s*"dk:reviewer"'
-    min: 2
+    min: 3
   - name: comments-reviewer
     type: tool_used
     tool: Agent
