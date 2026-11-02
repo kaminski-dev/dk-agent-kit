@@ -12,6 +12,7 @@ go of it while the acceptance check runs (at most CHECK_TIMEOUT seconds per run)
 An issue's "blocked_by" lists its native blockers, read by `is:blocked` in a
 search and by `gh api .../dependencies/blocked_by`, and added by a POST there.
 "search_qualifiers": false makes a search with is:blocked fail, as on a GitHub without it.
+"other_repos" maps "owner/repo" to {number: state}, for `gh issue view N --repo owner/repo`.
 """
 import fcntl
 import json
@@ -148,6 +149,13 @@ def labels_from(values):
 
 def cmd_issue(sub, args, state):
     pos, o = opts(args, VALUE_FLAGS, MULTI)
+    repo = o.get("--repo") or o.get("-R")
+    if sub == "view" and repo and repo != state["repo"]:
+        other = state.get("other_repos", {}).get(repo, {}).get(pos[0].lstrip("#") if pos else "")
+        if other is None:
+            fail(f"GraphQL: Could not resolve to an issue or pull request in {repo}.")
+        emit(pick({"number": int(pos[0].lstrip("#")), "state": other.upper()}, o), o)
+        return
     if sub == "view":
         num = issue_number(pos, state)
         d = issue_json(state, num)

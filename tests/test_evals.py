@@ -415,6 +415,20 @@ for src, cmd in commands:
           (cmd, got if isinstance(got, str) else len(got)))
 got = ready_py()
 check("ready.py: lists all 43 past 30", isinstance(got, tuple) and len(got[0]) == 43, got)
+
+# Blockers in another repo: acme/billing#5 is closed, acme/billing#6 open; this repo has no #5 or #6.
+state = json.loads(state_file.read_text())
+state["other_repos"] = {"acme/billing": {"5": "closed", "6": "open"}}
+for n, ref in (("377", "acme/billing#5"), ("378", "acme/billing#6")):
+    state["issues"][n] = {"title": f"Issue {n}", "body": f"Blocked by: {ref}\n", "state": "open",
+                          "labels": ["ready-for-agent"], "comments": []}
+state_file.write_text(json.dumps(state))
+r = run(ws, f"python3 -I '{READY_PY}'", cwd=ws / "app")
+ready_part, _, blocked_part = r.stdout.partition("## Blocked")
+check("ready.py: a closed cross-repo blocker leaves the issue ready", r.returncode == 0 and "- #377 " in ready_part,
+      (r.returncode, r.stdout[-400:], r.stderr))
+check("ready.py: an open cross-repo blocker is named as such",
+      "- #378 Issue 378: blocked by acme/billing#6" in blocked_part, (r.stdout[-400:], r.stderr))
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
 # --- #1091 fixture: govulncheck red on go1.27.1 and x/net v0.59.0 --------------------------------
