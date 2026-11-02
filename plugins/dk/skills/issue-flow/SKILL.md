@@ -5,7 +5,7 @@ description: "How an issue travels from GitHub issue to merged PR in repos that 
 
 # Issue flow
 
-The shared sequence for every repo that works issue → branch → PR into `pre-main` → batch merge to `main` → deploy. The repo supplies its parameters in `docs/agents/workflow.md`: worktree prefix, branch types, fresh-worktree setup, CI names, customer-reply language, production-data policy. Read it before the first git step. Tracker commands live in `docs/agents/issue-tracker.md`, labels in `docs/agents/triage-labels.md`.
+The shared sequence for every repo that works issue → branch → PR into `pre-main` → batch merge to `main` → deploy. The repo supplies its parameters in `docs/agents/workflow.md`: worktree prefix, branch types, fresh-worktree setup, CI names, batch-review fixes, customer-reply language, production-data policy. Read it before the first git step. Tracker commands live in `docs/agents/issue-tracker.md`, labels in `docs/agents/triage-labels.md`.
 
 ## 1. Read the issue
 
@@ -70,11 +70,15 @@ Wait for CI with `gh pr checks <PR> --watch --fail-fast`: it returns non-zero at
 
 ## 7. After the merge
 
-- Batch PR review findings are fixed in a new PR against `pre-main`, so they ride the same batch. A skipped finding gets its reason on the review thread.
+- Batch PR review findings take the route `workflow.md` sets as **Batch-review fixes**, `pr` when it sets none:
+  - `pr`: fix them in a new PR against `pre-main`, so they ride the same batch.
+  - `push`: a finding that passes scope intake's fold-in test (step 3) is fixed in a worktree on `origin/pre-main` (step 2). Once `.claude/gate.sh` passes, rebase onto `origin/pre-main` if it moved, push the fix as a fast-forward with `git push origin HEAD:pre-main`, and reply on the review thread with the commit SHA. A finding that fails the fold-in test becomes its own issue (step 3).
+
+  Either way, a skipped finding gets its reason on the review thread.
 - `Refs #N` issues: once the batch reaches `main`, swap `ready-for-agent` for `awaiting-verification` and comment the exact query, the deploy time and the due date. When the window has passed, call the Skill tool with `dk:post-deploy-check`: it runs the query and posts the verdict.
 - Declining an issue: comment the reason, add `wontfix`, close.
 - Clean up: `git worktree remove ~/workspace/<prefix>-<N>`, `git branch -D <branch>`. Keep `verify-assets/<N>` (step 5).
 
 ## `pre-main`
 
-`pre-main` is shared by every open PR. The maintainer moves it and brings it level with `main` after each batch; agents reach it only through PRs. The batch PR into `main` carries every merged PR's `Closes #N` or `Refs #N` line (step 6). A push that rewrites or deletes it makes the guard ask the user first.
+`pre-main` is shared by every open PR. The maintainer moves it and brings it level with `main` after each batch; agents reach it through PRs, and with **Batch-review fixes** set to `push` also through a fast-forward push of a batch-review fix (step 7). The batch PR into `main` carries every merged PR's `Closes #N` or `Refs #N` line (step 6). A push that rewrites or deletes it makes the guard ask the user first.
