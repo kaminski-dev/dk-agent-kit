@@ -214,5 +214,13 @@
   {"cmd": "for pr in 5 6; do for i in 1 2 3; do gh pr checks $pr && break; sleep 20; done; done", "expect": "deny"},
   {"why": "#45: a quoted loop or a here-doc body is data", "cmd": "echo 'until gh run view 5; do sleep 15; done'", "expect": "allow"},
   {"cmd": "gh issue comment 45 --body-file - <<'EOF'\nThe agent ran `gh pr checks 12 --watch` in the foreground.\nEOF", "expect": "allow"},
-  {"cmd": "for i in 1 2 3; do curl -sf localhost:8080/health && break; sleep 2; done; gh pr checks 12", "expect": "allow"}
+  {"cmd": "for i in 1 2 3; do curl -sf localhost:8080/health && break; sleep 2; done; gh pr checks 12", "expect": "allow"},
+  {"why": "#45 review: a while or until loop whose condition polls gh waits even without a sleep", "cmd": "until gh pr checks 5; do echo waiting; done", "expect": "deny"},
+  {"cmd": "while ! gh run view 5 --json status | grep -q completed; do :; done", "expect": "deny"},
+  {"why": "#45 review: gh's repo flag before the subcommand, a --watch value, and watch(1)", "cmd": "gh -R o/r pr checks 12 --watch", "expect": "deny"},
+  {"cmd": "gh --repo=o/r run watch 5", "expect": "deny"},
+  {"cmd": "gh pr checks 12 --watch=true", "expect": "deny"},
+  {"cmd": "watch -n 30 gh pr checks 12", "expect": "deny"},
+  {"cmd": "watch -n 30 'gh run list -L 1'", "expect": "deny"},
+  {"cmd": "gh -R o/r pr checks 12", "expect": "allow"}
 ]
