@@ -109,6 +109,9 @@ if wait.count("gh pr view") < 2:
     errors.append("skills/issue-flow: the review-bot wait must read the head again after a match, so a moved head keeps it waiting")
 if "review in progress" not in wait:
     errors.append("skills/issue-flow: the review-bot wait must not take a summary whose review is still in progress as a clean round")
+if "recent_review_start" not in wait:
+    errors.append("skills/issue-flow: the review-bot wait must read the clean round from the summary's recent-review block; "
+                  "a rate-limit notice names the head SHA too")
 step7 = re.search(r"^## 7\..*?(?=^## )", flow, re.M | re.S)
 step7 = step7.group(0) if step7 else ""
 if not re.search(r"<PR>-<review>-<\w+>", step7) or "one at a time" not in step7:
