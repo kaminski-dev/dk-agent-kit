@@ -72,7 +72,7 @@ Wait for CI with `gh pr checks <PR> --watch --fail-fast`: it returns non-zero at
 
 - Batch PR review findings take the route `workflow.md` sets as **Batch-review fixes**, `pr` when it sets none:
   - `pr`: fix them in a new PR against `pre-main`, so they ride the same batch.
-  - `push`: a finding that passes scope intake's fold-in test (step 3) is fixed in a worktree on `origin/pre-main` (step 2). Once `.claude/gate.sh` passes, rebase onto `origin/pre-main` if it moved, push the fix as a fast-forward with `git push origin HEAD:pre-main`, and reply on the review thread with the commit SHA. A finding that fails the fold-in test becomes its own issue (step 3).
+  - `push`: a finding that passes the four fold-in tests of scope intake (step 3) is fixed in a worktree on `origin/pre-main` (step 2, with the batch PR's number as `<N>`). Run `.claude/gate.sh`; once it passes, rebase onto `origin/pre-main` if it moved and push the fix as a fast-forward, never forced: `git push origin HEAD:pre-main`. Reply on the review thread with the commit SHA; that reply is the fix's record. A finding that fails a fold-in test becomes its own issue (step 3).
 
   Either way, a skipped finding gets its reason on the review thread.
 - `Refs #N` issues: once the batch reaches `main`, swap `ready-for-agent` for `awaiting-verification` and comment the exact query, the deploy time and the due date. When the window has passed, call the Skill tool with `dk:post-deploy-check`: it runs the query and posts the verdict.
@@ -81,4 +81,4 @@ Wait for CI with `gh pr checks <PR> --watch --fail-fast`: it returns non-zero at
 
 ## `pre-main`
 
-`pre-main` is shared by every open PR. The maintainer moves it and brings it level with `main` after each batch; agents reach it through PRs, and with **Batch-review fixes** set to `push` also through a fast-forward push of a batch-review fix (step 7). The batch PR into `main` carries every merged PR's `Closes #N` or `Refs #N` line (step 6). A push that rewrites or deletes it makes the guard ask the user first.
+`pre-main` is shared by every open PR. The maintainer moves it and brings it level with `main` after each batch; agents reach it through PRs, or by the fast-forward push step 7 allows. The batch PR into `main` carries every merged PR's `Closes #N` or `Refs #N` line (step 6). A push that rewrites or deletes it makes the guard ask the user first.
