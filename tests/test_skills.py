@@ -83,6 +83,30 @@ for ref in sorted(set(re.findall(r'subagent_type: "dk:([a-z][a-z-]*)"', review))
     elif WRITE_TOOLS & {t.strip() for t in tools.split(",")}:
         errors.append(f"agents/{ref}: code-review spawns it, so its tools must exclude {sorted(WRITE_TOOLS)}")
 
+baseline = re.search(r"\*\*smell baseline\*\*.*?(?=^The \*\*comment policy\*\*)", review, re.M | re.S)
+if baseline is None or re.search(r"empty test", baseline.group(0), re.I):
+    errors.append("skills/code-review: the Standards smell baseline lists Empty Test; the Correctness brief owns it")
+standards_brief = re.search(r"^\*\*Standards sub-agent prompt\*\*.*?(?=^\*\*Spec sub-agent prompt\*\*)", review, re.M | re.S)
+if not re.search(r"Whether a test can fail is the Correctness axis's question unless a documented standard rules on it",
+                 standards_brief.group(0) if standards_brief else ""):
+    errors.append("skills/code-review: the Standards brief must hand whether a test can fail to the Correctness axis, "
+                  "keeping documented test rules")
+test_question = re.search(r"^  - \*\*Test\*\*:.*$", review, re.M)
+test_question = test_question.group(0) if test_question else ""
+for what, pattern in (
+    ("a loose assertion", r"toBeDefined"),
+    ("a call as the only assertion", r"toHaveBeenCalled"),
+    ("an empty result as the only assertion", r"toEqual\(\[\]\)"),
+    ("an expected value computed by the code under test", r"computed by the code under test"),
+    ("a restated constant, config default or prompt string", r"constant, config default or prompt string"),
+    ("assertions on data the test built", r"data the test built"),
+    ("the fix", r"literal output or effect"),
+    ("the cross-row exemption", r"[Cc]ross-row relations between tables"),
+    ("the type-test exemption", r"compile-time type tests"),
+):
+    if not re.search(pattern, test_question):
+        errors.append(f"skills/code-review: the Correctness brief's **Test** question does not name {what}")
+
 flow = skills["issue-flow"].read_text()
 bot = re.search(r"^\*\*Review bot\.\*\*.*?(?=^## )", flow, re.M | re.S)
 bot = bot.group(0) if bot else ""

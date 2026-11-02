@@ -33,9 +33,12 @@ graders:
       The review's Correctness section reports that the Outbox tab's test in tests/test_outbox.py
       (`test_lists_each_message_and_whether_it_went_out`) only calls `render_to_string` and asserts
       nothing, so it would pass if the component rendered nothing and does not check the rows its
-      name claims. Whether it also appears under another axis does not matter. PASS when the
-      Correctness section carries this finding; FAIL when it is absent from the Correctness section, or the
-      report has no section headed Correctness.
+      name claims. Saying it has no assertion, or that it would pass if rendering returned nothing or
+      an empty string, counts as this finding. The Correctness axis owns this check: the Standards
+      section must not report the test, while a mention under Spec, Comments or the closing summary
+      does not matter. PASS when the Correctness section carries this finding and the Standards
+      section does not; FAIL when it is absent from the Correctness section, when it is also reported
+      under Standards, or the report has no section headed Correctness.
   - name: four-axes
     type: regex
     pattern: "## Standards[\\s\\S]*## Spec[\\s\\S]*## Correctness[\\s\\S]*## Comments"
