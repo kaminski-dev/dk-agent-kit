@@ -82,11 +82,14 @@ if ! command -v zsh >/dev/null; then
   echo "bootstrap: no zsh on PATH, alias list not written"
 else
   # the marker keeps anything the interactive startup files print out of the list
-  alias_names=$(zsh -ic 'print -rl -- dk-alias:${^${(k)aliases}}' </dev/null 2>/dev/null |
-    sed -n 's/^dk-alias://p' | LC_ALL=C sort -u || true)
+  alias_out=$(zsh -ic 'print -rl -- dk-alias:${^${(k)aliases}}' </dev/null 2>/dev/null) && zsh_ok=1 || zsh_ok=0
+  alias_names=$(sed -n 's/^dk-alias://p' <<<"$alias_out" | LC_ALL=C sort -u)
   alias_new=$(printf '# zsh alias names, written by dk-agent-kit bootstrap.sh for dk-guard\n%s' "$alias_names")
   alias_current=$(cat "$aliases_file" 2>/dev/null || true)
-  if [[ "$alias_current" == "$alias_new" ]]; then
+  if ((!zsh_ok)); then
+    # an empty list would turn the guard's alias rule off without a word
+    echo "bootstrap: zsh failed, alias list kept as it is in $aliases_file"
+  elif [[ "$alias_current" == "$alias_new" ]]; then
     echo "bootstrap: zsh alias list already up to date"
   else
     diff -u --label "$aliases_file" --label "$aliases_file (new)" \

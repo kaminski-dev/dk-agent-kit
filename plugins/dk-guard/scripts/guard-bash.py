@@ -1094,9 +1094,10 @@ FILE_CHECKS = {"ls", "stat", "test", "[", "[["}
 # Tools whose first operand is a pattern or script, not a file: a credential name there is text being searched or
 # edited (`sed -i '' 's#~/.sentryclirc#…#' a.ts`), unless the script itself reads files (`script_reads`).
 PatternTool = collections.namedtuple("PatternTool", "short_takes long_takes pattern_opts no_pattern script_reads")
-SED_ADDRESS = r"(?:\d+|\$|/(?:\\.|[^/])*/)"
-SED_SUBSTITUTION = re.compile(rf"\s*(?:{SED_ADDRESS}(?:,{SED_ADDRESS})?)?\s*s(.)(?:\\.|(?!\1).)*\1(?:\\.|(?!\1).)*"
-                              r"\1[gpIiM0-9]*\s*", re.S)
+# an escape and a plain character are disjoint alternatives, so a failed match cannot backtrack exponentially
+SED_ADDRESS = r"(?:\d+|\$|/(?:\\.|[^/\\])*/)"
+SED_SUBSTITUTION = re.compile(rf"\s*(?:{SED_ADDRESS}(?:,{SED_ADDRESS})?)?\s*s(.)(?:\\.|(?!\1)[^\\])*\1"
+                              r"(?:\\.|(?!\1)[^\\])*\1[gpIiM0-9]*\s*", re.S)
 GREP = PatternTool("efmABCdD", {"--regexp", "--file", "--max-count", "--after-context", "--before-context", "--context",
                                 "--include", "--exclude", "--exclude-dir", "--exclude-from", "--binary-files",
                                 "--devices", "--directories"},
@@ -1183,6 +1184,8 @@ def in_pattern_arg(cmd, pos):
         words = shlex.split(re.sub("^" + PREFIX, "", word))  # up to the end of the word `pos` sits in
     except ValueError:
         return False
+    if REDIRECT.match(words[-1]) or len(words) > 1 and REDIRECT.fullmatch(words[-2]):
+        return False  # the shell reads a redirection's target
     _, words = command_words(drop_redirections(words))
     return len(words) - 1 in pattern_args(words)
 
