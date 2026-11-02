@@ -3,10 +3,13 @@
 
 Repo and branch, whether the session is in a linked worktree or the primary
 checkout, uncommitted changes, the open PR for the branch, the labels of the
-issue the branch names (`<type>/<issue>-<slug>`), and the dk-pg databases
-running for that issue. Claude Code adds the output to the session's context.
-Outside a git repo it prints nothing. gh and docker are asked with a short
-timeout and left out when they fail; any other error prints nothing (fails open).
+issue the branch names (`<type>/<issue>-<slug>`), the dk-pg databases
+running for that issue, and, from 5 linked worktrees on, their count and the
+dk-gc command that lists the finished ones (git only: `dk-gc --dry-run` asks
+GitHub about every branch and takes longer than the hook may). Claude Code
+adds the output to the session's context. Outside a git repo it prints
+nothing. gh and docker are asked with a short timeout and left out when they
+fail; any other error prints nothing (fails open).
 """
 import json
 import os
@@ -19,6 +22,7 @@ MAX_LINES = 15
 MAX_FILES = 5
 MAX_DBS = 3
 MAX_CHARS = 200
+MIN_WORKTREES = 5
 ISSUE = re.compile(r"^[^/]+/(\d+)(?:-|$)")
 DEFAULT_TIMEOUT = 5.0
 
@@ -59,7 +63,7 @@ def baseline(cwd):
     else:
         where = f"worktree {top} (primary: {primary})"
     head = f"{os.path.basename(primary)} · {branch} · {where}"
-    lines = changes(top)
+    lines = changes(top) + worktrees(top)
     match = ISSUE.match(branch)
     issue = match.group(1) if match else None
     with ThreadPoolExecutor(3) as pool:
@@ -83,6 +87,14 @@ def changes(top):
     if len(entries) > MAX_FILES:
         lines.append(f"  … {len(entries) - MAX_FILES} more")
     return lines
+
+
+def worktrees(top):
+    listing = git(top, "worktree", "list", "--porcelain")
+    if listing is None:
+        return []
+    linked = sum(line.startswith("worktree ") for line in listing.splitlines()) - 1
+    return [f"{linked} linked worktrees; dk-gc --dry-run lists the finished ones"] if linked >= MIN_WORKTREES else []
 
 
 def gh_json(top, *args):
