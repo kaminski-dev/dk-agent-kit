@@ -72,7 +72,7 @@ s="$tmp/settings.json"
 [[ "$(jq '[.permissions.deny[] | select(. == "Bash(git push * main)")] | length' "$s")" == 1 ]] || fail "deny entry duplicated"
 jq -e '.permissions.deny | index("Bash(rm -rf /)")' "$s" >/dev/null || fail "existing deny entry lost"
 jq -e '.permissions.deny | index("Bash(docker container prune *)")' "$s" >/dev/null || fail "fragment deny missing"
-allow='["Bash(npm test)","Bash(git push -u origin HEAD)","Bash(dk-assets push *)","Bash(git push)"]'
+allow='["Bash(npm test)","Bash(git push -u origin HEAD)","Bash(dk-assets push *)","Bash(git push origin HEAD:pre-main)","Bash(git push)"]'
 [[ "$(jq -c .permissions.allow "$s")" == "$allow" ]] || fail "allow rules not merged once: $(jq -c .permissions.allow "$s")"
 [[ "$(jq -r '.autoMode.hard_deny[0]' "$s")" == '$defaults' ]] || fail "hard_deny must start with \$defaults"
 [[ "$(jq -c .autoMode.soft_deny "$s")" == '["$defaults","Bash(psql:*) needs confirmation"]' ]] || fail "soft_deny changed"

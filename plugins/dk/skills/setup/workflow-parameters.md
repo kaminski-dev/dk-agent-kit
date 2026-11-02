@@ -4,6 +4,7 @@ The `dk:issue-flow` skill holds the shared sequence. A repo's `workflow.md` keep
 
 - **Worktree**: the path prefix (`~/workspace/<prefix>-<N>`), the allowed branch types, and the fresh-worktree setup (installs, generated files) before gates mean anything.
 - **CI and deploy**: which workflows run on a PR and on `main`, and how to watch a deploy.
+- **Batch-review fixes**: `push` or `pr`, the route `dk:issue-flow` step 7 takes for batch PR review findings.
 - **Evidence specifics**: where the browser tool writes screenshots, anything repo-specific about verify assets.
 - **Post-deploy checks**: which log or error source the `awaiting-verification` query runs against.
 - **Customer reply**: language, form of address, headers, tone.

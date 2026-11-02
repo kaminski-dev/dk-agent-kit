@@ -6,6 +6,7 @@
     "allow": [
       "Bash(dk-assets push *)",
       "Bash(git push -u origin HEAD)",
+      "Bash(git push origin HEAD:pre-main)",
       "Bash(git push)"
     ],
     "deny": [
