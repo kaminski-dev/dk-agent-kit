@@ -11,6 +11,8 @@ Calls hold a lock on the state, so parallel agents do not lose each other's writ
 go of it while the acceptance check runs (at most CHECK_TIMEOUT seconds per run).
 An issue's "blocked_by" lists its native blockers, read by `is:blocked` in a
 search and by `gh api .../dependencies/blocked_by`, and added by a POST there.
+That read pages at 30 as GitHub does: --paginate prints every page as its own JSON array
+(--jq runs on each), or one array of pages with --slurp.
 "search_qualifiers": false makes a search with is:blocked fail, as on a GitHub without it.
 "other_repos" maps "owner/repo" to {number: state}, for `gh issue view N --repo owner/repo`.
 """
@@ -82,16 +84,37 @@ def body_of(o):
     return o.get("--body") or o.get("-b") or ""
 
 
+def jq(text, expr):
+    """Run gh's --jq expression on text and print the result; a jq error exits with jq's code."""
+    r = subprocess.run(["jq", "-r", expr], input=text, capture_output=True, text=True)
+    sys.stdout.write(r.stdout)
+    sys.stderr.write(r.stderr)
+    if r.returncode:
+        sys.exit(r.returncode)
+
+
 def emit(value, o):
     """Print JSON, through jq when --jq is given (as gh does)."""
     text = json.dumps(value, indent=2)
     if "--jq" in o or "-q" in o:
-        expr = o.get("--jq") or o.get("-q")
-        r = subprocess.run(["jq", "-r", expr], input=text, capture_output=True, text=True)
-        sys.stdout.write(r.stdout)
-        sys.stderr.write(r.stderr)
-        sys.exit(r.returncode)
+        jq(text, o.get("--jq") or o.get("-q"))
+        sys.exit(0)
     print(text)
+
+
+def emit_pages(items, o):
+    """Print a list GitHub pages at 30 the way gh api does: the first page, or every page with --paginate."""
+    pages = [items[i:i + 30] for i in range(0, len(items), 30)] or [[]]
+    if "--paginate" not in o:
+        emit(pages[0], o)
+    elif "--slurp" in o:
+        emit(pages, o)
+    else:
+        for page in pages:
+            if "--jq" in o or "-q" in o:
+                jq(json.dumps(page), o.get("--jq") or o.get("-q"))
+            else:
+                sys.stdout.write(json.dumps(page))
 
 
 def issue_json(state, num):
@@ -316,7 +339,7 @@ def cmd_api(args, state):
     elif parts[5:] == []:
         emit(rest_issue(num), o)
     elif parts[5:] == ["dependencies", "blocked_by"]:
-        emit([rest_issue(str(b)) for b in state["issues"][num].get("blocked_by", [])], o)
+        emit_pages([rest_issue(str(b)) for b in state["issues"][num].get("blocked_by", [])], o)
     else:
         fail(f"gh api {'/'.join(parts)}: not supported by this repo's tracker stand-in")
 

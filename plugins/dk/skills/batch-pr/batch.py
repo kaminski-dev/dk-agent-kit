@@ -11,7 +11,8 @@ Exit 0: collected. Exit 3: a PR from pre-main into main is already open; its
 URL is printed. Exit 4: nothing to batch (no pre-main on origin, or pre-main
 holds no commit that main lacks). Exit 1: git or gh failed, or a PR merged
 into pre-main has a merge commit this clone does not hold; it names them.
-A shallow clone is deepened first.
+Both branches are fetched by name, so a single-branch clone gets pre-main too;
+a shallow clone is deepened first.
 
 An issue named by both a Closes and a Refs line gets Refs: a post-deploy
 check outranks closing on merge.
@@ -22,7 +23,8 @@ import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
-ISSUE_LINE = re.compile(r"^\s*(close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs)\s+#(\d+)\s*$", re.I | re.M)
+BRANCHES = ("main", "pre-main")
+ISSUE_LINE = re.compile(r"^\s*(close[sd]?|fix(?:e[sd])?|resolve[sd]?|refs)(?::\s*|\s+)#(\d+)\s*$", re.I | re.M)
 
 
 def sh(*cmd, ok=(0,)):
@@ -60,9 +62,13 @@ def main():
     if not sh("git", "ls-remote", "--heads", "origin", "pre-main").stdout.strip():
         print("Nothing to batch: origin has no pre-main.")
         return 4
-    if sh("git", "rev-parse", "--is-shallow-repository").stdout.strip() == "true":
-        sh("git", "fetch", "-q", "--unshallow", "origin", "main", "pre-main")
-    sh("git", "fetch", "-q", "origin", "main", "pre-main")
+    # Explicit refspecs: a single-branch clone's configured one would leave origin/pre-main uncreated.
+    shallow = sh("git", "rev-parse", "--is-shallow-repository").stdout.strip() == "true"
+    sh("git", "fetch", "-q", *(["--unshallow"] if shallow else []), "origin",
+       *(f"+refs/heads/{b}:refs/remotes/origin/{b}" for b in BRANCHES))
+    for b in BRANCHES:
+        if sh("git", "rev-parse", "-q", "--verify", f"refs/remotes/origin/{b}^{{commit}}", ok=(0, 1)).returncode:
+            sys.exit(f"origin/{b} is missing after fetching it; the range origin/main..origin/pre-main cannot be read.")
     in_batch = set(sh("git", "rev-list", "origin/main..origin/pre-main").stdout.split())
     if not in_batch:
         print("Nothing to batch: pre-main is not ahead of main.")

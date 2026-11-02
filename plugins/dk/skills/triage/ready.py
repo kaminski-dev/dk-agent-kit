@@ -11,7 +11,7 @@ A blocker is a native dependency or a `Blocked by: #n` line in the issue body;
 The first cut is the search `-is:blocked`, which counts only open native
 blockers. GitHub does not document that qualifier; it was checked by hand on
 2026-11-02. Where search rejects it, every issue's native blockers are read
-through the API instead. Exit 1: gh failed.
+through the API instead, every page of them. Exit 1: gh failed.
 """
 import json
 import re
@@ -55,7 +55,9 @@ def main():
     for issue in sorted(issues, key=lambda i: (i.get("createdAt") or "", i["number"])):
         open_blockers = set()
         if issue["number"] not in natively_free:
-            native = json.loads(gh("api", f"repos/{repo}/issues/{issue['number']}/dependencies/blocked_by").stdout)
+            pages = json.loads(gh("api", "--paginate", "--slurp",
+                                  f"repos/{repo}/issues/{issue['number']}/dependencies/blocked_by").stdout)
+            native = [b for page in pages for b in page]
             open_blockers |= {f"#{b['number']}" for b in native if b["state"].lower() == "open"}
         for line in BODY_BLOCKER.findall(issue["body"] or ""):
             open_blockers |= {f"{other}#{n}" for other, n in BLOCKER_REF.findall(line) if is_open((other, n))}

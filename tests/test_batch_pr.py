@@ -120,6 +120,22 @@ check("Closes and Refs for one issue: Refs alone",
       "Refs #201\n" in r.stdout and "Closes #201" not in r.stdout, r.stdout)
 ws.remove()
 
+# GitHub reads a colon after the keyword as the plain form: `Closes: #N` keeps its line.
+ws = Workspace()
+ws.git("branch", "pre-main")
+ws.git("checkout", "-q", "pre-main")
+colon, fixes = ws.commit("colon"), ws.commit("fixes")
+ws.push()
+ws.state([
+    pr(24, "pre-main", "fix/12-colon", "MERGED", "Colon.\n\nCloses: #12\n", colon),
+    pr(25, "pre-main", "fix/13-fixes", "MERGED", "Fixes:  #13", fixes),
+])
+r, _ = ws.run()
+check("a colon after the keyword: the line is kept",
+      r.returncode == 0 and "Closes #12\nCloses #13\n" in r.stdout and "Without a line" not in r.stdout,
+      (r.returncode, r.stdout, r.stderr))
+ws.remove()
+
 ws = Workspace()
 ws.git("branch", "pre-main")
 ws.git("checkout", "-q", "pre-main")
@@ -173,6 +189,21 @@ ws.git_in(ws.root, "clone", "-q", "--depth", "1", "--no-single-branch", f"file:/
 r, _ = ws.run(cwd=ws.root / "shallow")
 check("shallow checkout: both PRs and both lines",
       r.returncode == 0 and "#41 PR 41" in r.stdout and "Closes #401\nCloses #402\n" in r.stdout,
+      (r.returncode, r.stdout, r.stderr))
+ws.remove()
+
+# A single-branch shallow clone, the usual CI checkout: only main is in its fetch refspec.
+ws = Workspace()
+ws.git("branch", "pre-main")
+ws.git("checkout", "-q", "pre-main")
+first, second = ws.commit("first"), ws.commit("second")
+ws.push()
+ws.state([pr(43, "pre-main", "fix/403-first", "MERGED", "Closes #403", first),
+          pr(44, "pre-main", "fix/404-second", "MERGED", "Closes #404", second)])
+ws.git_in(ws.root, "clone", "-q", "--depth", "1", "--branch", "main", f"file://{ws.root / 'origin.git'}", "single")
+r, _ = ws.run(cwd=ws.root / "single")
+check("single-branch shallow clone: both PRs and both lines",
+      r.returncode == 0 and "#43 PR 43" in r.stdout and "Closes #403\nCloses #404\n" in r.stdout,
       (r.returncode, r.stdout, r.stderr))
 ws.remove()
 
