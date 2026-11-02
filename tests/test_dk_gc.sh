@@ -365,4 +365,16 @@ has "$out" "remove worktree $ws/app-29 (feat/29-late-busy, PR #39 merged)"
 has "$out" "kept worktree $ws/app-29 (feat/29-late-busy, PR #39 merged): in use by sleep (pid $pid29) (new since the listing)"
 [[ -d "$ws/app-29" ]] || fail "worktree app-29 removed under its process"
 stop "$pid29"
+# --in-use asks the same question of one worktree, for a removal by hand (no merged PR): it exits 0
+# only when no process runs in it and lsof could tell.
+pidn=$(start_in "$ws/notes-1")
+busy="$busy $pidn"
+out=$("$dkgc" --in-use "$ws/notes-1") && fail "--in-use exited 0 on a worktree a process runs in"
+[[ "$out" == "$ws/notes-1: in use by sleep (pid $pidn)" ]] || fail "--in-use printed: $out"
+stop "$pidn"
+out=$("$dkgc" --in-use "$ws/notes-1") || fail "--in-use exited non-zero on a worktree no process runs in: $out"
+[[ -z "$out" ]] || fail "--in-use printed on a free worktree: $out"
+out=$(PATH="$fx/no-lsof:$PATH" "$dkgc" --in-use "$ws/notes-1") && fail "--in-use exited 0 when lsof could not tell"
+has "$out" "$ws/notes-1: cannot tell whether a process runs in it: lsof did not answer"
+[[ -d "$ws/notes-1" ]] || fail "--in-use removed something"
 echo "dk-gc: all checks passed"
