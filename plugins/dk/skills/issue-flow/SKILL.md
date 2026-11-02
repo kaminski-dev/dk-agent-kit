@@ -64,7 +64,11 @@ What it pushes and when it refuses is in its header (`head -12 "$(command -v dk-
 
 ## 6. Open the PR
 
-Rebase onto the current `origin/<base>`, push the branch, and open the PR against the base (`gh pr create --base <base> --body-file …`), body written with the `dk:pr` skill. The body carries:
+Rebase onto the current `origin/<base>`, push the branch, and open the PR against the base (`gh pr create --base <base> --body-file …`), body written with the `dk:pr` skill.
+
+The push is where the gate runs: before every `git push`, dk-guard runs `.claude/gate.sh` in the checkout being pushed (the `cd` or `git -C` target, not the session's directory) and denies the push when the gate fails, with its last lines. Fix, commit and push again.
+
+The body carries:
 
 - `Closes #N` when no post-deploy acceptance criterion remains, `Refs #N` when one does (a 24 h, 48 h or 7 d window on production logs or errors).
   GitHub acts on these keywords only in a PR into the default branch, so on this PR they do nothing. The batch PR into `main` repeats the line: its merge closes a `Closes #N` issue, and a `Refs #N` issue stays open for the post-deploy check (step 7).
@@ -83,7 +87,7 @@ A failed check is fixed on the branch and watched again before you report.
 
 - Batch PR review findings take the route `workflow.md` sets as **Batch-review fixes**, `pr` when it sets none:
   - `pr`: fix them in a new PR against `pre-main`, so they ride the same batch.
-  - `push`: a finding that passes the four fold-in tests of scope intake (step 3) is fixed in a worktree on `origin/pre-main` (step 2, with `<N>` the batch PR's number and the review thread's id, `<PR>-<thread>`, so each finding has its own worktree and its own cleanup). Rebase onto `origin/pre-main` if it moved, then run `.claude/gate.sh` on the tree you will push; once it passes, push the fix as a fast-forward, never forced: `git push origin HEAD:pre-main`. When the push is refused because `pre-main` moved meanwhile, `git fetch -q origin`, rebase, run the gate and push once more, until the push lands. Then reply on the review thread with the pushed commit's SHA; that reply is the fix's record. A finding that fails a fold-in test becomes its own issue (step 3).
+  - `push`: a finding that passes the four fold-in tests of scope intake (step 3) is fixed in a worktree on `origin/pre-main` (step 2, with `<N>` the batch PR's number and the review thread's id, `<PR>-<thread>`, so each finding has its own worktree and its own cleanup). Rebase onto `origin/pre-main` if it moved, then push the fix as a fast-forward, never forced: `git push origin HEAD:pre-main`; the push runs the gate first (step 6). When the push is refused because `pre-main` moved meanwhile, `git fetch -q origin`, rebase and push once more, until the push lands. Then reply on the review thread with the pushed commit's SHA; that reply is the fix's record. A finding that fails a fold-in test becomes its own issue (step 3).
 
   Either way, a skipped finding gets its reason on the review thread.
 - `Refs #N` issues: once the batch reaches `main`, swap `ready-for-agent` for `awaiting-verification` and comment the exact query, the deploy time and the due date. When the window has passed, call the Skill tool with `dk:post-deploy-check`: it runs the query and posts the verdict.

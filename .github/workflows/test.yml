@@ -13,6 +13,8 @@ jobs:
         run: python3 -I tests/hooks/test_guard_bash.py
       - name: stop gate fixtures
         run: python3 -I tests/hooks/test_stop_gate.py
+      - name: push gate fixtures
+        run: python3 -I tests/hooks/test_push_gate.py
       - name: require-worktree fixtures
         run: python3 -I tests/hooks/test_require_worktree.py
       - name: session baseline fixtures
