@@ -30,7 +30,7 @@ def git(cwd, *args):
     return out.stdout if out.returncode == 0 else None
 
 
-def run_gate(gate, root):
+def run_gate(gate, root, timeout=TIMEOUT):
     """Run the gate in its own process group; return (failure or None, combined output)."""
     try:
         proc = subprocess.Popen([gate], cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
@@ -38,7 +38,7 @@ def run_gate(gate, root):
     except OSError as e:
         return f"could not run: {e.strerror}", ""
     try:
-        out, _ = proc.communicate(timeout=TIMEOUT)
+        out, _ = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         try:
             os.killpg(proc.pid, signal.SIGKILL)  # the gate's test runners go with it
@@ -50,10 +50,14 @@ def run_gate(gate, root):
             # A child that left the group still holds the pipe: keep what was read, stop waiting.
             proc.kill()
             out = e.output or b""
-        failure = f"timed out after {TIMEOUT} s"
+        failure = f"timed out after {timeout} s"
     else:
         failure = f"failed (exit {proc.returncode})" if proc.returncode else None
     return failure, out.decode("utf-8", errors="replace")
+
+
+def tail(output):
+    return "\n".join(output.rstrip().splitlines()[-TAIL_LINES:])[-TAIL_CHARS:]
 
 
 def main():
@@ -66,14 +70,14 @@ def main():
     failure, output = run_gate(gate, root)
     if not failure:
         return
-    tail = "\n".join(output.rstrip().splitlines()[-TAIL_LINES:])[-TAIL_CHARS:]
+    last = tail(output)
     head = f"dk-guard: {GATE} {failure}"
     if data.get("stop_hook_active"):
         # The agent already had one try after a block; a second block could loop.
-        print(json.dumps({"systemMessage": f"{head}; the turn ends anyway. Last lines:\n{tail}"}))
+        print(json.dumps({"systemMessage": f"{head}; the turn ends anyway. Last lines:\n{last}"}))
     else:
         print(json.dumps({"decision": "block",
-                          "reason": f"{head}. Last lines:\n{tail}\n\nFix the failure before you finish."}))
+                          "reason": f"{head}. Last lines:\n{last}\n\nFix the failure before you finish."}))
 
 
 if __name__ == "__main__":
