@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Wait for the review bot's verdict on a PR's head commit (dk:issue-flow step 6).
 
-    python3 -I wait-review.py <PR> [--bot LOGIN] [--polls 40] [--interval 30]
+    python3 -I wait-review.py <PR> [--bot LOGIN] [--polls 40] [--interval 30] [--gh-timeout 60]
 
 Run it in the repo's checkout (or with GH_REPO set). It polls every --interval
 seconds and reads the head on every poll; a new head restarts the count.
@@ -9,7 +9,7 @@ seconds and reads the head on every poll; a new head restarts the count.
 Exit codes, with the verdict on stdout:
   0  `reviews <id>...`: the bot's reviews of the head, or `clean`: a round with no findings
   1  no verdict after --polls polls (20 minutes by default)
-  2  a gh call failed; its error is on stderr
+  2  a gh call failed or ran past --gh-timeout seconds; its error is on stderr
   3  `rate limited` or `paused`: the bot will not review this head on its own
 """
 import argparse
@@ -24,12 +24,18 @@ RECENT = ("<!-- recent_review_start -->", "<!-- recent_review_end -->")
 NO_FINDINGS = "No actionable comments were generated in the recent review."
 
 
+GH_TIMEOUT = 60
+
+
 class GhFailed(Exception):
     pass
 
 
 def gh(*args):
-    proc = subprocess.run(["gh", *args], capture_output=True, text=True)
+    try:
+        proc = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=GH_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise GhFailed(f"gh {' '.join(args)}: timed out after {GH_TIMEOUT} s")
     if proc.returncode != 0:
         raise GhFailed(f"gh {' '.join(args)}: {proc.stderr.strip() or proc.stdout.strip()}")
     return proc.stdout
@@ -103,12 +109,15 @@ def wait(pr, bot, polls, interval):
 
 
 def main():
+    global GH_TIMEOUT
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("pr")
     ap.add_argument("--bot", default="coderabbitai[bot]")
     ap.add_argument("--polls", type=int, default=40)
     ap.add_argument("--interval", type=float, default=30)
+    ap.add_argument("--gh-timeout", type=float, default=GH_TIMEOUT)
     args = ap.parse_args()
+    GH_TIMEOUT = args.gh_timeout
     try:
         code, line = wait(args.pr, args.bot, args.polls, args.interval)
     except GhFailed as e:
