@@ -54,9 +54,9 @@ For a fix, a control that already behaves correctly means the scenario misses th
 Drive a browser of your own, with no state from earlier runs: a cookie left over from one run can change what the control or the change shows. The Playwright MCP server runs one browser per session, and the session's subagents share it:
 
 - **Main agent, no other verifier in the session, and the MCP server runs with `--isolated`** (`claude mcp get playwright` lists its args): the MCP browser.
-- **Otherwise**: a standalone Playwright script in `$RUN`, run from the repo so `playwright` resolves (the verify doc says how). `chromium.launch({ headless: true })`, then a fresh `browser.newContext()` for the control and another for the change; the contexts live in memory, so nothing of the session reaches the disk. When the MCP answered "Browser is already in use", or runs without `--isolated`, name it in your report.
+- **Otherwise**: a standalone Playwright script kept in `$RUN` and fed to Node on stdin from the worktree root, or from the package the verify doc names: `node --input-type=module - < "$RUN/check.mjs"`. Node resolves a script file's imports from the file's own folder, so `node "$RUN/check.mjs"` misses the repo's Playwright package. `chromium.launch({ headless: true })`, then a fresh `browser.newContext()` for the control and another for the change; the contexts live in memory, so nothing of the session reaches the disk. When the MCP answered "Browser is already in use", or runs without `--isolated`, name it in your report.
 
-Check 1280 px, then 390 × 844 (`browser_resize` or `page.setViewportSize`), and see the change at both widths. Console errors (`browser_console_messages` or `page.on('console')`) are findings: each is fixed, or explained in the PR. Screenshots go in `$RUN/shots/`; the MCP writes only under its own roots, so move its files there.
+Check 1280 px, then 390 × 844 (`browser_resize` or `page.setViewportSize`), and see the change at both widths. Console errors (`browser_console_messages` or `page.on('console')`) are findings: each is fixed, or explained in the PR. Screenshots end in `$RUN/shots/`. The MCP refuses a path outside its own roots and resolves a relative one against the directory the session started in, so give `browser_take_screenshot` a filename in the MCP's own folder, `.playwright-mcp/change-390.png`, then `mv` it from `.playwright-mcp/` in that directory into `$RUN/shots/`.
 
 ## 6. Evidence
 
@@ -76,4 +76,4 @@ Before reporting, stop what you started: every process (its port is free again u
 - **Seeding**: the scripts or SQL for test data, and their order relative to migrations.
 - **Login**: whether the API needs one; then the seeded user and password, the login endpoint, and where the access token comes from.
 - **Endpoints**: route prefixes and the surfaces worth observing.
-- **Browser**: frontend ports, breakpoints, and the harness quirks that look like bugs.
+- **Browser**: frontend ports, breakpoints, the package that holds Playwright when it is not the worktree root, and the harness quirks that look like bugs.
