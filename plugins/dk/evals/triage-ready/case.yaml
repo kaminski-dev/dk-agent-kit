@@ -1,0 +1,21 @@
+schema_version: "1.1"
+name: triage-ready
+description: >
+  Four open ready-for-agent issues on the ledger stand-in; #371 is blocked by the open #372 through
+  a native dependency, and #373's only blocker (#368) is closed. dk:triage's ready list gives #370,
+  #372 and #373 and leaves #371 out as blocked.
+tags: [triage]
+runs: 1
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 30
+  timeout_seconds: 600
+  allowed_tools: [Read, Glob, Grep, Skill, Agent, TodoWrite, Bash, Write]
+graders:
+  - name: ready-list
+    type: llm
+    criteria: >
+      The final answer lists the issues ready for an agent to pick up. PASS when it offers #370, #372
+      and #373 as ready and does not offer #371 as ready (naming #371 as blocked by #372 is fine).
+      FAIL when #371 appears among the ready issues, or when #370, #372 or #373 is missing from them.

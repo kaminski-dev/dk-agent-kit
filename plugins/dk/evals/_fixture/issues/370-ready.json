@@ -1,0 +1,60 @@
+{
+  "repo": "acme/ledger",
+  "labels": [
+    "bug",
+    "enhancement",
+    "needs-triage",
+    "needs-info",
+    "ready-for-agent",
+    "ready-for-human",
+    "wontfix",
+    "spec"
+  ],
+  "prs": [],
+  "issues": {
+    "368": {
+      "title": "Audit Log export writes no header row",
+      "body": "`python3 -m ledger export` writes the rows without a header line.\n",
+      "state": "closed",
+      "labels": ["bug"],
+      "comments": []
+    },
+    "370": {
+      "title": "Customer History shows raw ISO timestamps",
+      "body": "History lines print `changed_at` as stored; show it in the customer's local time.\n",
+      "state": "open",
+      "labels": ["enhancement", "ready-for-agent"],
+      "comments": []
+    },
+    "371": {
+      "title": "Paginate Customer History by Audit Operation",
+      "body": "Page the History tab by Audit Operation rather than by field row.\n",
+      "state": "open",
+      "labels": ["enhancement", "ready-for-agent"],
+      "blocked_by": [372],
+      "comments": []
+    },
+    "372": {
+      "title": "Group audit rows into Audit Operations in list_by_entity",
+      "body": "`list_by_entity` returns field rows; return one entry per Audit Operation with its fields.\n",
+      "state": "open",
+      "labels": ["enhancement", "ready-for-agent"],
+      "comments": []
+    },
+    "373": {
+      "title": "Audit Log export: quote fields that contain commas",
+      "body": "A `field_name` value with a comma splits its CSV row.\n",
+      "state": "open",
+      "labels": ["bug", "ready-for-agent"],
+      "blocked_by": [368],
+      "comments": []
+    },
+    "374": {
+      "title": "Audit Log search by changed_by",
+      "body": "Filter the Audit Log by who made the change.\n",
+      "state": "open",
+      "labels": ["needs-triage"],
+      "comments": []
+    }
+  }
+}

@@ -340,6 +340,28 @@ check("361 triage: the Audit Log list it names already defines its order",
       '" ORDER BY changed_at DESC, entity_type, entity_id, action, changed_by, field_name"' in store, store[-900:])
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
+# The ready-list fixture: four open ready-for-agent issues, one of them blocked by another that is still open.
+ws = scaffold("triage-ready")
+
+
+def numbers(cmd):
+    r = run(ws, cmd)
+    return sorted(i["number"] for i in json.loads(r.stdout)) if r.returncode == 0 else r.stderr
+
+
+ready = "gh issue list --state open --label ready-for-agent --json number"
+check("ready: the label alone lists the blocked #371 too", numbers(ready) == [370, 371, 372, 373], numbers(ready))
+check("ready: -is:blocked leaves out #371 alone", numbers(ready + " --search '-is:blocked'") == [370, 372, 373],
+      numbers(ready + " --search '-is:blocked'"))
+check("ready: is:blocked counts only an open blocker", numbers(ready + " --search is:blocked") == [371],
+      numbers(ready + " --search is:blocked"))
+blockers = json.loads(run(ws, "gh api repos/acme/ledger/issues/371/dependencies/blocked_by").stdout)
+check("ready: the API names #372 as #371's open blocker",
+      [(b["number"], b["state"]) for b in blockers] == [(372, "open")], blockers)
+summary = json.loads(run(ws, "gh api repos/acme/ledger/issues/373 --jq .issue_dependencies_summary").stdout)
+check("ready: #373's only blocker is closed", summary == {"blocked_by": 0, "total_blocked_by": 1}, summary)
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
 # --- #1091 fixture: govulncheck red on go1.27.1 and x/net v0.59.0 --------------------------------
 
 ws = scaffold("triage-1091")
