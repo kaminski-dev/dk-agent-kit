@@ -1,0 +1,31 @@
+diff --git a/ledger/outbox.py b/ledger/outbox.py
+index 96c36eb..cdb0d84 100644
+--- a/ledger/outbox.py
++++ b/ledger/outbox.py
+@@ -48,7 +48,7 @@ class Outbox:
+             ).fetchone()
+         if msg is None:
+             return None
+-        self.provider.send(msg["recipient"], msg["subject"], msg["body"])
++        self.provider.send(msg["recipient"], msg["subject"], msg["body"], idempotency_key=f"outbox-{msg['id']}")
+         with self.conn:
+             self.conn.execute("UPDATE outbox SET sent_at = ? WHERE id = ?", (stamp(now), msg["id"]))
+         return msg["id"]
+diff --git a/tests/test_outbox.py b/tests/test_outbox.py
+index 44bba6c..5a12499 100644
+--- a/tests/test_outbox.py
++++ b/tests/test_outbox.py
+@@ -44,10 +44,12 @@ class SendNext(unittest.TestCase):
+ 
+ class OutboxTabTest(unittest.TestCase):
+     def test_lists_each_message_and_whether_it_went_out(self):
+-        render_to_string(OutboxTab([
++        html = render_to_string(OutboxTab([
+             {"subject": "Week 41", "recipient": "accountant@example.com", "sent_at": "2026-10-19T09:00:00Z"},
+             {"subject": "Week 42", "recipient": "accountant@example.com", "sent_at": None},
+         ]))
++        self.assertIn("<td>Week 41</td><td>accountant@example.com</td><td>sent 2026-10-19T09:00:00Z</td>", html)
++        self.assertIn("<td>Week 42</td><td>accountant@example.com</td><td>queued</td>", html)
+ 
+ 
+ if __name__ == "__main__":

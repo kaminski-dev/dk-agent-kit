@@ -1,0 +1,240 @@
+From 41dda5c014b5c40524f039eaf63c362c4fc61b35 Mon Sep 17 00:00:00 2001
+From: Eval Agent <eval@example.com>
+Date: Tue, 20 Oct 2026 10:12:00 +0200
+Subject: [PATCH] Send the accountant's queued mail (#388)
+
+---
+ ledger/__main__.py      | 11 +++++++-
+ ledger/mail_provider.py | 18 +++++++++++++
+ ledger/outbox.py        | 60 +++++++++++++++++++++++++++++++++++++++++
+ ledger/web.py           | 23 ++++++++++++++++
+ tests/test_outbox.py    | 54 +++++++++++++++++++++++++++++++++++++
+ 5 files changed, 165 insertions(+), 1 deletion(-)
+ create mode 100644 ledger/mail_provider.py
+ create mode 100644 ledger/outbox.py
+ create mode 100644 ledger/web.py
+ create mode 100644 tests/test_outbox.py
+
+diff --git a/ledger/__main__.py b/ledger/__main__.py
+index c3ce81e..d497c79 100644
+--- a/ledger/__main__.py
++++ b/ledger/__main__.py
+@@ -3,11 +3,16 @@
+   seed     writes a Customer (id 7) with two edits, the second changing three fields at once
+   history  prints one entity's history, as the Customer History tab lists it
+   log      prints the Audit Log page
++  send-mail sends the accountant's queued mail through the mail provider (token in MAIL_TOKEN)
+ """
+ import argparse
++import os
+ import sqlite3
++from datetime import datetime, timezone
+ 
+ from ledger.audit_store import AuditStore
++from ledger.mail_provider import MailProvider
++from ledger.outbox import Outbox
+ 
+ 
+ def seed(store):
+@@ -28,7 +33,7 @@ def show(rows):
+ 
+ def main():
+     p = argparse.ArgumentParser(prog="ledger")
+-    p.add_argument("command", choices=["seed", "history", "log"])
++    p.add_argument("command", choices=["seed", "history", "log", "send-mail"])
+     p.add_argument("entity_type", nargs="?", default="customer")
+     p.add_argument("entity_id", nargs="?", type=int, default=7)
+     p.add_argument("--db", required=True)
+@@ -38,6 +43,10 @@ def main():
+         seed(store)
+     elif a.command == "history":
+         show(store.list_by_entity(a.entity_type, a.entity_id))
++    elif a.command == "send-mail":
++        outbox = Outbox(store.conn, MailProvider(os.environ["MAIL_TOKEN"]))
++        while outbox.send_next(datetime.now(timezone.utc)) is not None:
++            pass
+     else:
+         show(store.list())
+ 
+diff --git a/ledger/mail_provider.py b/ledger/mail_provider.py
+new file mode 100644
+index 0000000..39505ae
+--- /dev/null
++++ b/ledger/mail_provider.py
+@@ -0,0 +1,18 @@
++"""Client for the mail provider's HTTP API."""
++import json
++import urllib.request
++
++API = "https://mail.example.com/v1/messages"
++
++
++class MailProvider:
++    def __init__(self, token):
++        self.token = token
++
++    def send(self, to, subject, body, idempotency_key=None):
++        """Send one message. The provider drops a send whose idempotency_key it accepted in the last 24 hours."""
++        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
++        if idempotency_key:
++            headers["Idempotency-Key"] = idempotency_key
++        payload = json.dumps({"to": to, "subject": subject, "body": body}).encode()
++        urllib.request.urlopen(urllib.request.Request(API, data=payload, headers=headers), timeout=30).close()
+diff --git a/ledger/outbox.py b/ledger/outbox.py
+new file mode 100644
+index 0000000..96c36eb
+--- /dev/null
++++ b/ledger/outbox.py
+@@ -0,0 +1,60 @@
++"""The accountant's mail queue: `send-mail` claims one queued message at a time and sends it."""
++import sqlite3
++from datetime import timedelta
++
++LEASE = timedelta(minutes=5)
++
++SCHEMA = """
++CREATE TABLE IF NOT EXISTS outbox (
++    id            INTEGER PRIMARY KEY,
++    recipient     TEXT NOT NULL,
++    subject       TEXT NOT NULL,
++    body          TEXT NOT NULL,
++    queued_at     TEXT NOT NULL,
++    claimed_until TEXT,
++    sent_at       TEXT
++)
++"""
++
++
++def stamp(t):
++    return t.strftime("%Y-%m-%dT%H:%M:%SZ")
++
++
++class Outbox:
++    def __init__(self, conn: sqlite3.Connection, provider):
++        self.conn = conn
++        self.conn.row_factory = sqlite3.Row
++        self.conn.execute(SCHEMA)
++        self.provider = provider
++
++    def queue(self, recipient, subject, body, queued_at):
++        self.conn.execute(
++            "INSERT INTO outbox (recipient, subject, body, queued_at) VALUES (?, ?, ?, ?)",
++            (recipient, subject, body, queued_at),
++        )
++        self.conn.commit()
++
++    def send_next(self, now):
++        """Claim the oldest due message for LEASE, send it and mark it sent. Returns its id, or None when none is due."""
++        with self.conn:
++            msg = self.conn.execute(
++                "UPDATE outbox SET claimed_until = ?"
++                " WHERE id = (SELECT id FROM outbox"
++                "             WHERE sent_at IS NULL AND (claimed_until IS NULL OR claimed_until < ?)"
++                "             ORDER BY queued_at, id LIMIT 1)"
++                " RETURNING id, recipient, subject, body",
++                (stamp(now + LEASE), stamp(now)),
++            ).fetchone()
++        if msg is None:
++            return None
++        self.provider.send(msg["recipient"], msg["subject"], msg["body"])
++        with self.conn:
++            self.conn.execute("UPDATE outbox SET sent_at = ? WHERE id = ?", (stamp(now), msg["id"]))
++        return msg["id"]
++
++    def list(self):
++        """Every message, newest first, as the Outbox tab shows it."""
++        return self.conn.execute(
++            "SELECT id, recipient, subject, queued_at, sent_at FROM outbox ORDER BY queued_at DESC, id DESC"
++        ).fetchall()
+diff --git a/ledger/web.py b/ledger/web.py
+new file mode 100644
+index 0000000..5d3d457
+--- /dev/null
++++ b/ledger/web.py
+@@ -0,0 +1,23 @@
++"""Server-rendered components for the owner's pages."""
++from html import escape
++
++
++def render_to_string(component):
++    return component.render()
++
++
++class OutboxTab:
++    """Each message to the accountant, and whether it went out."""
++
++    def __init__(self, messages):
++        self.messages = messages
++
++    def render(self):
++        if not self.messages:
++            return "<p>No mail queued.</p>"
++        rows = "".join(
++            f"<tr><td>{escape(m['subject'])}</td><td>{escape(m['recipient'])}</td>"
++            f"<td>{'sent ' + m['sent_at'] if m['sent_at'] else 'queued'}</td></tr>"
++            for m in self.messages
++        )
++        return f'<table class="outbox">{rows}</table>'
+diff --git a/tests/test_outbox.py b/tests/test_outbox.py
+new file mode 100644
+index 0000000..44bba6c
+--- /dev/null
++++ b/tests/test_outbox.py
+@@ -0,0 +1,54 @@
++import sqlite3
++import unittest
++from datetime import datetime, timedelta, timezone
++
++from ledger.outbox import Outbox
++from ledger.web import OutboxTab, render_to_string
++
++NOW = datetime(2026, 10, 19, 9, 0, tzinfo=timezone.utc)
++
++
++class Provider:
++    def __init__(self, fail=False):
++        self.sent, self.fail = [], fail
++
++    def send(self, to, subject, body, idempotency_key=None):
++        self.sent.append((to, subject, body))
++        if self.fail:
++            raise ConnectionError("provider unreachable")
++
++
++def outbox(provider):
++    o = Outbox(sqlite3.connect(":memory:"), provider)
++    o.queue("accountant@example.com", "Week 41", "3 Customers changed", "2026-10-12T08:00:00Z")
++    o.queue("accountant@example.com", "Week 42", "1 Customer changed", "2026-10-19T08:00:00Z")
++    return o
++
++
++class SendNext(unittest.TestCase):
++    def test_oldest_message_first_and_each_once(self):
++        p = Provider()
++        o = outbox(p)
++        self.assertEqual([o.send_next(NOW), o.send_next(NOW), o.send_next(NOW)], [1, 2, None])
++        self.assertEqual([s[1] for s in p.sent], ["Week 41", "Week 42"])
++
++    def test_a_failed_send_waits_for_its_lease(self):
++        o = outbox(Provider(fail=True))
++        with self.assertRaises(ConnectionError):
++            o.send_next(NOW)
++        o.provider = Provider()
++        self.assertEqual(o.send_next(NOW), 2)
++        self.assertIsNone(o.send_next(NOW + timedelta(minutes=4)))
++        self.assertEqual(o.send_next(NOW + timedelta(minutes=6)), 1)
++
++
++class OutboxTabTest(unittest.TestCase):
++    def test_lists_each_message_and_whether_it_went_out(self):
++        render_to_string(OutboxTab([
++            {"subject": "Week 41", "recipient": "accountant@example.com", "sent_at": "2026-10-19T09:00:00Z"},
++            {"subject": "Week 42", "recipient": "accountant@example.com", "sent_at": None},
++        ]))
++
++
++if __name__ == "__main__":
++    unittest.main()
+-- 
+2.54.0
+

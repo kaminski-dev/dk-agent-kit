@@ -149,8 +149,8 @@ def sends_after_crash(ws, tag):
     """Subjects and idempotency keys the provider saw: a sender dies right after its send, a second runs past the lease."""
     script, db, log = ws.parent / "send_once.py", ws.parent / f"{tag}.db", ws.parent / f"{tag}.log"
     script.write_text(SEND_ONCE)
-    crash = run(ws, f"python3 '{script}' '{db}' '{log}' crash", cwd=ws / "app")
-    retry = run(ws, f"python3 '{script}' '{db}' '{log}' retry", cwd=ws / "app")
+    crash = run(ws, f"PYTHONPATH=. python3 '{script}' '{db}' '{log}' crash", cwd=ws / "app")
+    retry = run(ws, f"PYTHONPATH=. python3 '{script}' '{db}' '{log}' retry", cwd=ws / "app")
     return crash.returncode, retry.stdout.strip(), log.read_text().splitlines() if log.exists() else []
 
 
