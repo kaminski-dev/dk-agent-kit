@@ -107,6 +107,10 @@ if "Reviews paused" in wait and "updated_at" not in wait:
     errors.append("skills/issue-flow: the review-bot wait counts a pause only when the bot wrote it after the head commit")
 if wait.count("gh pr view") < 2:
     errors.append("skills/issue-flow: the review-bot wait must read the head again after a match, so a moved head keeps it waiting")
+loop = re.split(r"^(?:for|while) .*$", wait, maxsplit=1, flags=re.M)[-1]
+first_gh = re.search(r"\bgh (api|pr view)\b", loop)
+if not first_gh or first_gh.group(1) != "pr view" or not re.search(r"\bi=0\b", loop):
+    errors.append("skills/issue-flow: the review-bot wait must read the head on every poll and restart its 20 minutes on a new head")
 if "review in progress" not in wait:
     errors.append("skills/issue-flow: the review-bot wait must not take a summary whose review is still in progress as a clean round")
 if "recent_review_start" not in wait:
