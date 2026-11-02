@@ -9,7 +9,12 @@ dkgc="$root/plugins/dk-guard/bin/dk-gc"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 tmp=$(cd "$(mktemp -d)" && pwd -P)
-trap 'rm -rf "$tmp"' EXIT
+busy=  # pids of the processes the in-use cases start
+trap 'for p in $busy; do kill "$p" 2>/dev/null || true; done; rm -rf "$tmp"' EXIT
+# start_in <dir>: starts a sleep whose working directory is <dir>, outside this shell's jobs; prints its pid.
+start_in() { (cd "$1" && { sleep 600 >/dev/null 2>&1 & echo $!; }); }
+# stop <pid>: ends that sleep and waits until it is gone.
+stop() { kill "$1"; while kill -0 "$1" 2>/dev/null; do sleep 0.1; done; }
 export HOME="$tmp/home" GIT_CONFIG_GLOBAL="$tmp/home/.gitconfig" GIT_CONFIG_NOSYSTEM=1
 unset GH_REPO GH_TOKEN GITHUB_TOKEN
 mkdir -p "$HOME"
@@ -169,6 +174,11 @@ if (: >"$tmp/probe-$(printf '\xff')") 2>/dev/null; then
   echo 'only copy' >"$ws/app-27/note-$(printf '\xff').local.md"
   bytes_pr=", $(pr 37 feat/27-ignored-bytes "$ignored27" main)"
 fi
+# A process whose working directory is inside a merged worktree (app-28): the worktree stays while it runs.
+busy28=$(worktree app-28 feat/28-busy)
+mkdir -p "$ws/app-28/src"
+pid28=$(start_in "$ws/app-28/src")
+busy="$busy $pid28"
 # On origin only: a base of an open PR, and one pushed to after its merge. pre-main, the batch
 # branch, is on origin and checked out in a worktree.
 main=$(git -C "$app" rev-parse main)
@@ -190,7 +200,8 @@ echo "[$(pr 11 feat/1-done "$done1" main), $(pr 12 feat/2-dirty "$dirty2" main),
   $(pr 28 feat/18-scratch "$scratch18" main), $(pr 30 feat/20-output "$output20" main),
   $(pr 31 feat/21-results "$results21" main), $(pr 32 feat/22-port "$port22" main),
   $(pr 33 feat/23-tanstack "$tanstack23" main), $(pr 34 feat/24-evals "$evals24" main),
-  $(pr 35 feat/25-tracked "$tracked25" main), $(pr 36 feat/26-bytes "$bytes26" main)$bytes_pr]" \
+  $(pr 35 feat/25-tracked "$tracked25" main), $(pr 36 feat/26-bytes "$bytes26" main),
+  $(pr 38 feat/28-busy "$busy28" main)$bytes_pr]" \
   >"$fx/acme_app/pr-merged.json"
 # A second checkout of acme/app: its remote branches are the same ones, handled once.
 git clone -q https://github.com/acme/app.git "$ws/app-copy"
@@ -258,6 +269,8 @@ has "$out" "remove worktree $ws/app-23 (feat/23-tanstack, PR #33 merged)"
 has "$out" "keep worktree $ws/app-24 (feat/24-evals, PR #34 merged; ignored files outside the regenerable list: plugins/dk/evals/results/)"
 has "$out" "keep worktree $ws/app-25 (feat/25-tracked, PR #35 merged; ignored files outside the regenerable list: build/plan.local.md, tools/build/plan.local.md)"
 has "$out" "keep worktree $ws/app-26 (feat/26-bytes, PR #36 merged; ignored files outside the regenerable list: build/plan.local.md)"
+has "$out" "keep worktree $ws/app-28 (feat/28-busy, PR #38 merged; in use by sleep (pid $pid28))"
+lacks "$out" "remove branch feat/28-busy"
 has "$out" "remove database dk-pg-app-1 (issue #1 closed)"
 lacks "$out" "dk-pg-app-3"
 has "$out" "keep database dk-pg-gone-9 (issue #9; no GitHub checkout at $tmp/gone)"
@@ -280,6 +293,12 @@ else
   echo "dk-gc: skipped the ignored name that is not UTF-8: this file system refuses it"
 fi
 
+# Once the process is gone, the worktree is finished like any other.
+stop "$pid28"
+out=$("$dkgc" --dry-run --workspace "$ws")
+has "$out" "remove worktree $ws/app-28 (feat/28-busy, PR #38 merged)"
+before=$(state)
+
 # Without a yes on stdin, nothing changes.
 out=$("$dkgc" --workspace "$ws" </dev/null)
 has "$out" "Nothing changed."
@@ -298,7 +317,7 @@ git -C "$app" rev-parse -q --verify refs/heads/feat/1-done >/dev/null && fail "b
 [[ -d "$ws/notes-1" && -d "$ws/other-1" ]] || fail "worktree of a repo without PRs removed"
 [[ ! -e "$ws/app-7" ]] || fail "worktree behind its merged PR still there"
 [[ ! -e "$ws/app-16" ]] || fail "worktree with only regenerable ignored files still there"
-for gone in app-20 app-21 app-22 app-23; do [[ ! -e "$ws/$gone" ]] || fail "worktree $gone with only regenerable ignored files still there"; done
+for gone in app-20 app-21 app-22 app-23 app-28; do [[ ! -e "$ws/$gone" ]] || fail "worktree $gone with only regenerable ignored files still there"; done
 git -C "$app" rev-parse -q --verify refs/heads/pre-master >/dev/null || fail "integration branch pre-master removed"
 for kept in app-pre-main:pre-main app-2:feat/2-dirty app-3:feat/3-open app-4:feat/4-again app-5:feat/5-ahead app-6:verify-assets/6; do
   [[ -d "$ws/${kept%%:*}" ]] || fail "worktree ${kept%%:*} removed"
