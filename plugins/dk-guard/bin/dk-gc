@@ -50,6 +50,11 @@ def run(args, cwd=None):
     return out.stdout if out.returncode == 0 else None
 
 
+def shown(text):
+    """Text for the terminal: a byte that is not UTF-8 in a path shows as \\xff instead of raising."""
+    return text.encode("utf-8", "surrogateescape").decode("utf-8", "backslashreplace")
+
+
 def git(path, *args):
     return run(["git", "-C", path, *args])
 
@@ -333,7 +338,7 @@ def main():
     ap.add_argument("--workspace", default=os.path.expanduser("~/workspace"))
     args = ap.parse_args()
     if not os.path.isdir(args.workspace):
-        sys.exit(f"dk-gc: no workspace at {args.workspace}")
+        sys.exit(shown(f"dk-gc: no workspace at {args.workspace}"))
 
     repos = [Repo(root) for root in main_roots(args.workspace)]
     slugs = set()
@@ -353,14 +358,14 @@ def main():
     for repo in repos:
         if not repo.items and not repo.kept and not repo.notes:
             continue
-        print(f"{repo.name} ({repo.slug or 'no GitHub origin'})")
+        print(shown(f"{repo.name} ({repo.slug or 'no GitHub origin'})"))
         for note in repo.notes:
-            print(f"  {note}")
+            print(shown(f"  {note}"))
         for item in repo.items:
-            print(f"  remove {item.kind} {item.label}")
+            print(shown(f"  remove {item.kind} {item.label}"))
             count += 1
         for item in repo.kept:
-            print(f"  keep {item.kind} {item.label}")
+            print(shown(f"  keep {item.kind} {item.label}"))
     if not count:
         print("Nothing to remove.")
         return 0
@@ -378,7 +383,7 @@ def main():
             error = item.remove(repo.root)
             if error:
                 failed += 1
-                print(f"kept {item.kind} {item.label}: {error}", file=sys.stderr)
+                print(shown(f"kept {item.kind} {item.label}: {error}"), file=sys.stderr)
     print(f"Removed {count - failed} of {count}.")
     return 1 if failed else 0
 
