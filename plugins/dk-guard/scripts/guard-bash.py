@@ -22,6 +22,7 @@ checks, so a parse failure never lets a command through.
 
 This raises the floor against agent mistakes; it is not a security boundary.
 """
+import itertools
 import json
 import os
 import re
@@ -722,6 +723,59 @@ def gh_words(segs):
                               if w and os.path.basename(w[0]) == "gh")), [])
 
 
+# A CI or merge wait in the foreground blocks the session until it returns: minutes in which the user gets no
+# answer. Started with run_in_background the same wait is fine, so decide() skips this rule for those calls.
+FOREGROUND_WAIT = ("deny", "This waits on CI or a merge in the foreground, and the session answers nothing until it "
+                   "returns. Start the same command with run_in_background (or as a Monitor until-loop) and keep "
+                   "answering the user; a single `gh pr checks <N>` without --watch reads the state once.")
+LOOP_KEYWORDS = {"for", "foreach", "select", "while", "until"}
+WATCH_RAW = re.compile(START + PREFIX + r"(gh)\s+(?:pr\s+checks\b" + END + r"\s--watch\b|run\s+watch\b)")
+POLL_RAW = re.compile(START + r"(for|foreach|select|while|until)\b(?=.*?\bgh\s+(?:pr|run)\b)(?=.*?\bsleep\b)", re.S)
+
+
+def watches(words):
+    """`gh pr checks … --watch` or `gh run watch`."""
+    if not words or os.path.basename(words[0]) != "gh":
+        return False
+    return (words[1:3] == ["pr", "checks"] and "--watch" in words) or words[1:3] == ["run", "watch"]
+
+
+def polls(words):
+    """`gh pr …` or `gh run …`, the calls a wait loop repeats."""
+    return bool(words) and os.path.basename(words[0]) == "gh" and words[1:2] in (["pr"], ["run"])
+
+
+def nested(seg):
+    for sub in seg.subs:
+        for inner in sub:
+            yield inner
+            yield from nested(inner)
+
+
+def check_waits(cmd):
+    hits = list(WATCH_RAW.finditer(cmd)) + list(POLL_RAW.finditer(cmd))
+    return [FOREGROUND_WAIT] if any(not quoted_text(cmd, m.start(1)) for m in hits) else []
+
+
+def wait_words(segs):
+    """A watch anywhere, or a loop that runs `gh pr|run` and sleeps: a poll."""
+    loops = []  # one [runs gh, sleeps] per open loop, innermost last
+    for seg in segs:
+        _, words = command(seg)
+        if watches(words):
+            return [FOREGROUND_WAIT]
+        for kw in itertools.takewhile(lambda w: w in LEAD or w in LOOP_KEYWORDS, seg.words):
+            if kw in LOOP_KEYWORDS:
+                # a while or until condition runs on every pass, its substitutions included
+                loops.append([kw in ("while", "until") and any(polls(command(s)[1]) for s in nested(seg)), False])
+            elif kw == "done" and loops and loops.pop() == [True, True]:
+                return [FOREGROUND_WAIT]
+        for loop in loops:
+            loop[0] = loop[0] or polls(words)
+            loop[1] = loop[1] or words[:1] == ["sleep"]
+    return [FOREGROUND_WAIT] if [True, True] in loops else []
+
+
 DK_GC = re.compile(r"(?:^|(\|\|?|" + OPENERS + r"))\s*" + PREFIX
                    + r"(?:python3?\s+(?:-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?dk-gc"
                    + r"(?=$|[\s;&|)`<>]|['\"](?:$|[\s;&|)]))(" + END + ")")
@@ -878,15 +932,15 @@ def credential_words(segs):
     return []
 
 
-def decide(cmd, cwd):
+def decide(cmd, cwd, background=False):
     segs = split(cmd)
     if segs is None:  # a command the splitter cannot read gets the raw-string checks, so the guard never fails open
         raw = strip_heredocs(cmd)
         findings = check_docker(raw) + check_git(raw, cwd) + check_credentials(raw) + check_gh(raw) \
-            + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw)
+            + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw) + ([] if background else check_waits(raw))
     else:
         findings = docker_words(segs) + git_words(segs, cwd) + credential_words(segs) + gh_words(segs) \
-            + postgres_words(segs) + dk_gc_words(segs) + zsh_name_words(segs)
+            + postgres_words(segs) + dk_gc_words(segs) + zsh_name_words(segs) + ([] if background else wait_words(segs))
     for level in ("deny", "ask"):
         reasons = [r for l, r in findings if l == level]
         if reasons:
@@ -910,7 +964,7 @@ def main():
     data = json.load(sys.stdin)
     cmd = (data.get("tool_input") or {}).get("command") or ""
     cwd = data.get("cwd") or os.getcwd()
-    level, reason = decide(cmd, cwd)
+    level, reason = decide(cmd, cwd, (data.get("tool_input") or {}).get("run_in_background") is True)
     if level == "allow":
         return
     out = {"hookEventName": "PreToolUse"}
