@@ -426,6 +426,14 @@ state_file.write_text(json.dumps(state))
 page_one = json.loads(run(ws, "gh api repos/acme/ledger/issues/379/dependencies/blocked_by").stdout)
 check("ready: the blocker read's first page holds 30 closed blockers",
       len(page_one) == 30 and {b["state"] for b in page_one} == {"closed"}, page_one[-1:])
+reads = [(src, c) for src in sources
+         for c in re.findall(r"`(gh api (?!--method)[^`]*/dependencies/blocked_by [^`]*)`", src.read_text())]
+check("ready: each tracker doc carries the blocker read", len(reads) == 3, reads)
+for src, cmd in reads:
+    cmd = re.sub(r"repos/[^/]+/[^/]+/issues/<n>", "repos/acme/ledger/issues/379", cmd)
+    r = run(ws, cmd)
+    check(f"ready: {src.relative_to(ROOT)}'s blocker read finds #372 on page two", "#372 open" in r.stdout,
+          (cmd, r.stdout[-200:], r.stderr))
 for qualifiers in (True, False):
     state_file.write_text(json.dumps({**state, "search_qualifiers": qualifiers}))
     got = ready_py()
