@@ -131,6 +131,14 @@ mkdir -p "$ws/app-21/test-results"
 echo report >"$ws/app-21/test-results/report.json"
 port22=$(worktree app-22 feat/22-port .api-port)
 echo 8123 >"$ws/app-22/.api-port"
+# A listed name deeper than the top level (app-23): frontend/.tanstack/tmp/ goes, though neither its
+# basename (tmp) nor its top-level directory (frontend) is listed. Eval records are not rebuilt (app-24).
+tanstack23=$(worktree app-23 feat/23-tanstack frontend/.tanstack/tmp/)
+mkdir -p "$ws/app-23/frontend/.tanstack/tmp"
+echo routes >"$ws/app-23/frontend/.tanstack/tmp/routes.ts"
+evals24=$(worktree app-24 feat/24-evals plugins/dk/evals/results/)
+mkdir -p "$ws/app-24/plugins/dk/evals/results"
+echo '{"pass":true}' >"$ws/app-24/plugins/dk/evals/results/run.json"
 # On origin only: a base of an open PR, and one pushed to after its merge. pre-main, the batch
 # branch, is on origin and checked out in a worktree.
 main=$(git -C "$app" rev-parse main)
@@ -150,7 +158,8 @@ echo "[$(pr 11 feat/1-done "$done1" main), $(pr 12 feat/2-dirty "$dirty2" main),
   $(pr 23 feat/11-moved "$moved11" main), $(pr 24 pre-master "$main" main), $(pr 25 feat/13-batched "$main" pre-master),
   $(pr 26 feat/16-regen "$regen16" main), $(pr 27 feat/17-docs "$docs17" main),
   $(pr 28 feat/18-scratch "$scratch18" main), $(pr 30 feat/20-output "$output20" main),
-  $(pr 31 feat/21-results "$results21" main), $(pr 32 feat/22-port "$port22" main)]" \
+  $(pr 31 feat/21-results "$results21" main), $(pr 32 feat/22-port "$port22" main),
+  $(pr 33 feat/23-tanstack "$tanstack23" main), $(pr 34 feat/24-evals "$evals24" main)]" \
   >"$fx/acme_app/pr-merged.json"
 # A second checkout of acme/app: its remote branches are the same ones, handled once.
 git clone -q https://github.com/acme/app.git "$ws/app-copy"
@@ -214,6 +223,8 @@ has "$out" "keep worktree $ws/app-18 (feat/18-scratch, PR #28 merged; ignored fi
 has "$out" "remove worktree $ws/app-20 (feat/20-output, PR #30 merged)"
 has "$out" "remove worktree $ws/app-21 (feat/21-results, PR #31 merged)"
 has "$out" "remove worktree $ws/app-22 (feat/22-port, PR #32 merged)"
+has "$out" "remove worktree $ws/app-23 (feat/23-tanstack, PR #33 merged)"
+has "$out" "keep worktree $ws/app-24 (feat/24-evals, PR #34 merged; ignored files outside the regenerable list: plugins/dk/evals/results/)"
 has "$out" "remove database dk-pg-app-1 (issue #1 closed)"
 lacks "$out" "dk-pg-app-3"
 has "$out" "keep database dk-pg-gone-9 (issue #9; no GitHub checkout at $tmp/gone)"
@@ -246,7 +257,7 @@ git -C "$app" rev-parse -q --verify refs/heads/feat/1-done >/dev/null && fail "b
 [[ -d "$ws/notes-1" && -d "$ws/other-1" ]] || fail "worktree of a repo without PRs removed"
 [[ ! -e "$ws/app-7" ]] || fail "worktree behind its merged PR still there"
 [[ ! -e "$ws/app-16" ]] || fail "worktree with only regenerable ignored files still there"
-for gone in app-20 app-21 app-22; do [[ ! -e "$ws/$gone" ]] || fail "worktree $gone with only build output still there"; done
+for gone in app-20 app-21 app-22 app-23; do [[ ! -e "$ws/$gone" ]] || fail "worktree $gone with only build output still there"; done
 git -C "$app" rev-parse -q --verify refs/heads/pre-master >/dev/null || fail "integration branch pre-master removed"
 for kept in app-pre-main:pre-main app-2:feat/2-dirty app-3:feat/3-open app-4:feat/4-again app-5:feat/5-ahead app-6:verify-assets/6; do
   [[ -d "$ws/${kept%%:*}" ]] || fail "worktree ${kept%%:*} removed"
@@ -254,6 +265,7 @@ for kept in app-pre-main:pre-main app-2:feat/2-dirty app-3:feat/3-open app-4:fea
 done
 [[ "$(cat "$ws/app-2/notes.txt")" == wip ]] || fail "uncommitted file in app-2 lost"
 [[ "$(cat "$ws/app-17/docs/plan.md")" == 'only copy' ]] || fail "ignored docs/plan.md in app-17 lost"
+[[ "$(cat "$ws/app-24/plugins/dk/evals/results/run.json")" == '{"pass":true}' ]] || fail "eval record in app-24 lost"
 git -C "$app" rev-parse -q --verify refs/heads/feat/17-docs >/dev/null || fail "branch feat/17-docs removed"
 [[ "$(cut -f1 "$fx/docker-ps" | tr '\n' ' ')" == "c3 c9 " ]] || fail "containers left: $(cut -f1 "$fx/docker-ps")"
 grep -q '^rm -fv c1$' "$fx/docker.log" || fail "container c1 not removed with its volumes"
