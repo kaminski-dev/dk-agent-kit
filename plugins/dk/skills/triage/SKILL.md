@@ -52,6 +52,7 @@ The maintainer invokes `/dk:triage` and describes what they want in natural lang
 - "Let's look at #42" (issue or PR)
 - "Move #42 to ready-for-agent"
 - "What's ready for agents to pick up?"
+- "Is #42 blocked?"
 
 ## Show what needs attention
 
@@ -64,6 +65,14 @@ Query the issue tracker and present three buckets, oldest first:
 When PRs are in scope, include external PRs in these buckets and tag each line `[PR]` or `[issue]`. Discovery surfaces only *external* PRs (the tracker config defines who counts as external), so a collaborator's in-flight PR is not triage work. This filter is discovery-only; an explicitly named PR is always triaged regardless of author.
 
 Show counts and a one-line summary per item. Let the maintainer pick.
+
+## Show what's ready
+
+The ready list is a read: open `ready-for-agent` issues with no open blocker. Run the tracker doc's **Ready** command; a doc without one predates it, so run `gh issue list --state open --label ready-for-agent --search "-is:blocked" --json number,title,labels,body` and tell the maintainer `/dk:setup` adds the line. `is:blocked` counts only an open blocker: an issue whose blockers are all closed is ready. A `Blocked by: #n` line in a body blocks while `#n` is open.
+
+List the result oldest first, one line per issue. Under it, name each `ready-for-agent` issue the query left out with its open blockers (the tracker doc's blocker read), so the maintainer sees why it is missing. "Is #42 blocked?" is that blocker read for one issue.
+
+Done when every open `ready-for-agent` issue appears once: in the list, or with its open blockers.
 
 ## Triage a specific issue or PR
 

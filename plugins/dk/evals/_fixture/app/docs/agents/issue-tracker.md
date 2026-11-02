@@ -6,11 +6,12 @@ Issues and PRs live on GitHub (`acme/ledger`). Use `gh`, always with `--json` fo
 
 - **Read**: `gh issue view N --json number,title,body,labels,comments,state`.
 - **List**: `gh issue list --state open --label <label> --json number,title,labels`.
+- **Ready**: `gh issue list --state open --label ready-for-agent --search "-is:blocked" --json number,title,labels,body`. `is:blocked` counts only open blockers; a `Blocked by: #n` line in a body still blocks while `#n` is open.
 - **Create**: `gh issue create --title "…" --body-file <file> --label <label>`.
 - **Comment**: `gh issue comment N --body-file <file>`.
 - **Labels**: `gh issue edit N --add-label <a> --remove-label <b>`.
 - **Close**: `gh issue close N --comment "…"`.
-- **Blocking**: native dependencies. `gh api --method POST repos/acme/ledger/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where the database id is `gh api repos/acme/ledger/issues/<n> --jq .id`.
+- **Blocking**: native dependencies. `gh api --method POST repos/acme/ledger/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where the database id is `gh api repos/acme/ledger/issues/<n> --jq .id`. Read an issue's blockers with `gh api repos/acme/ledger/issues/<n>/dependencies/blocked_by --jq '.[] | "#\(.number) \(.state)"'`.
 - **Scope amendment**: a comment starting `Scope amendment:` records work folded into the current PR.
 
 ## Pull requests
