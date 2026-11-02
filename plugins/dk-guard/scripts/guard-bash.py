@@ -146,7 +146,7 @@ class Splitter:
         return self.s.startswith(("$(", "${", "`"), self.i)
 
     def parse(self, end, substituted):
-        seg, short = Segment(self.shell, substituted), []  # short: one-line `for` headers whose body is still open
+        seg, open_short_fors = Segment(self.shell, substituted), []
         while True:
             c = self.peek()
             if not c:
@@ -164,16 +164,17 @@ class Splitter:
                 self.i += 1
                 seg = self.close(seg)
                 self.read_heredocs()
-                self.end_sublist(short)
+                self.end_sublist(open_short_fors)
             elif c == ")":
                 self.i += 1
                 if end == ")":
                     break
                 seg = self.close(seg)  # a case pattern's `)`
-            elif list_loop(seg.words) and not REDIRECT.match(self.s, self.i) and not OPERATOR.match(self.s, self.i):
+            elif (keyword := list_loop(seg.words)) and not REDIRECT.match(self.s, self.i) \
+                    and not OPERATOR.match(self.s, self.i):
                 # zsh's one-line `for x (a b) cmd` and `foreach x (a b) cmd; …; end`: the body gets its own segment
-                if list_loop(seg.words) == "for" and not re.match(r"(?:do|\{)(?=[\s;&|<>()]|$)", self.s[self.i:]):
-                    short.append(seg)
+                if keyword == "for" and not re.match(r"(?:do|\{)(?=[\s;&|<>()]|$)", self.s[self.i:]):
+                    open_short_fors.append(seg)
                 seg = self.close(seg)
             elif c in "<>" and self.peek(1) == "(":
                 self.i += 2
@@ -188,7 +189,7 @@ class Splitter:
                 self.i += len(op)
                 seg = self.close(seg, piped=op in ("|", "|&"))
                 if op not in ("&&", "||", "|", "|&"):
-                    self.end_sublist(short)
+                    self.end_sublist(open_short_fors)
             elif c == "(" and not seg.started and self.peek(1) != "(":
                 self.i += 1
                 seg = self.close(seg)
@@ -201,13 +202,12 @@ class Splitter:
                 if self.add_word(seg, word, quoted):
                     seg = self.close(seg)
         self.close(seg)
-        self.end_sublist(short)
+        self.end_sublist(open_short_fors)
 
-    def end_sublist(self, short):
-        """The sublist that is the body of each loop in `short` ends at the last segment split so far."""
-        for header in short:
+    def end_sublist(self, open_short_fors):
+        for header in open_short_fors:
             header.loop_last = self.out[-1]
-        short.clear()
+        open_short_fors.clear()
 
     def add_word(self, seg, word, quoted=False):
         """Add a word; True when it ends a function's name (`f() {`, `f () {`, `function f {`), so its body starts
@@ -853,18 +853,20 @@ def polls(words):
 
 
 def api_reads(args):
-    """True for a `gh api` call that reads: a GraphQL query (not a mutation), a GET named last, or no method and
-    no fields or body."""
     method, fields, endpoint, it = None, [], None, iter(args)
     for w in it:
         if w in ("-X", "--method"):
             method = next(it, "")
-        elif w.startswith("-X") or w.startswith("--method="):
-            method = w[2:].lstrip("=") if w.startswith("-X") else w.split("=", 1)[1]
+        elif w.startswith("-X"):
+            method = w[2:].lstrip("=")
+        elif w.startswith("--method="):
+            method = w.split("=", 1)[1]
         elif w in API_SHORT_FIELDS or w in API_FIELDS:
             fields.append(next(it, ""))
-        elif w[:2] in API_SHORT_FIELDS or w.split("=", 1)[0] in API_FIELDS:
-            fields.append(w[2:] if w[:2] in API_SHORT_FIELDS else w.split("=", 1)[1])
+        elif w[:2] in API_SHORT_FIELDS:
+            fields.append(w[2:])
+        elif w.split("=", 1)[0] in API_FIELDS:
+            fields.append(w.split("=", 1)[1])
         elif w in API_VALUE_OPTIONS:
             next(it, None)
         elif endpoint is None and not w.startswith("-"):
@@ -894,7 +896,7 @@ class Loop:
     condition_polls: bool = False
     body_polls: bool = False
     sleeps: bool = False
-    last: object = None  # the last segment of a one-line for's sublist, where the loop ends without a `done`
+    loop_last: object = None
 
     def waits(self):
         return self.condition_polls or (self.body_polls and self.sleeps)
@@ -920,7 +922,7 @@ def wait_words(segs):
             return [FOREGROUND_WAIT]
         for kw in keywords:
             if kw in LOOP_KEYWORDS:
-                loop = Loop(kw, in_condition=kw in ("while", "until"), last=seg.loop_last)
+                loop = Loop(kw, in_condition=kw in ("while", "until"), loop_last=seg.loop_last)
                 # this segment's substitutions came before it in segs: the condition of a while or until, the first
                 # body command of a repeat, the word list of a for (read once)
                 sub_polls = any(polls(command(s)[1]) for sub in seg.subs for s in sub)
@@ -936,7 +938,7 @@ def wait_words(segs):
         for loop in loops:
             loop.body_polls = loop.body_polls or polls(words)
             loop.sleeps = loop.sleeps or words[:1] == ["sleep"]
-        while loops and loops[-1].last is seg:
+        while loops and loops[-1].loop_last is seg:
             if loops.pop().waits():
                 return [FOREGROUND_WAIT]
     return [FOREGROUND_WAIT] if any(loop.waits() for loop in loops) else []
