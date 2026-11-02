@@ -169,6 +169,18 @@ def input_matches(case):
     return out
 
 
+def criteria(case):
+    """{grader name: criteria text, folded to one line} for the llm graders in a case.yaml."""
+    text = (EVALS / case / "case.yaml").read_text()
+    out = {}
+    for block in re.split(r"\n  - ", text)[1:]:
+        name = re.search(r"name: (\S+)", block)
+        folded = re.search(r"criteria: >\n((?:      .*\n?)+)", block)
+        if name and folded:
+            out[name.group(1)] = " ".join(folded.group(1).split())
+    return out
+
+
 def brief(prompt, **extra):
     """An Agent call's input as the grader sees it: the tool input serialised as JSON."""
     return json.dumps({"description": "Implement a ticket", "prompt": prompt, **extra}, separators=(",", ":"))
@@ -253,6 +265,10 @@ def sends_after_crash(ws, tag):
     retry = run(ws, f"PYTHONPATH=. python3 '{script}' '{db}' '{log}' retry", cwd=ws / "app")
     return crash.returncode, retry.stdout.strip(), log.read_text().splitlines() if log.exists() else []
 
+
+graded = criteria("code-review-correctness").get("finds-empty-test", "")
+check("388 review: the empty-test grader fails the finding under Standards (#63: Correctness owns it)",
+      "Correctness section" in graded and re.search(r"FAIL when[^.]*under Standards", graded) is not None, graded)
 
 ws = scaffold("code-review-correctness")
 branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
