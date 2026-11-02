@@ -224,7 +224,6 @@ check("unknown merge commit: exits 1 and names the PR",
       r.returncode == 1 and "#52" in r.stderr and "## Lines" not in r.stdout, (r.returncode, r.stdout, r.stderr))
 ws.remove()
 
-# A local-review fix PR merges into pre-main after the first collection: only a second run carries it.
 ws = Workspace()
 ws.git("branch", "pre-main")
 ws.git("checkout", "-q", "pre-main")
