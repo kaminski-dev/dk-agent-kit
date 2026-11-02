@@ -102,7 +102,7 @@ A failed check is fixed on the branch and watched again before you report.
   Either way, a skipped inline finding gets its reason on its review thread; a skipped review-body finding gets it in a PR comment naming its file and lines.
 - `Refs #N` issues: once the batch reaches `main`, swap `ready-for-agent` for `awaiting-verification` and comment the exact query, the deploy time and the due date. When the window has passed, call the Skill tool with `dk:post-deploy-check`: it runs the query and posts the verdict.
 - Declining an issue: comment the reason, add `wontfix`, close.
-- Clean up: `dk-gc --dry-run` lists what merged PRs and closed issues left behind (worktrees, branches, `dk-pg` databases); `dk-gc --yes` removes that list once the human approves the guard's question, since the yes is theirs. It keeps `verify-assets/<N>` (step 5). Done when another `dk-gc --dry-run` shows this issue's worktree only on a "keep" line, or not at all.
+- Clean up: `dk-gc --dry-run` lists what merged PRs and closed issues left behind (worktrees, branches, `dk-pg` databases); `dk-gc --yes` removes that list once the human approves the guard's question, since the yes is theirs. It keeps `verify-assets/<N>` (step 5). A worktree with no merged PR (a declined issue, a PR closed unmerged) is not on that list: once `git -C <worktree> status --porcelain` prints nothing, remove it and its branch with `git worktree remove` and `git branch -D`. Done when `git worktree list` no longer shows this issue's worktree, or `dk-gc --dry-run` shows it on a "keep" line.
 
 ## `pre-main`
 
