@@ -52,11 +52,15 @@ def git(ws, repo, *args):
     return run(ws, "git " + " ".join(args), cwd=ws / repo)
 
 
-def acceptance_on(ws, ref):
-    """Push ref as a branch and open a PR through the stand-in, which runs the acceptance check."""
-    git(ws, "app", "push", "-q", "origin", f"{ref}:refs/heads/fix/353-check")
-    r = run(ws, "gh pr create --base pre-main --head fix/353-check --title t --body 'Closes #353'", cwd=ws / "app")
-    return r, (ws / ".tracker" / "pr.md").read_text() if (ws / ".tracker" / "pr.md").exists() else ""
+def pull_on(ws, num, ref):
+    """Push ref as ticket num's branch and open a PR through the stand-in, which runs num's acceptance check.
+
+    Returns the stand-in's record of the PR, or gh's stderr when it recorded none.
+    """
+    git(ws, "app", "push", "-q", "-f", "origin", f"{ref}:refs/heads/fix/{num}-check")
+    r = run(ws, f"gh pr create --base pre-main --head fix/{num}-check --title t --body 'Closes #{num}'", cwd=ws / "app")
+    pull = ws / ".tracker" / "pulls" / f"{num}.md"
+    return pull.read_text() if pull.exists() else r.stderr
 
 
 # --- #353 fixture: Customer History order -------------------------------------------------------
@@ -67,15 +71,15 @@ check("353: origin has main and pre-main", "refs/heads/main" in heads and "refs/
 tests = run(ws, "python3 -m unittest discover -s tests -q", cwd=ws / "app")
 check("353: fixture's own tests pass", tests.returncode == 0, tests.stderr[-500:])
 
-r, pr = acceptance_on(ws, "origin/pre-main")
-check("353: acceptance fails on the pre-fix state", "acceptance: fail" in pr, pr or r.stderr)
+pr = pull_on(ws, "353", "origin/pre-main")
+check("353: acceptance fails on the pre-fix state", "acceptance: fail" in pr, pr)
 
 git(ws, "app", "checkout", "-q", "-b", "reference", "origin/pre-main")
 patch = run(ws, f"git apply '{REFERENCE / 'reference-353.patch'}'", cwd=ws / "app")
 check("353: reference fix applies", patch.returncode == 0, patch.stderr)
 git(ws, "app", "commit", "-qam", "reference")
-r, pr = acceptance_on(ws, "reference")
-check("353: acceptance passes on the reference fix", "acceptance: pass" in pr and "unit tests: pass" in pr, pr or r.stderr)
+pr = pull_on(ws, "353", "reference")
+check("353: acceptance passes on the reference fix", "acceptance: pass" in pr and "unit tests: pass" in pr, pr)
 
 # A head that cannot be extracted still gets a PR and an acceptance line, and leaves no checkout behind.
 broken = ws.parent / "broken-tar"
@@ -92,15 +96,6 @@ check("353: a failed extraction leaves no checkout in .tracker", left == [], lef
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
 # --- Fan-out fixture: #353 and #376 in one run, their fixes editing the same query --------------
-
-
-def pull_on(ws, num, ref):
-    """Open a PR for ticket num from ref through the stand-in and return what it recorded for num."""
-    git(ws, "app", "push", "-q", "-f", "origin", f"{ref}:refs/heads/fix/{num}-check")
-    r = run(ws, f"gh pr create --base pre-main --head fix/{num}-check --title t --body 'Closes #{num}'", cwd=ws / "app")
-    pull = ws / ".tracker" / "pulls" / f"{num}.md"
-    return pull.read_text() if pull.exists() else r.stderr
-
 
 ws = scaffold("implement-wave")
 ready = json.loads(run(ws, "gh issue list --label ready-for-agent --json number").stdout or "[]")
@@ -122,7 +117,7 @@ shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
 
 def input_matches(case):
-    """{grader name: input_match} from a case.yaml, whose graders quote input_match in single quotes."""
+    """{grader name: input_match} from a case.yaml; stdlib only, so input_match stays single-quoted there."""
     text = (EVALS / case / "case.yaml").read_text()
     out = {}
     for block in re.split(r"\n  - ", text)[1:]:
@@ -159,8 +154,8 @@ branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
 check("353 review: the fix branch is checked out", branch == "fix/353-history-order", branch)
 diff = git(ws, "app", "diff", "origin/pre-main...HEAD").stdout
 check("353 review: the diff seeds a value interpolated into SQL", "entity_type = '{entity_type}'" in diff, diff[:300])
-r, pr = acceptance_on(ws, "HEAD")
-check("353 review: the seeded branch still meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr or r.stderr)
+pr = pull_on(ws, "353", "HEAD")
+check("353 review: the seeded branch still meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr)
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
 # The review fixture with work in progress: the same branch, plus an uncommitted edit and an untracked

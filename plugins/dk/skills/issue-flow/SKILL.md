@@ -21,7 +21,7 @@ git fetch -q origin
 git worktree add ~/workspace/<prefix>-<N> -b <type>/<N>-<slug> origin/pre-main
 ```
 
-When `ls-remote` prints nothing, `pre-main` is missing: ask the maintainer to restore it, branching from `main` only on their word. Run the fresh-worktree setup from `workflow.md` before any gate means anything.
+The **base** is the branch worktrees start from and PRs target: `pre-main`, unless `workflow.md` names another. When `ls-remote` prints nothing, `pre-main` is missing: ask the maintainer to restore it, branching from `main` only on their word. Run the fresh-worktree setup from `workflow.md` before any gate means anything.
 
 Scratch files live in `$SCRATCH/<N>/` (`$SCRATCH` = the session's scratchpad directory), one directory per agent, never in the tree. Parallel agents each get their own worktree and their own scratch directory; a shared one is how two agents overwrote each other's `network-failure.ts`. `git stash` is one list across all worktrees, so set work aside with a WIP commit or a patch file in `$SCRATCH`.
 

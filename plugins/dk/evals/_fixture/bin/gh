@@ -205,10 +205,13 @@ def issue_of(head):
     return m.group(1) if m else None
 
 
-def acceptance(head):
-    """Check out head from the workspace's origin and run the repo's tests and its issue's hidden acceptance check."""
-    check = TRACKER / f"acceptance-{issue_of(head)}.py"
-    if not check.exists():
+def acceptance(head, num):
+    """Check out head from the workspace's origin and run the repo's tests and issue num's hidden acceptance check.
+
+    No lines when the issue has no check: the PR record then carries no verdict for it.
+    """
+    check = TRACKER / f"acceptance-{num}.py"
+    if num is None or not check.exists():
         return []
     origin = WS / "origin.git"
     archive = subprocess.run(["git", "--git-dir", str(origin), "archive", f"refs/heads/{head}"], capture_output=True)
@@ -238,12 +241,13 @@ def cmd_pr(sub, args, state):
               "base": base, "head": head, "state": "OPEN"}
         state["prs"].append(pr)
         save(state)
-        lines = [f"# PR #{num} {pr['title']}", f"base: {base}", f"head: {head}"] + acceptance(head)
+        issue = issue_of(head)
+        lines = [f"# PR #{num} {pr['title']}", f"base: {base}", f"head: {head}"] + acceptance(head, issue)
         record = "\n".join(lines) + "\n\n## Body\n\n" + pr["body"] + "\n"
         (TRACKER / "pr.md").write_text(record)
-        if issue_of(head):
+        if issue:
             (TRACKER / "pulls").mkdir(exist_ok=True)
-            (TRACKER / "pulls" / f"{issue_of(head)}.md").write_text(record)
+            (TRACKER / "pulls" / f"{issue}.md").write_text(record)
         print(f"https://github.com/{state['repo']}/pull/{num}")
     elif sub in ("view", "list"):
         prs = state["prs"]

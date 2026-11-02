@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 You have been provided a spec: a GitHub issue labelled `spec`, whose sub-issues are the tickets that implement it. Read `docs/agents/issue-tracker.md` for the tracker commands; if it is missing, tell the user to run `/dk:setup`. Call the Skill tool with `dk:issue-flow` for the branch, scratch, commit and PR rules every agent here follows.
 
-The goal is the entire spec implemented on a single **integration branch**, merged into the **base** through one PR that closes the spec and every ticket. The base is the branch `docs/agents/workflow.md` bases worktrees on and targets PRs at: `pre-main` unless it names another.
+The goal is the entire spec implemented on a single **integration branch**, merged into the base (`dk:issue-flow` step 2) through one PR that closes the spec and every ticket.
 
 The tickets are not a list of steps. They are a **task graph** with blocking relationships between them. This means there is always a **frontier** of tickets which are ready to be grabbed.
 
