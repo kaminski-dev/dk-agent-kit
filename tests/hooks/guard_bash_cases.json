@@ -361,5 +361,10 @@
   {"cmd": "RUN=/tmp/s/50/verify.Ab3dE9; git commit -qm \"rm -f $RUN/shots/x.png is denied now\"", "expect": "allow"},
   {"cmd": "cd \"$RUN\" && rm -f shots/*", "expect": "allow"},
   {"cmd": "rm -f /tmp/s/50/pr-body.md 'unterminated", "expect": "allow"},
-  {"cmd": "git commit -qm \"never rm -rf /tmp/s/50/verify.Ab3dE9\" 'unterminated", "expect": "allow"}
+  {"cmd": "git commit -qm \"never rm -rf /tmp/s/50/verify.Ab3dE9\" 'unterminated", "expect": "allow"},
+  {"why": "PR #69 CodeRabbit: the path rm reaches counts, so .. is resolved first", "cmd": "rm -f /tmp/s/50/staging/../verify.Ab3dE9/shots/a.png", "expect": "deny"},
+  {"cmd": "RUN=/tmp/s/50/verify.Ab3dE9; rm -f \"$RUN/../pr-body.md\"", "expect": "allow"},
+  {"cmd": "cd /tmp/s/50/verify.Ab3dE9/.. && rm -f pr-body.md", "expect": "allow"},
+  {"why": "PR #69 CodeRabbit: mktemp can draw six lowercase characters; under the issue number directory they still name a run", "cmd": "rm -f /tmp/s/50/verify.abcdef/shots/a.png", "expect": "deny"},
+  {"cmd": "rm -f /tmp/s/50/verify.abcdef/shots/a.png 'unterminated", "expect": "deny"}
 ]
