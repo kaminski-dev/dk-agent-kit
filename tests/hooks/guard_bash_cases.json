@@ -222,5 +222,7 @@
   {"cmd": "gh pr checks 12 --watch=true", "expect": "deny"},
   {"cmd": "watch -n 30 gh pr checks 12", "expect": "deny"},
   {"cmd": "watch -n 30 'gh run list -L 1'", "expect": "deny"},
-  {"cmd": "gh -R o/r pr checks 12", "expect": "allow"}
+  {"cmd": "gh -R o/r pr checks 12", "expect": "allow"},
+  {"why": "#45 review: a substitution in the loop body is not the condition", "cmd": "gh pr list --json number -q '.[].number' | while read n; do s=$(gh pr view $n --json state -q .state); echo \"$n $s\"; done", "expect": "allow"},
+  {"cmd": "until gh pr checks 5; do echo waiting; done 'unterminated", "expect": "deny"}
 ]
