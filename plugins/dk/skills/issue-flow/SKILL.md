@@ -68,8 +68,8 @@ When the change is one the customer sees, write the customer reply on the issue 
 
 CI waits run in the background, so the user gets answers while CI runs:
 
-1. Read the checks once: `gh pr checks <PR>`. When none is pending, the read is the result.
-2. Otherwise start `gh pr checks <PR> --watch --fail-fast` with `run_in_background` and keep answering. It ends non-zero at the first failed check, or zero once every check has passed, and its end wakes you. When it answers "no checks reported" (CI has not registered the push yet), start it again the same way, straight away.
+1. Read the checks once: `gh pr checks <PR>`. When every check has finished, the read is the result.
+2. Otherwise (a check pending, or "no checks reported" because CI has not registered the push yet) start `gh pr checks <PR> --watch --fail-fast` with `run_in_background` and keep answering. It ends non-zero at the first failed check, or zero once every check has passed, and its end wakes you. When it ends on "no checks reported", start it again the same way, straight away.
 
 A failed check is fixed on the branch and watched again before you report.
 

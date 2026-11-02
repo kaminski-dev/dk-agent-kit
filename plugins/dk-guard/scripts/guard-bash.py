@@ -406,7 +406,11 @@ def split(cmd):
 def command(seg):
     """(wrappers, words from the program on): leading keywords, assignments and wrappers such as `sudo -u x`
     dropped."""
-    words, i, wrappers = seg.words, 0, []
+    return command_words(seg.words)
+
+
+def command_words(words):
+    i, wrappers = 0, []
     while i < len(words):
         w = words[i]
         name = os.path.basename(w)
@@ -728,7 +732,7 @@ def gh_words(segs):
 FOREGROUND_WAIT = ("deny", "This waits on CI or a merge in the foreground, and the session answers nothing until it "
                    "returns. Start the same command with run_in_background (or as a Monitor until-loop) and keep "
                    "answering the user; a single `gh pr checks <N>` without --watch reads the state once.")
-LOOP_KEYWORDS = ("for", "foreach", "select", "while", "until")
+LOOP_KEYWORDS = ("for", "foreach", "select", "while", "until", "repeat")
 GH_REPO_FLAG = r"(?:\s+(?:-R\s*\S+|--repo[=\s]\S+))*"
 GH_POLL = r"\bgh" + GH_REPO_FLAG + r"\s+(?:pr|run)\b"
 RAW_WAITS = [re.compile(p, re.S) for p in (
@@ -755,7 +759,7 @@ def polls(words):
 
 
 def watches(words):
-    if words[:1] == ["watch"]:  # watch(1) reruns its command until stopped
+    if words and os.path.basename(words[0]) == "watch":  # watch(1) reruns its command until stopped
         return bool(re.search(GH_POLL, " ".join(words[1:])))
     args = gh_args(words) or []
     return args[:2] == ["run", "watch"] or args[:2] == ["pr", "checks"] and any(
@@ -769,6 +773,7 @@ def check_waits(cmd):
 
 @dataclasses.dataclass
 class Loop:
+    keyword: str
     in_condition: bool  # a while or until condition runs on every pass, so polling there waits even without a sleep
     condition_polls: bool = False
     body_polls: bool = False
@@ -782,11 +787,16 @@ def wait_words(segs):
     loops = []  # innermost last
     for seg in segs:
         _, words = command(seg)
+        if seg.words[:1] == ["repeat"] and "do" in seg.words:  # zsh: `repeat N do cmd` keeps cmd in this segment
+            _, words = command_words(seg.words[seg.words.index("do") + 1:])
+        elif seg.words == ["end"] and loops and loops[-1].keyword == "foreach":  # zsh: foreach x (…) … end
+            if loops.pop().waits():
+                return [FOREGROUND_WAIT]
         if watches(words):
             return [FOREGROUND_WAIT]
         for kw in itertools.takewhile(lambda w: w in LEAD or w in LOOP_KEYWORDS, seg.words):
             if kw in LOOP_KEYWORDS:
-                loop = Loop(in_condition=kw in ("while", "until"))
+                loop = Loop(kw, in_condition=kw in ("while", "until"))
                 # the condition's substitutions came before it in segs
                 loop.condition_polls = loop.in_condition and any(polls(command(s)[1]) for sub in seg.subs for s in sub)
                 loops.append(loop)
