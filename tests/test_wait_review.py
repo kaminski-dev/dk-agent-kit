@@ -144,9 +144,11 @@ def concurrent_pr_views(root, calls):
         _, err = p.communicate(timeout=30)
         if p.returncode:
             errors.append(err.strip().splitlines()[-1] if err.strip() else f"exit {p.returncode}")
-    with open(os.path.join(case, "views")) as f:
-        views = f.read()
-    return errors, views
+    views = os.path.join(case, "views")
+    if not os.path.exists(views):
+        return errors, ""
+    with open(views) as f:
+        return errors, f.read()
 
 
 def main():
