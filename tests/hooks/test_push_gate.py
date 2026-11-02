@@ -90,7 +90,89 @@ def case_passing_gate_in_the_pushed_worktree_allows(root):
     assert gate_ran(wt)
 
 
-CASES = [v for k, v in sorted(globals().items()) if k.startswith("case_")]
+def case_git_dash_c_push_runs_the_worktree_gate(root):
+    main, wt = make_checkout(root, "dash-c", FAIL)
+    assert denial(run(main, f"git -C {wt} push")[1])
+
+
+def case_bare_push_from_the_session_cwd_runs_its_gate(root):
+    _, wt = make_checkout(root, "bare", FAIL)
+    assert denial(run(wt, "git add -A && git commit -qm x; git push")[1])
+
+
+def case_command_the_splitter_cannot_read_still_runs_the_gate(root):
+    main, wt = make_checkout(root, "unsplittable", FAIL)
+    assert denial(run(main, f'cd {wt} && git push; echo "unterminated')[1])
+
+
+def case_command_without_a_push_runs_no_gate(root):
+    main, wt = make_checkout(root, "no-push", FAIL)
+    assert run(main, f"cd {wt} && git status && echo push") == (0, None, "")
+    assert not gate_ran(wt)
+
+
+def case_verify_assets_push_runs_no_gate(root):
+    main, wt = make_checkout(root, "assets", FAIL)
+    for cmd in (f"cd {wt} && git push origin HEAD:verify-assets/47",
+                f"cd {wt} && git push --force-with-lease origin verify-assets/47"):
+        assert run(main, cmd) == (0, None, ""), cmd
+    git(wt, "switch", "-q", "-c", "verify-assets/49")
+    assert run(main, f"cd {wt} && git push -u origin HEAD") == (0, None, "")
+    assert not gate_ran(wt)
+
+
+def case_branch_delete_runs_no_gate(root):
+    main, wt = make_checkout(root, "delete", FAIL)
+    for cmd in (f"cd {wt} && git push origin --delete feat/old", f"cd {wt} && git push origin :feat/old",
+                f"cd {wt} && git push -d origin feat/old"):
+        assert run(main, cmd) == (0, None, ""), cmd
+    assert not gate_ran(wt)
+
+
+def case_push_the_guard_denies_runs_no_gate(root):
+    main, wt = make_checkout(root, "to-main", FAIL)
+    assert run(main, f"cd {wt} && git push origin HEAD:main") == (0, None, "")
+    assert not gate_ran(wt)
+
+
+def case_worktree_without_a_gate_does_nothing(root):
+    main, wt = make_checkout(root, "no-gate")
+    assert run(main, f"cd {wt} && git push") == (0, None, "")
+    assert not gate_ran(main), "the main checkout's gate must not stand in for the pushed worktree's"
+
+
+def case_push_outside_a_repo_does_nothing(root):
+    plain = os.path.join(root, "plain")
+    os.makedirs(plain)
+    assert run(root, f"cd {plain} && git push origin feat/x") == (0, None, "")
+
+
+def case_directory_known_only_at_run_time_does_nothing(root):
+    main, wt = make_checkout(root, "runtime", FAIL)
+    assert run(main, f'WT={wt}; cd "$WT" && git push') == (0, None, "")
+    assert not gate_ran(wt)
+
+
+def case_gate_that_hangs_lets_the_push_through_and_says_so(root):
+    main, wt = make_checkout(root, "hangs", "#!/bin/sh\necho 'starting tests'\nsleep 30\n")
+    code, out, err = run(main, f"cd {wt} && git push", env={"DK_PUSH_GATE_TIMEOUT": "1"})
+    assert code == 0 and out and not denial(out), (code, out, err)
+    assert "timed out after 1 s" in out.get("systemMessage", "") and "starting tests" in out["systemMessage"], out
+
+
+def case_decisions_go_to_the_guard_log(root):
+    main, wt = make_checkout(root, "logged", FAIL)
+    data = os.path.join(root, "plugin-data")
+    os.makedirs(data)
+    cmd = f"cd {wt} && git push"
+    run(main, cmd, env={"CLAUDE_PLUGIN_DATA": data})
+    with open(os.path.join(data, "guard-bash.jsonl")) as f:
+        event = json.loads(f.read().splitlines()[-1])
+    assert event["decision"] == "deny" and event["command"] == cmd and event["cwd"] == main, event
+    assert event["session"] == "test" and "push gate" in event["reason"], event
+
+
+CASES =[v for k, v in sorted(globals().items()) if k.startswith("case_")]
 
 
 def main():
