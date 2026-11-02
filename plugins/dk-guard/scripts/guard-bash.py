@@ -26,6 +26,7 @@ checks, so a parse failure never lets a command through.
 
 This raises the floor against agent mistakes; it is not a security boundary.
 """
+import collections
 import dataclasses
 import itertools
 import json
@@ -112,7 +113,8 @@ class Segment:
     def __init__(self, shell, substituted):
         self.shell, self.substituted = shell, substituted
         self.words, self.redirects, self.subs, self.scripts = [], [], [], set()
-        self.modified = []  # names written `$name:x` with x a zsh modifier, unquoted or double-quoted
+        self.modifier_names = []  # `$name:x`, x a zsh modifier, unquoted or double-quoted
+        self.defines = None  # the function name when the segment is `f()`, `f ()` or `function f`
         self.piped_in = self.piped_out = self.started = False
         self.pipe_to = None
 
@@ -125,7 +127,7 @@ class Splitter:
         if depth > 16:
             raise Unsplittable("nested too deep")
         self.s, self.i, self.shell, self.substituted, self.depth = text, 0, shell, substituted, depth
-        self.out, self.heredocs, self.modified = [], [], []
+        self.out, self.heredocs, self.modifier_names = [], [], []
 
     def run(self):
         self.parse(None, self.substituted)
@@ -179,24 +181,33 @@ class Splitter:
                 seg = self.close(seg)
                 self.parse(")", substituted)  # a subshell
             else:
-                mark = len(self.modified)
-                word, _, subs = self.word()
+                mark = len(self.modifier_names)
+                word, quoted, subs = self.word()
                 seg.subs += subs
-                seg.modified += self.modified[mark:]  # a substitution inside the word took its own
-                del self.modified[mark:]
-                if self.add_word(seg, word):
+                self.take_modifiers(seg, mark)
+                if self.add_word(seg, word, quoted):
                     seg = self.close(seg)
         self.close(seg)
 
-    def add_word(self, seg, word):
+    def add_word(self, seg, word, quoted=False):
         """Add a word; True when it ends a function's name (`f() {`, `f () {`, `function f {`), so its body starts
         a new segment."""
         first = not seg.started and word not in LEAD
         seg.started = seg.started or first
         seg.words.append(word)
         named = command_words(seg.words)[1]
-        return (first and word.endswith("()") and len(word) > 2) or named[1:] == ["()"] \
-            or (named[:1] == ["function"] and len(named) == 2)
+        if first and not quoted and word.endswith("()") and len(word) > 2:
+            seg.defines = word[:-2]
+        elif not quoted and named[1:] == ["()"]:
+            seg.defines = named[0]
+        elif named[:1] == ["function"] and len(named) == 2:
+            seg.defines = word[:-2] if word.endswith("()") else word
+        return seg.defines is not None
+
+    def take_modifiers(self, seg, mark):
+        """Move the modifier names noted since `mark` to `seg`; a substitution inside the word took its own."""
+        seg.modifier_names += self.modifier_names[mark:]
+        del self.modifier_names[mark:]
 
     def close(self, seg, piped=False):
         if not (seg.words or seg.redirects):
@@ -237,11 +248,10 @@ class Splitter:
         elif not self.peek() or self.peek() in "\n;&|<>)":
             raise Unsplittable("redirection without a target")
         else:
-            mark = len(self.modified)
+            mark = len(self.modifier_names)
             target, quoted, subs = self.word()
             seg.subs += subs
-            seg.modified += self.modified[mark:]
-            del self.modified[mark:]
+            self.take_modifiers(seg, mark)
         seg.redirects.append((op, target))
         if op in ("<<", "<<-"):
             self.heredocs.append((seg, target, op == "<<-", not quoted))
@@ -264,7 +274,7 @@ class Splitter:
                 body.double([], subs, None)
                 self.out += body.out
                 seg.subs += subs
-                seg.modified += body.modified
+                seg.modifier_names += body.modifier_names
 
     def word(self):
         """Read one word at the cursor: (text without quotes, whether any part was quoted, substitutions)."""
@@ -328,7 +338,7 @@ class Splitter:
     def note_modifier(self):
         m = MODIFIER.match(self.s, self.i)
         if m:
-            self.modified.append(m.group(1))
+            self.modifier_names.append(m.group(1))
 
     def ansi_c(self):
         self.i += 2
@@ -738,7 +748,7 @@ def check_gh(cmd):
 def gh_findings(tokens):
     if tokens[1:3] in (["issue", "view"], ["pr", "view"]) and "--comments" in tokens \
             and not any(t.startswith("--json") for t in tokens):
-        if tokens[1] == "issue":  # the hint was ignored 8 times in one repo
+        if tokens[1] == "issue":
             return [("deny", "Piped `gh issue view --comments` prints the comments but not the body. Use "
                      "`gh issue view <N> --json title,body,labels,comments`.")]
         return [("hint", "Piped `gh pr view --comments` prints the comments but not the body. If you "
@@ -914,7 +924,7 @@ def dk_gc_words(segs):
 ZSH_SPECIAL = {"path", "PATH", "fpath", "module_path", "cdpath", "manpath", "status", "pipestatus", "argv",
                "commands", "functions", "aliases", "options", "parameters", "history"}
 LOOP = re.compile(START + r"(?:for|foreach|select)\s+((?:[A-Za-z_]\w*\s+)*?[A-Za-z_]\w*)\b(?=\s+in\b|\s*[(;\n]|\s*$)")
-ZSH_C = r"\bzsh\s+(?:(?:[-+]o\s+\w+|[-+][a-zA-Z]+)\s+)*"  # a quote opened after this is a zsh script, not data
+ZSH_SCRIPT_OPENER = r"\bzsh\s+(?:(?:[-+]o\s+\w+|[-+][a-zA-Z]+)\s+)*"
 DECLARE = {"local", "typeset", "declare", "export", "readonly", "integer", "float"}
 ASSIGN_PARTS = re.compile(r"([A-Za-z_]\w*)(?:\[[^]]*\])?(\+?=)(.*)", re.S)
 
@@ -931,7 +941,7 @@ def check_zsh_names(cmd):
             words = text.split()
         targets.append((m.end(), list(overwritten(words))))
     for offset, names in targets:
-        if quoted_text(cmd, offset, shell=ZSH_C):
+        if quoted_text(cmd, offset, shell=ZSH_SCRIPT_OPENER):
             continue
         findings = zsh_name_findings(names)
         if findings:
@@ -950,7 +960,7 @@ def zsh_name_findings(names):
 
 def assignments(words):
     """(name, operator, value) for each variable a simple command sets: its leading assignments, or the names after
-    local, typeset, declare, export, readonly, integer or float (a bare name there has no operator and value)."""
+    a DECLARE word (a bare name there has no operator and value)."""
     words = list(itertools.dropwhile(lambda w: w in LEAD, words))
     if words[:1] and words[0] in DECLARE:
         rest = [w for w in words[1:] if not w.startswith(("-", "+"))]
@@ -962,12 +972,16 @@ def assignments(words):
 
 
 def overwritten(words):
-    """The zsh special names a simple command overwrites. PATH itself, `+=`, and a value that keeps the old one
-    (`path=(/opt/bin $path)`) edit the search path on purpose; `local path` empties it."""
-    local = list(itertools.dropwhile(lambda w: w in LEAD, words))[:1] == ["local"]
+    """The zsh special names a simple command overwrites. PATH itself, `path+=(…)` and a value that keeps the old one
+    (`path=(/opt/bin $path)`) edit the search path on purpose; `local path`, or `typeset path` in a function, empties
+    it, while `typeset -p path` only prints it."""
+    words = list(itertools.dropwhile(lambda w: w in LEAD, words))
+    localizes = words[:1] in (["local"], ["typeset"], ["declare"], ["integer"], ["float"]) \
+        and not any(re.fullmatch(r"[-+]\w*p\w*", w) for w in words[1:])
     for name, op, value in assignments(words):
         keeps = op and re.search(r"\$\{?(?:%s|%s)\b" % (name, name.upper()), value)
-        if name in ZSH_SPECIAL and (op is None and local or op == "=" and name != "PATH" and not keeps):
+        edits = name == "PATH" or keeps or op == "+=" and name.endswith("path")
+        if name in ZSH_SPECIAL and (op is None and localizes or op and not edits):
             yield name
 
 
@@ -1005,14 +1019,14 @@ def check_modifiers(cmd):
     for m in MODIFIER.finditer(cmd):
         escaped = re.search(r"(?<!\\)(?:\\\\)*\\$", cmd[:m.start()])
         quote = open_quote(cmd, m.start())
-        if escaped or quote is not None and cmd[quote] == "'" and quoted_text(cmd, m.start(), shell=ZSH_C):
+        if escaped or quote is not None and cmd[quote] == "'" and quoted_text(cmd, m.start(), shell=ZSH_SCRIPT_OPENER):
             continue
         return modifier_findings(m.group(1))
     return []
 
 
 def modifier_words(segs):
-    return next((modifier_findings(name) for seg in segs if seg.shell == "zsh" for name in seg.modified), [])
+    return next((modifier_findings(name) for seg in segs if seg.shell == "zsh" for name in seg.modifier_names), [])
 
 
 # zsh does not word-split a variable: `G="git grep -n"; $G foo` runs a command named `git grep -n`.
@@ -1025,7 +1039,7 @@ SPACED_RAW = re.compile(r"(?:^|[\s;&|(])([A-Za-z_]\w*)=(?:\"[^\"]*\s[^\"]*\"|'[^
 def check_command_variable(cmd):
     for m in SPACED_RAW.finditer(cmd):
         use = START + PREFIX + r"[\"']?\$\{?" + m.group(1) + r"\}?[\"']?(?=\s|[;&|)]|$)"
-        if not quoted_text(cmd, m.start(1), shell=ZSH_C) and re.search(use, cmd[m.end():]):
+        if not quoted_text(cmd, m.start(1), shell=ZSH_SCRIPT_OPENER) and re.search(use, cmd[m.end():]):
             return [VARIABLE_COMMAND]
     return []
 
@@ -1037,8 +1051,11 @@ def command_variable_words(segs):
         m = re.fullmatch(r"\$\{?([A-Za-z_]\w*)\}?", words[0]) if words else None
         if m and m.group(1) in spaced:
             return [VARIABLE_COMMAND]
-        spaced |= {name for name, op, value in assignments(seg.words)
-                   if op and not value.startswith("(") and re.search(r"\s", value)}
+        for name, op, value in assignments(seg.words):
+            if op and not value.startswith("(") and re.search(r"\s", value):
+                spaced.add(name)
+            elif op:
+                spaced.discard(name)
     return []
 
 
@@ -1048,40 +1065,37 @@ SHORT_FUNCTION = ("deny", "A one- or two-character function name collides with t
 FUNCTION_RAW = re.compile(START + r"(?:function\s+([A-Za-z_][\w-]?)(?![\w-])|([A-Za-z_][\w-]?)\s*\(\s*\))")
 
 
-def function_name(words):
-    words = list(itertools.dropwhile(lambda w: w in LEAD, words))
-    if words[:1] == ["function"] and len(words) > 1:
-        return words[1][:-2] if words[1].endswith("()") else words[1]
-    if words[:1] and words[0].endswith("()") and len(words[0]) > 2:
-        return words[0][:-2]
-    return words[0] if words[1:2] == ["()"] else None
-
-
 def check_function_names(cmd):
     hits = (m.start(1) if m.group(1) else m.start(2) for m in FUNCTION_RAW.finditer(cmd))
-    return [SHORT_FUNCTION] if any(not quoted_text(cmd, pos, shell=ZSH_C) for pos in hits) else []
+    return [SHORT_FUNCTION] if any(not quoted_text(cmd, pos, shell=ZSH_SCRIPT_OPENER) for pos in hits) else []
 
 
 def function_name_words(segs):
-    names = (function_name(seg.words) for seg in segs if seg.shell == "zsh")
-    return [SHORT_FUNCTION] if any(name and len(name) <= 2 for name in names) else []
+    return [SHORT_FUNCTION] if any(seg.defines and len(seg.defines) <= 2 for seg in segs if seg.shell == "zsh") else []
 
 
 FILE_CHECKS = {"ls", "stat", "test", "[", "[["}
 # Tools whose first operand is a pattern or script, not a file: a credential name there is text being searched or
-# edited (`sed -i '' 's#~/.sentryclirc#…#' a.ts`). For each: the short options that take a value, the long ones that
-# take the next word, and the options whose value is the pattern or script. A file named by -f is read.
-PATTERN_TOOLS = {
-    "grep": ("efmABCdD", {"--regexp", "--file", "--max-count", "--after-context", "--before-context", "--context"},
-             {"-e", "--regexp"}),
-    "rg": ("efgtTmABCjMrEd", {"--regexp", "--file", "--glob", "--iglob", "--type", "--type-not", "--max-count",
-                              "--after-context", "--before-context", "--context", "--max-depth", "--replace"},
-           {"-e", "--regexp"}),
-    "sed": ("efl", {"--expression", "--file"}, {"-e", "--expression"}),
-    "awk": ("Fvf", set(), set()),
-}
-PATTERN_TOOLS.update({"egrep": PATTERN_TOOLS["grep"], "fgrep": PATTERN_TOOLS["grep"], "gsed": PATTERN_TOOLS["sed"],
-                      "gawk": PATTERN_TOOLS["awk"], "mawk": PATTERN_TOOLS["awk"], "nawk": PATTERN_TOOLS["awk"]})
+# edited (`sed -i '' 's#~/.sentryclirc#…#' a.ts`), unless the script itself reads files (`script_reads`).
+PatternTool = collections.namedtuple("PatternTool", "short_takes long_takes pattern_opts no_pattern script_reads")
+SED_ADDRESS = r"(?:\d+|\$|/(?:\\.|[^/])*/)"
+SED_SUBSTITUTION = re.compile(rf"\s*(?:{SED_ADDRESS}(?:,{SED_ADDRESS})?)?\s*s(.)(?:\\.|(?!\1).)*\1(?:\\.|(?!\1).)*"
+                              r"\1[gpIiM0-9]*\s*", re.S)
+GREP = PatternTool("efmABCdD", {"--regexp", "--file", "--max-count", "--after-context", "--before-context", "--context",
+                                "--include", "--exclude", "--exclude-dir", "--exclude-from", "--binary-files",
+                                "--devices", "--directories"},
+                   {"-e", "--regexp"}, set(), lambda script: False)
+RG = PatternTool("efgtTmABCjMrEd", {"--regexp", "--file", "--glob", "--iglob", "--type", "--type-not", "--max-count",
+                                    "--after-context", "--before-context", "--context", "--max-depth", "--replace",
+                                    "--ignore-file", "--type-add", "--sort", "--sortr", "--max-filesize"},
+                 {"-e", "--regexp"}, {"--files", "--type-list"}, lambda script: False)
+# sed's r, R, w, W and e commands and the s///e flag read or run files, so only plain substitutions are text
+SED = PatternTool("efl", {"--expression", "--file"}, {"-e", "--expression"}, set(),
+                  lambda script: not all(SED_SUBSTITUTION.fullmatch(c)
+                                         for c in re.split(r"[;\n]", script) if c.strip()))
+AWK = PatternTool("Fvf", set(), set(), set(), lambda script: re.search(r"\bgetline\b|\bsystem\s*\(", script))
+PATTERN_TOOLS = {"grep": GREP, "egrep": GREP, "fgrep": GREP, "rg": RG, "sed": SED, "gsed": SED,
+                 "awk": AWK, "gawk": AWK, "mawk": AWK, "nawk": AWK}
 
 
 def in_code_span(text, m):
@@ -1091,10 +1105,13 @@ def in_code_span(text, m):
     return bool(re.search(r"`[\w~/${}.-]*$", text[:m.start()]) and re.match(r"[\w./-]*\\?`", text[m.end():]))
 
 
+def last_start(cmd, pos):
+    """The last place a command can start before `pos`, or None."""
+    return next(reversed(list(re.finditer(START, cmd[:pos]))), None)
+
+
 def only_checks_file(cmd, pos):
-    start = None
-    for start in re.finditer(START, cmd[:pos]):
-        pass
+    start = last_start(cmd, pos)
     opener = cmd[start.start():start.end()].strip() if start else ""
     if opener in ("$(", "`") or (opener == "(" and start.start() > 0 and cmd[start.start() - 1] in "<>"):
         return False  # its output is substituted into another command
@@ -1110,7 +1127,6 @@ def pattern_args(words):
     tool = PATTERN_TOOLS.get(os.path.basename(words[0])) if words else None
     if tool is None:
         return set()
-    takes, long_takes, pattern_opts = tool
     found, operands, given, k = set(), [], False, 1
     while k < len(words):
         w, k = words[k], k + 1
@@ -1119,19 +1135,19 @@ def pattern_args(words):
             break
         if w.startswith("--"):
             name = w.partition("=")[0]
-            given = given or name in ("--regexp", "--file", "--expression")
-            if name in pattern_opts:
+            given = given or name in ("--regexp", "--file", "--expression") or name in tool.no_pattern
+            if name in tool.pattern_opts:
                 found.add(k - 1 if "=" in w else k)
-            k += 1 if "=" not in w and name in long_takes else 0
+            k += 1 if "=" not in w and name in tool.long_takes else 0
         elif w.startswith("-") and len(w) > 1:
-            if w == "-i" and k < len(words) and re.fullmatch(r"|\.\w+", words[k]) and tool is PATTERN_TOOLS["sed"]:
+            if w == "-i" and k < len(words) and re.fullmatch(r"|\.\w+", words[k]) and tool is SED:
                 k += 1  # BSD sed: `-i ''` or `-i .bak`
                 continue
             for j, c in enumerate(w[1:], 1):
-                if c in takes:
+                if c in tool.short_takes:
                     given = given or c in "ef"
                     attached = j < len(w) - 1
-                    if "-" + c in pattern_opts:
+                    if "-" + c in tool.pattern_opts:
                         found.add(k - 1 if attached else k)
                     k += 0 if attached else 1
                     break
@@ -1139,19 +1155,16 @@ def pattern_args(words):
             operands.append(k - 1)
     if not given and operands:
         found.add(operands[0])
-    return found
+    return {k for k in found if k < len(words) and not tool.script_reads(words[k])}
 
 
 def in_pattern_arg(cmd, pos):
-    """True when `pos` in raw text sits in the pattern or script of a grep, rg, sed or awk call."""
-    start = None
-    for start in re.finditer(START, cmd[:pos]):
-        pass
-    quote = open_quote(cmd, pos)
-    upto = re.sub("^" + PREFIX, "", cmd[start.end() if start else 0:pos]) + "x" + (cmd[quote] if quote is not None
-                                                                                 else "")
+    start, quote = last_start(cmd, pos), open_quote(cmd, pos)
+    close = cmd.find(cmd[quote], pos) if quote is not None else -1
+    end = close + 1 if close >= 0 else re.compile(r"\s|$").search(cmd, pos).start()
+    word = cmd[start.end() if start else 0:end] + (cmd[quote] if quote is not None and close < 0 else "")
     try:
-        words = shlex.split(upto)  # its last word is the one `pos` sits in, cut there
+        words = shlex.split(re.sub("^" + PREFIX, "", word))  # up to the end of the word `pos` sits in
     except ValueError:
         return False
     _, words = command_words(drop_redirections(words))
@@ -1178,8 +1191,8 @@ def credential_words(segs):
         if words[:1] and words[0] in FILE_CHECKS and not seg.piped_out and not seg.substituted:
             continue
         offset = len(seg.words) - len(words)
-        skip = seg.scripts | {offset + k for k in pattern_args(words)}  # a script or pattern is no read
-        texts = [w for k, w in enumerate(seg.words) if k not in skip] + [t for _, t in seg.redirects]
+        not_reads = seg.scripts | {offset + k for k in pattern_args(words)}
+        texts = [w for k, w in enumerate(seg.words) if k not in not_reads] + [t for _, t in seg.redirects]
         for text in texts:
             for m in CREDENTIALS.finditer(text):
                 if not in_code_span(text, m):
