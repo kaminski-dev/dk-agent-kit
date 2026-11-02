@@ -105,6 +105,9 @@ CASES = {
     "head moves before any review": (dict(
         heads=[[HEAD, "2026-11-02T12:00:00Z"], [NEW, "2026-11-02T12:10:00Z"]],
         reviews=[{"id": 10, "user": BOT, "commit_id": NEW, "body": "x"}]), 0, "reviews 10"),
+    "push during the last sleep restarts the wait": (dict(
+        heads=[[HEAD, "2026-11-02T12:00:00Z"], [NEW, "2026-11-02T12:10:00Z"]], args=["--minutes", str(1 / 60), "--interval", "5"],
+        reviews=[{"id": 11, "user": BOT, "commit_id": NEW, "body": "x"}], within=4), 0, "reviews 11"),
 }
 
 
