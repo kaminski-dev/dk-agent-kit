@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Replays past Bash commands through guard-bash's decide() to spot false positives.
 
-Usage: replay_history.py <commands.jsonl>   (lines of {"cwd": ..., "cmd": ...})
+Usage: replay_history.py <commands.jsonl>   (lines of {"cwd": ..., "cmd": ..., "background": true|false})
 Extract the file from ~/.claude/projects transcripts; it stays out of this repo.
 Implicit pushes resolve against each checkout's branch today, not at the time.
 """
@@ -20,7 +20,7 @@ spec.loader.exec_module(guard)
 counts, samples = collections.Counter(), collections.defaultdict(collections.Counter)
 for line in open(sys.argv[1]):
     row = json.loads(line)
-    level, reason = guard.decide(row["cmd"], row.get("cwd") or os.getcwd())
+    level, reason = guard.decide(row["cmd"], row.get("cwd") or os.getcwd(), row.get("background", False))
     counts[level] += 1
     if level != "allow":
         samples[(level, reason[:60])][row["cmd"].splitlines()[0][:150]] += 1
