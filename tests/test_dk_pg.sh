@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
 # dk-pg against a real Docker: two issues at once on different ports, a second
-# `up` reuses the running database, `down` leaves nothing behind, and two
-# checkouts with the same directory name keep apart. Runs from throwaway repos
-# so their labels match no real container. Skips when no Docker daemon answers.
+# `up` reuses the running database, `status` exits 0 with or without one, `down`
+# leaves nothing behind, and two checkouts with the same directory name keep
+# apart. Runs from throwaway repos so their labels match no real container.
+# Skips when no Docker daemon answers, after the check that needs none.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 dkpg="$root/plugins/dk-guard/bin/dk-pg"
 fail() { echo "FAIL: $*" >&2; exit 1; }
+
+stub=$(mktemp -d)
+printf '#!/bin/sh\necho "Cannot connect to the Docker daemon" >&2\nexit 1\n' >"$stub/docker"
+chmod +x "$stub/docker"
+out=$(PATH="$stub:$PATH" "$dkpg" status 1 2>&1) && fail "status reports success when docker fails: $out"
+rm -rf "$stub"
 
 docker info >/dev/null 2>&1 || { echo "dk-pg: skipped, no Docker daemon"; exit 0; }
 
@@ -44,11 +51,15 @@ fi
 [[ "$(docker ps -aq --filter "label=dk.issue=$a" | wc -l | tr -d ' ')" == 1 ]] || fail "second up started another container"
 [[ "$("$dkpg" url "$a")" == "$url_a" ]] || fail "url a differs from up"
 [[ "$("$dkpg" url "$b")" == "$url_b" ]] || fail "url b differs from up"
+out=$("$dkpg" status "$a") || fail "status a exits non-zero while running"
+[[ "$out" == "$url_a" ]] || fail "status a while running: $out"
 
 "$dkpg" down "$a" >/dev/null
 [[ -z "$(docker ps -aq --filter "label=dk.issue=$a")" ]] || fail "container for a left behind"
 [[ "$("$dkpg" url "$b")" == "$url_b" ]] || fail "down a touched b"
 "$dkpg" url "$a" >/dev/null 2>&1 && fail "url a still answers after down"
+out=$("$dkpg" status "$a") || fail "status a exits non-zero after down: $out"
+[[ "$out" == "dk-pg: dkpg-test-$$ #$a none running" ]] || fail "status a after down: $out"
 "$dkpg" up "$a" --db 'a b/c' >/dev/null 2>&1 && fail "up took a database name the URL cannot carry"
 "$dkpg" down "$b" >/dev/null
 [[ -z "$(docker ps -aq --filter "label=dk.issue=$b")" ]] || fail "container for b left behind"

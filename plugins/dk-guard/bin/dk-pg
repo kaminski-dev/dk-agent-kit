@@ -3,6 +3,7 @@
 #
 #   dk-pg up <issue> [--db NAME] [--image IMAGE]   start one, wait until it accepts connections, print its URL
 #   dk-pg url <issue>                              print the URL of the running one
+#   dk-pg status <issue>                           print that URL, or that none runs; exits 0 either way
 #   dk-pg down <issue>                             remove it, with its data
 #
 # The container runs with --rm and tmpfs on every volume the image declares (so
@@ -13,7 +14,7 @@
 # A second `up` for a running issue prints its URL instead.
 set -euo pipefail
 
-usage() { sed -n '3,6s/^# \{0,1\}//p' "$0" >&2; exit 2; }
+usage() { sed -n '3,7s/^# \{0,1\}//p' "$0" >&2; exit 2; }
 die() { echo "dk-pg: $*" >&2; exit 1; }
 
 cmd=${1:-}; issue=${2:-}
@@ -46,6 +47,12 @@ url() {
   port=$(docker port "$id" 5432/tcp | head -1)
   database=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$id" | sed -n 's/^POSTGRES_DB=//p')
   echo "postgres://postgres:postgres@127.0.0.1:${port##*:}/${database:-postgres}?sslmode=disable"
+}
+
+status() {
+  local ids
+  ids=$(running)
+  if [[ -n "$ids" ]]; then url; else echo "dk-pg: $repo #$issue none running"; fi
 }
 
 up() {
@@ -86,6 +93,7 @@ down() {
 case "$cmd" in
   up) up ;;
   url) url ;;
+  status) status ;;
   down) down ;;
   *) usage ;;
 esac

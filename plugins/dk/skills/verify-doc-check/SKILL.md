@@ -69,7 +69,7 @@ Done when every step has a line in the run log.
 
 ## 4. Tear down
 
-`dk:verify` step 7, then `git worktree remove "$RUN/tree"`. Done when none of your ports listens, `dk-pg url verify-doc` finds no database, and the worktree is gone.
+`dk:verify` step 7, then `git worktree remove "$RUN/tree"`. Done when none of your ports listens, `dk-pg status verify-doc` prints `none running`, and the worktree is gone.
 
 ## 5. Fix or file
 
