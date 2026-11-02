@@ -4,7 +4,7 @@
 Each case runs in a throwaway git repo checked out on `main` or on a feature
 branch, so implicit pushes resolve the way they would in a session, and with a
 throwaway HOME whose zsh alias list holds ALIASES (`"aliases": false`: a HOME
-without the list).
+without the list). A case with `max_seconds` fails when the hook takes longer.
 """
 import json
 import os
@@ -36,14 +36,17 @@ def make_repo(root, name, branch):
     return path
 
 
-def run(cmd, cwd, home, background=False):
+def run(cmd, cwd, home, background=False, max_seconds=None):
     tool_input = {"command": cmd}
     if background:  # the harness sends the key only when the call sets it
         tool_input["run_in_background"] = True
     payload = {"session_id": "test", "cwd": cwd, "hook_event_name": "PreToolUse",
                "tool_name": "Bash", "tool_input": tool_input}
-    out = subprocess.run([sys.executable, "-I", GUARD], input=json.dumps(payload),
-                         capture_output=True, text=True, env={"PATH": os.environ["PATH"], "HOME": home})
+    try:
+        out = subprocess.run([sys.executable, "-I", GUARD], input=json.dumps(payload), timeout=max_seconds,
+                             capture_output=True, text=True, env={"PATH": os.environ["PATH"], "HOME": home})
+    except subprocess.TimeoutExpired:
+        return "slow", f"took over {max_seconds} s"
     if out.returncode != 0:
         return "crash", out.stderr.strip()
     if not out.stdout.strip():
@@ -64,7 +67,8 @@ def main():
         homes = {True: make_home(root, "home", ALIASES), False: make_home(root, "home-no-aliases", None)}
         for case in cases:
             cwd = repos[case.get("repo", "none")]
-            got, reason = run(case["cmd"], cwd, homes[case.get("aliases", True)], case.get("background", False))
+            got, reason = run(case["cmd"], cwd, homes[case.get("aliases", True)], case.get("background", False),
+                              case.get("max_seconds"))
             ok = got == case["expect"]
             failed += not ok
             mark = "ok  " if ok else "FAIL"

@@ -53,6 +53,7 @@ cat > "$tmp/bin/zsh" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$tmp/zsh.log"
 echo "Welcome back"
+[[ -f "$tmp/zsh.fails" ]] && exit 1
 sed 's/^/dk-alias:/' "$tmp/aliases"
 EOF
 chmod +x "$tmp/bin/zsh"
@@ -121,6 +122,12 @@ cmp -s "$aliases_file" "$tmp/aliases.applied" || fail "second --apply changed th
 # a new alias shows in the next dry run
 echo co >> "$tmp/aliases"
 grep -qx -- '+co' <<<"$("$root/bootstrap.sh")" || fail "dry run does not show a new alias"
+# a zsh that fails keeps the current list, so the guard's alias rule stays on
+touch "$tmp/zsh.fails"
+out=$("$root/bootstrap.sh" --apply)
+grep -q "zsh failed, alias list kept" <<<"$out" || fail "a failing zsh is not reported: $out"
+cmp -s "$aliases_file" "$tmp/aliases.applied" || fail "a failing zsh changed the alias list: $(cat "$aliases_file")"
+rm "$tmp/zsh.fails"
 
 # a local-scope server shadows the user one: left as is
 echo '{"name":"playwright","scope":"Local config (private to you in this project)","command":"npx","args":["-y","@playwright/mcp@latest"]}' > "$tmp/mcp.json"
