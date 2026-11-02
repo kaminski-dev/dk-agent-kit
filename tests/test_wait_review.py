@@ -35,9 +35,17 @@ if fix.get("fail") == name:
     print("gh: API rate limit exceeded (HTTP 403)", file=sys.stderr)
     sys.exit(1)
 if name == "pr":
+    # the lock keeps concurrent views from losing a count; the replace keeps a view
+    # killed mid-write (wait-review.py's deadline does that) from leaving an empty file
+    import fcntl
     count = os.path.join(os.environ["STATE"], "views")
-    n = int(open(count).read()) if os.path.exists(count) else 0
-    open(count, "w").write(str(n + 1))
+    with open(count + ".lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        n = int(open(count).read() or 0) if os.path.exists(count) else 0
+        tmp = f"{count}.{os.getpid()}"
+        with open(tmp, "w") as f:
+            f.write(str(n + 1))
+        os.replace(tmp, count)
     heads = fix["heads"]
     sha, date = heads[min(n, len(heads) - 1)]
     print(json.dumps({"headRefOid": sha}))
