@@ -197,6 +197,21 @@ if not step2 or not re.search(r"When the base is `main`, there is no batch PR: `
                               r"and step 6's batch-PR note and step 7's batch-review bullet do not apply\.", step2.group(0)):
     errors.append("skills/issue-flow/SKILL.md: step 2 does not say what lapses when the base is main")
 
+# Triage's verify step ends on a checkable criterion (#76): one run in two of the triage-1091 eval
+# never ran the scanner the issue names and still applied ready-for-agent.
+verify = re.search(r"^3\. \*\*Verify the claim\.\*\*.*?(?=^4\. )", skills["triage"].read_text(), re.M | re.S)
+verify = verify.group(0) if verify else ""
+done = re.search(r"Done when .*", verify)
+done = done.group(0) if done else ""
+if "failing check the issue names" not in verify:
+    errors.append("skills/triage: step 3 does not run the failing check the issue names")
+for what, pattern in (
+    ("the quoted command and its exit status", r"quotes the command.*exit status"),
+    ("needs-info when it could not run", r"could not run.*`needs-info`"),
+):
+    if not re.search(pattern, done):
+        errors.append(f"skills/triage: step 3's Done when line does not name {what}")
+
 for e in errors:
     print("FAIL", e)
 print(f"{len(skills)} skills, {len(agents)} agents, {len(errors)} problems")
