@@ -131,6 +131,12 @@ for n, line in enumerate(upstream.splitlines(), 1):
         elif i and "/" in paths[0] and "/" not in path:
             errors.append(f"{where}: shorthand upstream path {path!r}; write it from the repo root")
 
+# issue-flow's worktree, rebase and PR commands name the base (step 2), which a repo's workflow.md can set,
+# so a repo without pre-main gets its own branch and no needless ask to restore pre-main.
+for n, line in enumerate(skills["issue-flow"].read_text().splitlines(), 1):
+    if re.search(r"git ls-remote|git worktree add|gh pr create|^Rebase onto|is missing:", line) and "pre-main" in line:
+        errors.append(f"skills/issue-flow/SKILL.md:{n}: names pre-main where the base belongs")
+
 for e in errors:
     print("FAIL", e)
 print(f"{len(skills)} skills, {len(agents)} agents, {len(errors)} problems")
