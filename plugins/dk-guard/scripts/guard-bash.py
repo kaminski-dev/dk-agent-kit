@@ -98,6 +98,8 @@ OPERATOR = re.compile(r"&&|\|\||\|&|\||;;|;&|;\||;|&\||&!|&")
 LEAD = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}", "fi", "done", "esac"}
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\[[^]]*\])?\+?=")
 # Commands that run the command after their own options; letters are the options that take a value.
+# A function name holds no `$` or `=`: `X=$(date)` is an assignment whose substitution reads as `$()`.
+FUNCTION_NAME = re.compile(r"[^\s$=()]+")
 WRAPPERS = {"sudo": "ugpChDrtUT", "env": "uCS", "nice": "n", "xargs": "nILPsEdaJR", "timeout": "sk",
             "gtimeout": "sk", "command": "", "exec": "a", "nohup": "", "time": "", "builtin": "", "noglob": ""}
 
@@ -196,9 +198,9 @@ class Splitter:
         seg.started = seg.started or first
         seg.words.append(word)
         named = command_words(seg.words)[1]
-        if first and not quoted and word.endswith("()") and len(word) > 2:
+        if first and not quoted and FUNCTION_NAME.fullmatch(word[:-2]) and word.endswith("()"):
             seg.defines = word[:-2]
-        elif not quoted and named[1:] == ["()"]:
+        elif not quoted and named[1:] == ["()"] and FUNCTION_NAME.fullmatch(named[0]):
             seg.defines = named[0]
         elif named[:1] == ["function"] and len(named) == 2:
             seg.defines = word[:-2] if word.endswith("()") else word
