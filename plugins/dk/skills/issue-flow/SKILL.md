@@ -25,11 +25,12 @@ When `ls-remote` prints nothing, the base is missing: ask the maintainer to rest
 
 Scratch files live in `$SCRATCH/<N>/` (`$SCRATCH` = the session's scratchpad directory), one directory per agent, never in the tree. Parallel agents each get their own worktree and their own scratch directory; a shared one is how two agents overwrote each other's `network-failure.ts`. `git stash` is one list across all worktrees, so set work aside with a WIP commit or a patch file in `$SCRATCH`.
 
-**Fan-out.** An orchestrator that runs agents in parallel, one ticket each, keeps three rules:
+**Fan-out.** An orchestrator that runs agents in parallel, one ticket each, keeps four rules:
 
 - **Worktrees**: it creates every worktree itself, one `git worktree add` after another (parallel adds collide on the `.git/config` lock), and hands each subagent its path. The subagent launches as a plain one, with no `isolation` parameter: harness isolation gives it a worktree of its own, branched from the default branch rather than the base, and blocks its edits in the one it was handed.
 - **Briefs**: a brief names only skills a subagent can call: `dk:issue-flow`, `dk:tdd`, `dk:verify`, `dk:code-review`, `dk:pr`. A skill with `disable-model-invocation: true`, such as `dk:implement`, answers a subagent with an error, so the brief spells out the sequence through those five.
 - **Waves**: at most 20 subagents run at once, the harness's limit; the remaining tickets start as slots free up.
+- **Waits**: every background wait it or a subagent starts (CI, a free review slot, a service coming up) carries a deadline, 20 minutes unless the step names another, and on expiry it stops and reports that the deadline passed. A wait whose condition can never come true, such as a loop whose worktree was removed under it, then ends instead of polling for an hour.
 
 ## 3. Scope intake
 
@@ -102,7 +103,7 @@ A failed check is fixed on the branch and watched again before you report.
   Either way, a skipped inline finding gets its reason on its review thread; a skipped review-body finding gets it in a PR comment naming its file and lines.
 - `Refs #N` issues: once the batch reaches `main`, swap `ready-for-agent` for `awaiting-verification` and comment the exact query, the deploy time and the due date. When the window has passed, call the Skill tool with `dk:post-deploy-check`: it runs the query and posts the verdict.
 - Declining an issue: comment the reason, add `wontfix`, close.
-- Clean up: `dk-gc --dry-run` lists what merged PRs and closed issues left behind (worktrees, branches, `dk-pg` databases); `dk-gc --yes` removes that list once the human approves the guard's question, since the yes is theirs. It keeps `verify-assets/<N>` (step 5). A worktree with no merged PR (a declined issue, a PR closed unmerged) is not on that list: once `git -C <worktree> status --porcelain` prints nothing, remove it and its branch with `git worktree remove` and `git branch -D`. Done when `git worktree list` no longer shows this issue's worktree, or `dk-gc --dry-run` shows it on a "keep" line.
+- Clean up: `dk-gc --dry-run` lists what merged PRs and closed issues left behind (worktrees, branches, `dk-pg` databases); `dk-gc --yes` removes that list once the human approves the guard's question, since the yes is theirs. It keeps `verify-assets/<N>` (step 5). A worktree with no merged PR (a declined issue, a PR closed unmerged) is not on that list: once `git -C <worktree> status --porcelain` prints nothing and `dk-gc --in-use <worktree>`, run from outside the worktree, exits 0 (it names any process still running in it, such as an agent's background loop), remove it and its branch with `git worktree remove` and `git branch -D`. Done when `git worktree list` no longer shows this issue's worktree, or `dk-gc --dry-run` shows it on a "keep" line.
 
 ## `pre-main`
 
