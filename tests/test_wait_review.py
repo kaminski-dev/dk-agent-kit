@@ -123,6 +123,22 @@ def run(root, name, fix):
     return proc, time.monotonic() - start
 
 
+def stress(root, calls):
+    """Concurrent `gh pr view` calls against one counter: none crashes, none is lost."""
+    case = os.path.join(root, "concurrent-pr-views")
+    os.makedirs(case)
+    with open(os.path.join(case, "fix.json"), "w") as f:
+        json.dump(dict(heads=AT_NOON), f)
+    env = {"PATH": f"{root}/bin:{os.environ['PATH']}", "FIX": f"{case}/fix.json", "STATE": case}
+    procs = [subprocess.Popen(["gh", "pr", "view", "1", "--json", "headRefOid"], env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(calls)]
+    errors = [err.strip().splitlines()[-1] if err.strip() else f"exit {p.returncode}"
+              for p in procs for _, err in [p.communicate(timeout=30)] if p.returncode]
+    with open(os.path.join(case, "views")) as f:
+        views = f.read()
+    return errors, views
+
+
 def main():
     failed = 0
     with tempfile.TemporaryDirectory() as root:
@@ -130,6 +146,13 @@ def main():
         with open(f"{root}/bin/gh", "w") as f:
             f.write(STUB)
         os.chmod(f"{root}/bin/gh", 0o755)
+        calls = 40
+        errors, views = stress(root, calls)
+        if errors or views != str(calls):
+            failed += 1
+            print(f"FAIL concurrent pr views: {len(errors)} of {calls} crashed {errors[:1]}, counter {views!r} (want '{calls}')")
+        else:
+            print("ok   concurrent pr views")
         for name, (fix, code, out) in CASES.items():
             proc, took = run(root, name, fix)
             within = fix.get("within", 25)
@@ -139,7 +162,7 @@ def main():
                 failed += 1
                 print(f"FAIL {name}: exit {proc.returncode} (want {code}), stdout {proc.stdout.strip()!r} "
                       f"(want {out!r}), stderr {proc.stderr.strip()[-200:]!r}, {took:.1f} s (want <= {within} s)")
-    print(f"\n{len(CASES) - failed}/{len(CASES)} passed")
+    print(f"\n{len(CASES) + 1 - failed}/{len(CASES) + 1} passed")
     sys.exit(1 if failed else 0)
 
 
