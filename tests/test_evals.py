@@ -124,20 +124,36 @@ brief376 = json.loads(run(ws, "gh issue view 376 --json comments").stdout)["comm
 check("wave: #376's brief cuts the page in list_by_entity's statement, dropping its row LIMIT",
       "in the `list_by_entity` statement itself: its row `LIMIT ?` goes" in brief376, brief376)
 
-# Parallel agents share the stand-in: a PR whose acceptance check is slow leaves every other gh call free.
-(ws / ".tracker" / "acceptance-353.py").write_text("import time\ntime.sleep(6)\n")
-slow = subprocess.Popen(["bash", "-c", '. "$HOME/.bashrc"; gh pr create --base pre-main --head fix/353-check --title t --body b'],
+# Parallel agents share the stand-in: a PR whose acceptance check is slow leaves every other gh call free,
+# and when it finishes after a newer PR for the same ticket, the newer PR's record stays.
+tracker = ws / ".tracker"
+(tracker / "acceptance-353.py").write_text(
+    "import pathlib, time\n"
+    "t = pathlib.Path(__file__).parent\n"
+    "if (t / 'slow-once').exists():\n"
+    "    (t / 'slow-once').unlink()\n"
+    "    (t / 'slow-started').write_text('')\n"
+    "    time.sleep(6)\n")
+(tracker / "slow-once").write_text("")
+slow = subprocess.Popen(["bash", "-c", '. "$HOME/.bashrc"; gh pr create --base pre-main --head fix/353-check --title old --body old'],
                         cwd=ws / "app", env={"PATH": os.environ["PATH"], "HOME": str(ws.parent), "TERM": "dumb"},
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-time.sleep(1)
+deadline = time.monotonic() + 30
+while not (tracker / "slow-started").exists() and time.monotonic() < deadline:
+    time.sleep(0.1)
 started = time.monotonic()
 r = run(ws, "gh issue view 376 --json title")
 took = time.monotonic() - started
 check("wave: a gh call answers while another PR's acceptance check runs",
-      r.returncode == 0 and took < 3 and slow.poll() is None, (round(took, 1), r.stderr, slow.poll()))
+      (tracker / "slow-started").exists() and r.returncode == 0 and took < 3 and slow.poll() is None,
+      (round(took, 1), r.stderr, slow.poll()))
+run(ws, "gh pr create --base pre-main --head fix/353-check --title new --body new", cwd=ws / "app")
+check("wave: the newer PR finished while the older one's check still ran", slow.poll() is None, slow.poll())
 slow.communicate(timeout=60)
-pull = (ws / ".tracker" / "pulls" / "353.md").read_text()
-check("wave: the slow PR's record lands once its check ends", "acceptance: pass" in pull and "## Body\n\nb\n" in pull, pull)
+for record in (tracker / "pulls" / "353.md", tracker / "pr.md"):
+    text = record.read_text()
+    check(f"wave: an older PR's late check leaves the newer record in {record.name}",
+          text.startswith("# PR #") and " new\n" in text.splitlines(True)[0] and "## Body\n\nnew\n" in text, text[:200])
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
 
