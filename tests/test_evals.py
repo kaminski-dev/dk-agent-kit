@@ -416,6 +416,23 @@ for src, cmd in commands:
 got = ready_py()
 check("ready.py: lists all 43 past 30", isinstance(got, tuple) and len(got[0]) == 43, got)
 
+# Past the blocker read's page of 30: #379's 30 closed blockers fill page one, the open #372 is on page two.
+state = json.loads(state_file.read_text())
+for n in range(440, 470):
+    state["issues"][str(n)] = {"title": f"Issue {n}", "body": "", "state": "closed", "labels": [], "comments": []}
+state["issues"]["379"] = {"title": "Issue 379", "body": "", "state": "open", "labels": ["ready-for-agent"],
+                          "comments": [], "blocked_by": [*range(440, 470), 372]}
+state_file.write_text(json.dumps(state))
+page_one = json.loads(run(ws, "gh api repos/acme/ledger/issues/379/dependencies/blocked_by").stdout)
+check("ready: the blocker read's first page holds 30 closed blockers",
+      len(page_one) == 30 and {b["state"] for b in page_one} == {"closed"}, page_one[-1:])
+for qualifiers in (True, False):
+    state_file.write_text(json.dumps({**state, "search_qualifiers": qualifiers}))
+    got = ready_py()
+    check(f"ready.py, search_qualifiers {qualifiers}: an open blocker on page two keeps #379 blocked",
+          isinstance(got, tuple) and 379 not in got[0] and got[1].get(379) == [372], got)
+state_file.write_text(json.dumps(state))
+
 # Blockers in another repo: acme/billing#5 is closed, acme/billing#6 open; this repo has no #5 or #6.
 state = json.loads(state_file.read_text())
 state["other_repos"] = {"acme/billing": {"5": "closed", "6": "open"}}

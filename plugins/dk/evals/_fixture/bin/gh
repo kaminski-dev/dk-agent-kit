@@ -11,6 +11,9 @@ Calls hold a lock on the state, so parallel agents do not lose each other's writ
 go of it while the acceptance check runs (at most CHECK_TIMEOUT seconds per run).
 An issue's "blocked_by" lists its native blockers, read by `is:blocked` in a
 search and by `gh api .../dependencies/blocked_by`, and added by a POST there.
+That read pages as GitHub does: 30 a page unless ?per_page= (at most 100), ?page= picks one,
+and --paginate prints every page as its own JSON array (--jq runs on each), or one array of
+pages with --slurp.
 "search_qualifiers": false makes a search with is:blocked fail, as on a GitHub without it.
 "other_repos" maps "owner/repo" to {number: state}, for `gh issue view N --repo owner/repo`.
 """
@@ -80,6 +83,31 @@ def body_of(o):
         src = o.get("--body-file") or o.get("-F")
         return sys.stdin.read() if src == "-" else pathlib.Path(src).read_text()
     return o.get("--body") or o.get("-b") or ""
+
+
+def emit_pages(items, params, o):
+    """Print a paged list the way gh api does, with and without --paginate."""
+    size = min(int(params.get("per_page", 30)), 100)
+    pages = [items[i:i + size] for i in range(0, len(items), size)] or [[]]
+    if "--paginate" not in o:
+        page = int(params.get("page", 1))
+        emit(pages[page - 1] if page <= len(pages) else [], o)
+    elif "--slurp" in o:
+        if "--jq" in o or "-q" in o:
+            fail("the `--slurp` option is not supported with `--jq` or `--template`")
+        emit(pages, o)
+    else:
+        expr = o.get("--jq") or o.get("-q")
+        for page in pages:
+            text = json.dumps(page)
+            if expr:
+                r = subprocess.run(["jq", "-r", expr], input=text, capture_output=True, text=True)
+                sys.stdout.write(r.stdout)
+                if r.returncode:
+                    sys.stderr.write(r.stderr)
+                    sys.exit(r.returncode)
+            else:
+                sys.stdout.write(text)
 
 
 def emit(value, o):
@@ -285,7 +313,9 @@ def pr_json(state, pr):
 def cmd_api(args, state):
     pos, o = opts(args, VALUE_FLAGS, MULTI)
     method = (o.get("--method") or o.get("-X") or "GET").upper()
-    parts = pos[0].strip("/").split("/") if pos else []
+    path, _, query = pos[0].partition("?") if pos else ("", "", "")
+    params = dict(kv.partition("=")[::2] for kv in query.split("&") if kv)
+    parts = path.strip("/").split("/") if path else []
     if method not in ("GET", "POST") or len(parts) < 5 or parts[:3] != ["repos", *state["repo"].split("/")] \
             or parts[3] != "issues":
         fail(f"gh api {method} {'/'.join(parts)}: not supported by this repo's tracker stand-in")
@@ -316,7 +346,7 @@ def cmd_api(args, state):
     elif parts[5:] == []:
         emit(rest_issue(num), o)
     elif parts[5:] == ["dependencies", "blocked_by"]:
-        emit([rest_issue(str(b)) for b in state["issues"][num].get("blocked_by", [])], o)
+        emit_pages([rest_issue(str(b)) for b in state["issues"][num].get("blocked_by", [])], params, o)
     else:
         fail(f"gh api {'/'.join(parts)}: not supported by this repo's tracker stand-in")
 
