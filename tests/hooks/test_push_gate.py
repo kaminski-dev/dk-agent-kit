@@ -147,9 +147,11 @@ def case_push_outside_a_repo_does_nothing(root):
     assert run(root, f"cd {plain} && git push origin feat/x") == (0, None, "")
 
 
-def case_directory_known_only_at_run_time_does_nothing(root):
+def case_directory_known_only_at_run_time_runs_no_gate_and_says_so(root):
     main, wt = make_checkout(root, "runtime", FAIL)
-    assert run(main, f'WT={wt}; cd "$WT" && git push') == (0, None, "")
+    code, out, err = run(main, f'WT={wt}; cd "$WT" && git push origin feat/runtime')
+    context = ((out or {}).get("hookSpecificOutput") or {}).get("additionalContext", "")
+    assert code == 0 and not denial(out) and "did not run" in context, (code, out, err)
     assert not gate_ran(wt)
 
 
@@ -172,7 +174,7 @@ def case_decisions_go_to_the_guard_log(root):
     assert event["session"] == "test" and "push gate" in event["reason"], event
 
 
-CASES =[v for k, v in sorted(globals().items()) if k.startswith("case_")]
+CASES = [v for k, v in sorted(globals().items()) if k.startswith("case_")]
 
 
 def main():
