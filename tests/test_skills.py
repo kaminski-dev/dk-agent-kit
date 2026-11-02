@@ -95,6 +95,16 @@ for what, pattern in (
 ):
     if not re.search(pattern, bot, re.S):
         errors.append(f"skills/issue-flow: its **Review bot.** paragraph in step 6 does not name {what}")
+wait = re.search(r"```sh\n(.*?)```", bot, re.S)
+wait = wait.group(1) if wait else ""
+if 'body != ""' in wait or "in_reply_to_id" not in wait:
+    errors.append("skills/issue-flow: the review-bot wait must count a review with inline comments and no body, "
+                  "and tell it from a thread reply by in_reply_to_id")
+for line in wait.splitlines():
+    if re.search(r"\bgh (api|pr)\b", line) and not re.search(r"\$\(gh .*\) \|\| exit", line):
+        errors.append(f"skills/issue-flow: the review-bot wait must stop on a failed gh call: {line.strip()[:60]}")
+if "Reviews paused" in wait and "updated_at" not in wait:
+    errors.append("skills/issue-flow: the review-bot wait counts a pause only when the bot wrote it after the head commit")
 
 readme = (ROOT / "README.md").read_text()
 for block in re.findall(r"```mermaid\n(.*?)```", readme, re.S):
