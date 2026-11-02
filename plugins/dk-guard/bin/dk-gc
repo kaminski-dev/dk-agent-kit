@@ -161,12 +161,14 @@ def worktree_blocker(path):
 
 
 def processes():
-    """[(pid, command, cwd)] of the running processes lsof can see; None when lsof cannot run."""
-    # Not run(): lsof exits 1 when it cannot read some process, and the rest of its output still holds.
+    """[(pid, command, cwd)] of the running processes lsof can see; None when lsof fails, since a
+    listing it reports an error on may be missing a process."""
     try:  # from /, so lsof's own working directory is in no worktree
         out = subprocess.run(["lsof", "-w", "-d", "cwd", "-Fpcn"], cwd="/", capture_output=True,
                              env={**os.environ, "LC_ALL": "C"}, encoding="utf-8", errors="surrogateescape", timeout=60)
     except (OSError, subprocess.TimeoutExpired):
+        return None
+    if out.returncode != 0:
         return None
     rows, pid, command = [], None, ""
     for line in out.stdout.splitlines():
@@ -180,9 +182,23 @@ def processes():
     return rows or None  # lsof lists at least itself, so no rows means it did not run
 
 
+LSOF_ESCAPES = {ord("\\"): "\\\\", ord("\b"): "\\b", ord("\f"): "\\f", ord("\n"): "\\n", ord("\r"): "\\r",
+                ord("\t"): "\\t"}
+
+
+def lsof_byte(b):
+    """One byte of a path as lsof prints it in the C locale."""
+    if b in LSOF_ESCAPES:
+        return LSOF_ESCAPES[b]
+    if 0x20 <= b < 0x7f:
+        return chr(b)
+    if b < 0x20:
+        return f"^{chr(b + 0x40)}"  # ^A for 0x01
+    return f"\\x{b:02x}"  # DEL and every byte outside ASCII
+
+
 def as_lsof_prints(path):
-    """`path` as lsof prints it in the C locale: a byte outside printable ASCII as \\xNN."""
-    return "".join(chr(b) if 0x20 <= b < 0x7f else f"\\x{b:02x}" for b in os.fsencode(path))
+    return "".join(lsof_byte(b) for b in os.fsencode(path))
 
 
 class Processes:
@@ -196,7 +212,7 @@ class Processes:
         if not self.read:
             self.rows, self.read = processes(), True
         if self.rows is None:
-            return "cannot tell whether a process runs in it: lsof did not answer"
+            return "cannot tell whether a process runs in it: lsof failed"
         inside = as_lsof_prints(os.path.realpath(path))
         found = [f"{command} (pid {pid})" for pid, command, cwd in self.rows
                  if pid != os.getpid() and (cwd == inside or cwd.startswith(inside + "/"))]
