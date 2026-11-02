@@ -24,9 +24,12 @@ def make_repo(root, name, branch):
     return path
 
 
-def run(cmd, cwd):
+def run(cmd, cwd, background=False):
+    tool_input = {"command": cmd}
+    if background:  # the harness sends the key only when the call sets it
+        tool_input["run_in_background"] = True
     payload = {"session_id": "test", "cwd": cwd, "hook_event_name": "PreToolUse",
-               "tool_name": "Bash", "tool_input": {"command": cmd}}
+               "tool_name": "Bash", "tool_input": tool_input}
     out = subprocess.run([sys.executable, "-I", GUARD], input=json.dumps(payload),
                          capture_output=True, text=True, env={"PATH": os.environ["PATH"]})
     if out.returncode != 0:
@@ -48,11 +51,12 @@ def main():
                  "none": root}
         for case in cases:
             cwd = repos[case.get("repo", "none")]
-            got, reason = run(case["cmd"], cwd)
+            got, reason = run(case["cmd"], cwd, case.get("background", False))
             ok = got == case["expect"]
             failed += not ok
             mark = "ok  " if ok else "FAIL"
-            print(f"{mark} {case['expect']:5} got {got:5} | {case['cmd'].splitlines()[0][:90]}")
+            bg = " [bg]" if case.get("background") else ""
+            print(f"{mark} {case['expect']:5} got {got:5} | {case['cmd'].splitlines()[0][:90]}{bg}")
             if not ok and reason:
                 print(f"       reason: {reason}")
     print(f"\n{len(cases) - failed}/{len(cases)} passed")

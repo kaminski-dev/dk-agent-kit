@@ -5,7 +5,8 @@ Reads the hook JSON on stdin and answers with a permission decision:
 deny for commands that destroyed shared state before (docker prune, unfiltered
 mass removal, pushes to main, force pushes, git clean of ignored files),
 leaked a credential (reading a credential file) or broke the shell (a zsh
-special parameter such as `path` as a loop or read variable), ask for
+special parameter such as `path` as a loop or read variable) or blocked the
+session (a CI or merge wait outside run_in_background), ask for
 rewriting the shared pre-main branch, a push to the current branch when the
 guard cannot tell which branch that is, or answering dk-gc's question for the
 human (--yes, piped input), and
@@ -22,6 +23,8 @@ checks, so a parse failure never lets a command through.
 
 This raises the floor against agent mistakes; it is not a security boundary.
 """
+import dataclasses
+import itertools
 import json
 import os
 import re
@@ -403,7 +406,11 @@ def split(cmd):
 def command(seg):
     """(wrappers, words from the program on): leading keywords, assignments and wrappers such as `sudo -u x`
     dropped."""
-    words, i, wrappers = seg.words, 0, []
+    return command_words(seg.words)
+
+
+def command_words(words):
+    i, wrappers = 0, []
     while i < len(words):
         w = words[i]
         name = os.path.basename(w)
@@ -722,6 +729,102 @@ def gh_words(segs):
                               if w and os.path.basename(w[0]) == "gh")), [])
 
 
+FOREGROUND_WAIT = ("deny", "This waits on CI or a merge in the foreground, and the session answers nothing until it "
+                   "returns. Start the same command with run_in_background (or as a Monitor until-loop) and keep "
+                   "answering the user; a single `gh pr checks <N>` without --watch reads the state once.")
+LOOP_KEYWORDS = ("for", "foreach", "select", "while", "until", "repeat")
+GH_REPO_FLAG = r"(?:\s+(?:-R\s*\S+|--repo[=\s]\S+))*"
+# the gh calls that read PR or run state, the ones a wait repeats; writes such as `gh pr comment` wait on nothing
+READS = {"pr": ("checks", "view", "status", "list"), "run": ("view", "list", "watch")}
+GH_POLL = r"\bgh" + GH_REPO_FLAG + r"\s+(?:" + "|".join(
+    rf"{group}\s+(?:{'|'.join(subs)})" for group, subs in READS.items()) + r")\b"
+RAW_WAITS = [re.compile(p, re.S) for p in (
+    START + PREFIX + r"(gh)" + GH_REPO_FLAG + r"\s+(?:pr\s+checks\b" + END + r"\s--watch\b(?!=false)|run\s+watch\b)",
+    START + PREFIX + r"(watch)\s" + END + GH_POLL,
+    START + r"(" + "|".join(LOOP_KEYWORDS) + r")\b(?=.*?" + GH_POLL + r")(?=.*?\bsleep\b)",
+    START + r"(while|until)\b[^;\n]*?" + GH_POLL,
+)]
+
+
+def gh_args(words):
+    """gh's words from the subcommand on, past its repo flag; None for a command other than gh."""
+    if not words or os.path.basename(words[0]) != "gh":
+        return None
+    rest = words[1:]
+    while rest and (rest[0] in ("-R", "--repo") or rest[0].startswith(("-R", "--repo="))):
+        rest = rest[2:] if rest[0] in ("-R", "--repo") else rest[1:]
+    return rest
+
+
+def polls(words):
+    args = gh_args(words)
+    return args is not None and len(args) > 1 and args[1] in READS.get(args[0], ())
+
+
+def watches(words):
+    if words and os.path.basename(words[0]) == "watch":  # watch(1) reruns its command until stopped
+        return bool(re.search(GH_POLL, " ".join(words[1:])))
+    args = gh_args(words) or []
+    return args[:2] == ["run", "watch"] or args[:2] == ["pr", "checks"] and any(
+        w == "--watch" or w.startswith("--watch=") and w != "--watch=false" for w in args)
+
+
+def check_waits(cmd):
+    hits = [m for pattern in RAW_WAITS for m in pattern.finditer(cmd)]
+    return [FOREGROUND_WAIT] if any(not quoted_text(cmd, m.start(1)) for m in hits) else []
+
+
+@dataclasses.dataclass
+class Loop:
+    keyword: str
+    in_condition: bool  # a while or until condition runs on every pass, so polling there waits even without a sleep
+    condition_polls: bool = False
+    body_polls: bool = False
+    sleeps: bool = False
+
+    def waits(self):
+        return self.condition_polls or (self.body_polls and self.sleeps)
+
+
+def wait_words(segs):
+    loops = []  # innermost last
+    for seg in segs:
+        _, words = command(seg)
+        keywords = list(itertools.takewhile(lambda w: w in LEAD or w in LOOP_KEYWORDS and w != "repeat", seg.words))
+        rest = seg.words[len(keywords):]
+        if rest[:1] == ["repeat"]:
+            # zsh keeps `repeat N do cmd` in one segment; the short form `repeat N cmd` repeats cmd alone, no loop
+            long_form = rest[2:3] == ["do"]
+            _, words = command_words(rest[3:] if long_form else rest[2:])
+            keywords += ["repeat"] if long_form else []
+            if not long_form and rest[1:2] != ["1"] and polls(words):
+                return [FOREGROUND_WAIT]
+        elif seg.words == ["end"] and loops and loops[-1].keyword == "foreach":  # zsh: foreach x (…) … end
+            if loops.pop().waits():
+                return [FOREGROUND_WAIT]
+        if watches(words):
+            return [FOREGROUND_WAIT]
+        for kw in keywords:
+            if kw in LOOP_KEYWORDS:
+                loop = Loop(kw, in_condition=kw in ("while", "until"))
+                # this segment's substitutions came before it in segs: the condition of a while or until, the first
+                # body command of a repeat, the word list of a for (read once)
+                sub_polls = any(polls(command(s)[1]) for sub in seg.subs for s in sub)
+                loop.condition_polls = loop.in_condition and sub_polls
+                loop.body_polls = kw == "repeat" and sub_polls
+                loops.append(loop)
+            elif kw == "do" and loops:
+                loops[-1].in_condition = False
+            elif kw == "done" and loops and loops.pop().waits():
+                return [FOREGROUND_WAIT]
+        if loops and loops[-1].in_condition and not seg.substituted and polls(words):
+            loops[-1].condition_polls = True
+        for loop in loops:
+            loop.body_polls = loop.body_polls or polls(words)
+            loop.sleeps = loop.sleeps or words[:1] == ["sleep"]
+    return [FOREGROUND_WAIT] if any(loop.waits() for loop in loops) else []
+
+
 DK_GC = re.compile(r"(?:^|(\|\|?|" + OPENERS + r"))\s*" + PREFIX
                    + r"(?:python3?\s+(?:-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?dk-gc"
                    + r"(?=$|[\s;&|)`<>]|['\"](?:$|[\s;&|)]))(" + END + ")")
@@ -878,15 +981,17 @@ def credential_words(segs):
     return []
 
 
-def decide(cmd, cwd):
+def decide(cmd, cwd, background=False):
     segs = split(cmd)
     if segs is None:  # a command the splitter cannot read gets the raw-string checks, so the guard never fails open
         raw = strip_heredocs(cmd)
         findings = check_docker(raw) + check_git(raw, cwd) + check_credentials(raw) + check_gh(raw) \
-            + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw)
+            + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw) + check_waits(raw)
     else:
         findings = docker_words(segs) + git_words(segs, cwd) + credential_words(segs) + gh_words(segs) \
-            + postgres_words(segs) + dk_gc_words(segs) + zsh_name_words(segs)
+            + postgres_words(segs) + dk_gc_words(segs) + zsh_name_words(segs) + wait_words(segs)
+    if background:  # the same wait started with run_in_background blocks nothing
+        findings = [f for f in findings if f is not FOREGROUND_WAIT]
     for level in ("deny", "ask"):
         reasons = [r for l, r in findings if l == level]
         if reasons:
@@ -908,9 +1013,10 @@ def log(event):
 
 def main():
     data = json.load(sys.stdin)
-    cmd = (data.get("tool_input") or {}).get("command") or ""
+    tool_input = data.get("tool_input") or {}
+    cmd = tool_input.get("command") or ""
     cwd = data.get("cwd") or os.getcwd()
-    level, reason = decide(cmd, cwd)
+    level, reason = decide(cmd, cwd, tool_input.get("run_in_background") is True)
     if level == "allow":
         return
     out = {"hookEventName": "PreToolUse"}
