@@ -63,14 +63,15 @@ def baseline(cwd):
     else:
         where = f"worktree {top} (primary: {primary})"
     head = f"{os.path.basename(primary)} · {branch} · {where}"
-    lines = changes(top) + worktrees(top)
+    lines = changes(top)
     match = ISSUE.match(branch)
     issue = match.group(1) if match else None
-    with ThreadPoolExecutor(3) as pool:
+    with ThreadPoolExecutor(4) as pool:
+        worktree_lines = pool.submit(worktrees, top)
         pr_lines = pool.submit(pull_request, top, branch)
         issue_lines = pool.submit(issue_labels, top, issue)
         db_lines = pool.submit(databases, top, primary, issue)
-        lines += pr_lines.result() + issue_lines.result() + db_lines.result()
+        lines += worktree_lines.result() + pr_lines.result() + issue_lines.result() + db_lines.result()
     # The head keeps its paths whole; titles, labels and file names are cut.
     return [head] + [line if len(line) <= MAX_CHARS else line[:MAX_CHARS - 1] + "…" for line in lines]
 
