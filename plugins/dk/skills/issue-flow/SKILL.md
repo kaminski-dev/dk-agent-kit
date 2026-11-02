@@ -66,7 +66,7 @@ What it pushes and when it refuses is in its header (`head -12 "$(command -v dk-
 
 Rebase onto the current `origin/<base>`, push the branch, and open the PR against the base (`gh pr create --base <base> --body-file …`), body written with the `dk:pr` skill.
 
-The push is where the gate runs: before every `git push`, dk-guard runs `.claude/gate.sh` in the checkout being pushed (the `cd` or `git -C` target, not the session's directory) and denies the push when the gate fails, with its last lines. Fix, commit and push again.
+The push is where the gate runs: dk-guard runs `.claude/gate.sh` in the checkout being pushed, the `cd` or `git -C` target, and denies the push when the gate fails. Write that path literally (`cd ~/workspace/<prefix>-<N> && git push`); a path held in a variable leaves the gate unrun.
 
 The body carries:
 
