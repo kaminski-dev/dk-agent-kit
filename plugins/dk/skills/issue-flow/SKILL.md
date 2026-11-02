@@ -13,7 +13,7 @@ The shared sequence for every repo that works issue → branch → PR into `pre-
 
 ## 2. Worktree before the first edit
 
-One issue, one branch, one worktree, based on the remote **base**: the branch worktrees start from and PRs target, `pre-main` unless `workflow.md` names another.
+One issue, one branch, one worktree, based on the remote **base**: the branch worktrees start from and PRs target, `pre-main` unless `workflow.md` names another. When the base is `main`, there is no batch PR: `Closes #N` closes the issue on merge, and step 6's batch-PR note and step 7's batch-review bullet do not apply.
 
 ```sh
 git ls-remote --heads origin <base>     # the local origin/<base> ref can outlive the branch
