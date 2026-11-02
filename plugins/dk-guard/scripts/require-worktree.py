@@ -5,7 +5,8 @@ Several sessions share each primary checkout and only the branch pointer moves,
 so parallel sessions collide there. A repo opts in with
 `"env": {"DK_REQUIRE_WORKTREE": "1"}` in its committed .claude/settings.json;
 an edit to a file in its primary checkout is then denied with the worktree
-command from the repo's docs/agents/workflow.md. Linked worktrees, repos that
+command from the repo's docs/agents/workflow.md, or dk:issue-flow step 2's
+command when that file has none. Linked worktrees, repos that
 have not opted in and paths outside a repo are left alone, and so is every
 edit when the hook itself fails: it fails open.
 """
@@ -48,13 +49,32 @@ def opted_in(root):
     return str(env.get("DK_REQUIRE_WORKTREE", "")).strip() not in ("", "0", "false")
 
 
+def base(root):
+    """dk:issue-flow's base from local refs only: a fetch here could outlast the hook's timeout."""
+    out = git(root, "for-each-ref", "--format=%(refname) %(symref)",
+              "refs/remotes/origin/pre-main", "refs/remotes/origin/HEAD") or ""
+    refs = {}
+    for line in out.splitlines():
+        name, _, target = line.partition(" ")
+        refs[name] = target
+    if "refs/remotes/origin/pre-main" in refs:
+        return "origin/pre-main"
+    default = refs.get("refs/remotes/origin/HEAD", "")
+    if default.startswith("refs/remotes/origin/"):
+        return default[len("refs/remotes/"):]
+    return "origin/main"
+
+
 def worktree_command(root):
     try:
         with open(os.path.join(root, WORKFLOW)) as f:
             match = COMMAND.search(f.read())
     except (OSError, UnicodeDecodeError):
         match = None
-    return match.group(1) if match else "git worktree add ../<repo>-<issue> -b <type>/<issue>-<slug>"
+    if match:
+        return match.group(1)
+    return (f"git worktree add ~/workspace/{os.path.basename(root)}-<issue> -b <type>/<issue>-<slug> "
+            f"{base(root)}")
 
 
 def decide(data):
