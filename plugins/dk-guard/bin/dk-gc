@@ -28,8 +28,8 @@ cannot point it at another repo. Checkouts of one GitHub repo share its remote
 branches; the first one lists them.
 
 --in-use WORKTREE runs only the process check, for a worktree removed by hand
-(no merged PR): it prints why the worktree must stay and exits 1, or prints
-nothing and exits 0. Run it from outside the worktree, or your own shell
+(no merged PR): it prints why the worktree must stay and exits 1 (a path that
+is no directory included), or prints nothing and exits 0. Run it from outside the worktree, or your own shell
 counts.
 """
 import argparse
@@ -165,7 +165,7 @@ def processes():
     # Not run(): lsof exits 1 when it cannot read some process, and the rest of its output still holds.
     try:  # from /, so lsof's own working directory is in no worktree
         out = subprocess.run(["lsof", "-w", "-d", "cwd", "-Fpcn"], cwd="/", capture_output=True,
-                             encoding="utf-8", errors="surrogateescape", timeout=60)
+                             env={**os.environ, "LC_ALL": "C"}, encoding="utf-8", errors="surrogateescape", timeout=60)
     except (OSError, subprocess.TimeoutExpired):
         return None
     rows, pid, command = [], None, ""
@@ -180,6 +180,11 @@ def processes():
     return rows or None  # lsof lists at least itself, so no rows means it did not run
 
 
+def as_lsof_prints(path):
+    """`path` as lsof prints it in the C locale: a byte outside printable ASCII as \\xNN."""
+    return "".join(chr(b) if 0x20 <= b < 0x7f else f"\\x{b:02x}" for b in os.fsencode(path))
+
+
 class Processes:
     """The running processes and their working directories, read on first use."""
     def __init__(self):
@@ -192,7 +197,7 @@ class Processes:
             self.rows, self.read = processes(), True
         if self.rows is None:
             return "cannot tell whether a process runs in it: lsof did not answer"
-        inside = os.path.realpath(path)
+        inside = as_lsof_prints(os.path.realpath(path))
         found = [f"{command} (pid {pid})" for pid, command, cwd in self.rows
                  if pid != os.getpid() and (cwd == inside or cwd.startswith(inside + "/"))]
         if not found:
@@ -395,7 +400,7 @@ def main():
                     help="only say whether a process runs in WORKTREE; exit 1 if one does or lsof cannot tell")
     args = ap.parse_args()
     if args.in_use:
-        reason = Processes().blocker(args.in_use)
+        reason = Processes().blocker(args.in_use) if os.path.isdir(args.in_use) else "no such directory"
         if reason:
             print(shown(f"{args.in_use}: {reason}"))
         return 1 if reason else 0
