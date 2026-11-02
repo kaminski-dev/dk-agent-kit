@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Wait for the review bot's verdict on a PR's head commit (dk:issue-flow step 6).
 
-    python3 -I wait-review.py <PR> [--bot LOGIN] [--polls 40] [--interval 30] [--gh-timeout 60]
+    python3 -I wait-review.py <PR> [--bot LOGIN] [--minutes 20] [--interval 30] [--gh-timeout 60]
 
 Run it in the repo's checkout (or with GH_REPO set). It polls every --interval
-seconds and reads the head on every poll; a new head restarts the count.
+seconds and reads the head on every poll; a new head restarts the --minutes
+deadline. Each gh call gets the smaller of --gh-timeout and the time left.
 
 Exit codes, with the verdict on stdout:
   0  `reviews <id>...`: the bot's reviews of the head, or `clean`: a round with no findings
-  1  no verdict after --polls polls (20 minutes by default)
+  1  no verdict before the deadline, --minutes after the last head change (20 by default)
   2  a gh call failed or ran past --gh-timeout seconds; its error is on stderr
   3  `rate limited` or `paused`: the bot will not review this head on its own
 """
@@ -25,16 +26,26 @@ NO_FINDINGS = "No actionable comments were generated in the recent review."
 
 
 GH_TIMEOUT = 60
+deadline = float("inf")  # time.monotonic() at which the wait gives up
 
 
 class GhFailed(Exception):
     pass
 
 
+class DeadlinePassed(Exception):
+    pass
+
+
 def gh(*args):
+    left = deadline - time.monotonic()
+    if left <= 0:
+        raise DeadlinePassed
     try:
-        proc = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=GH_TIMEOUT)
+        proc = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=min(GH_TIMEOUT, left))
     except subprocess.TimeoutExpired:
+        if left < GH_TIMEOUT:
+            raise DeadlinePassed
         raise GhFailed(f"gh {' '.join(args)}: timed out after {GH_TIMEOUT} s")
     if proc.returncode != 0:
         raise GhFailed(f"gh {' '.join(args)}: {proc.stderr.strip() or proc.stdout.strip()}")
@@ -91,21 +102,24 @@ def summary_verdict(pr, bot, sha):
     return None
 
 
-def wait(pr, bot, polls, interval):
-    current, polled = None, 0
-    while polled < polls:
-        sha = head(pr)
-        if sha != current:  # a new head restarts the count
-            current, polled = sha, 0
-        found = reviews_of(pr, bot, sha)
-        verdict = (0, "reviews " + " ".join(found)) if found else summary_verdict(pr, bot, sha)
-        if verdict:
-            if head(pr) == sha:
-                return verdict
-            continue  # the head moved: the next poll takes it
-        polled += 1
-        time.sleep(interval)
-    return 1, f"no verdict from {bot} on {current} after {polls} polls"
+def wait(pr, bot, minutes, interval):
+    global deadline
+    current = None
+    deadline = time.monotonic() + minutes * 60
+    try:
+        while True:
+            sha = head(pr)
+            if sha != current:  # a new head restarts the deadline
+                current, deadline = sha, time.monotonic() + minutes * 60
+            found = reviews_of(pr, bot, sha)
+            verdict = (0, "reviews " + " ".join(found)) if found else summary_verdict(pr, bot, sha)
+            if verdict:
+                if head(pr) == sha:
+                    return verdict
+                continue  # the head moved: the next poll takes it
+            time.sleep(max(0, min(interval, deadline - time.monotonic())))
+    except DeadlinePassed:
+        return 1, f"no verdict from {bot} on {current} after {minutes:g} minutes"
 
 
 def main():
@@ -113,13 +127,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("pr")
     ap.add_argument("--bot", default="coderabbitai[bot]")
-    ap.add_argument("--polls", type=int, default=40)
+    ap.add_argument("--minutes", type=float, default=20)
     ap.add_argument("--interval", type=float, default=30)
     ap.add_argument("--gh-timeout", type=float, default=GH_TIMEOUT)
     args = ap.parse_args()
     GH_TIMEOUT = args.gh_timeout
     try:
-        code, line = wait(args.pr, args.bot, args.polls, args.interval)
+        code, line = wait(args.pr, args.bot, args.minutes, args.interval)
     except GhFailed as e:
         print(e, file=sys.stderr)
         sys.exit(2)
