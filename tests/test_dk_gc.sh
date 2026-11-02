@@ -121,8 +121,7 @@ echo 1 >"$ws/app-17/node_modules/index.js"
 # Seven ignored scratch files (app-18): the keep line names five and counts the rest.
 scratch18=$(worktree app-18 feat/18-scratch 'scratch-*')
 for i in 1 2 3 4 5 6 7; do echo "$i" >"$ws/app-18/scratch-$i.txt"; done
-# Build output that tools write and rebuild (app-20 to app-22): a server bundle in .output/, a test
-# runner's test-results/, a dev server's .api-port.
+# Files tools write and rewrite (app-20 to app-22): a server bundle, a test report, a dev server's port.
 output20=$(worktree app-20 feat/20-output .output/)
 mkdir -p "$ws/app-20/.output/server"
 echo bundle >"$ws/app-20/.output/server/index.mjs"
@@ -131,8 +130,7 @@ mkdir -p "$ws/app-21/test-results"
 echo report >"$ws/app-21/test-results/report.json"
 port22=$(worktree app-22 feat/22-port .api-port)
 echo 8123 >"$ws/app-22/.api-port"
-# A listed name deeper than the top level (app-23): frontend/.tanstack/tmp/ goes, though neither its
-# basename (tmp) nor its top-level directory (frontend) is listed. Eval records are not rebuilt (app-24).
+# A listed name below the top level (app-23) goes; eval records (app-24) stay.
 tanstack23=$(worktree app-23 feat/23-tanstack frontend/.tanstack/tmp/)
 mkdir -p "$ws/app-23/frontend/.tanstack/tmp"
 echo routes >"$ws/app-23/frontend/.tanstack/tmp/routes.ts"
@@ -271,7 +269,7 @@ git -C "$app" rev-parse -q --verify refs/heads/feat/1-done >/dev/null && fail "b
 [[ -d "$ws/notes-1" && -d "$ws/other-1" ]] || fail "worktree of a repo without PRs removed"
 [[ ! -e "$ws/app-7" ]] || fail "worktree behind its merged PR still there"
 [[ ! -e "$ws/app-16" ]] || fail "worktree with only regenerable ignored files still there"
-for gone in app-20 app-21 app-22 app-23; do [[ ! -e "$ws/$gone" ]] || fail "worktree $gone with only build output still there"; done
+for gone in app-20 app-21 app-22 app-23; do [[ ! -e "$ws/$gone" ]] || fail "worktree $gone with only regenerable ignored files still there"; done
 git -C "$app" rev-parse -q --verify refs/heads/pre-master >/dev/null || fail "integration branch pre-master removed"
 for kept in app-pre-main:pre-main app-2:feat/2-dirty app-3:feat/3-open app-4:feat/4-again app-5:feat/5-ahead app-6:verify-assets/6; do
   [[ -d "$ws/${kept%%:*}" ]] || fail "worktree ${kept%%:*} removed"

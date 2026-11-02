@@ -16,10 +16,12 @@ the remote's default branch, verify-assets/* (PR bodies embed from them),
 a branch with an open PR, the base of any PR (an integration branch like
 pre-master, even after its own batch PR merged), a worktree with uncommitted
 changes, and a worktree with ignored files outside REGENERABLE (build output,
-dependencies, generated code, .env*), whose "keep" line names them; the last
-four are listed with "keep". GitHub is asked with -R from origin's URL, so a
-GH_REPO in the environment cannot point it at another repo. Checkouts of one
-GitHub repo share its remote branches; the first one lists them.
+dependencies, generated code, test reports, a dev server's port file, .env*;
+a listed name counts at any depth unless it names a folder holding tracked
+files), whose "keep" line names them; the last four are listed with "keep".
+GitHub is asked with -R from origin's URL, so a GH_REPO in the environment
+cannot point it at another repo. Checkouts of one GitHub repo share its remote
+branches; the first one lists them.
 """
 import argparse
 import dataclasses
@@ -32,7 +34,8 @@ import sys
 
 PROTECTED = {"main", "master", "pre-main"}
 KEPT_PREFIX = "verify-assets/"  # PR bodies embed screenshots from these branches
-# Ignored entries a worktree may lose: build output, dependencies, generated code, local env.
+# Ignored entries a worktree may lose: build output, dependencies, generated code, test reports,
+# runtime files a dev server rewrites, local env.
 REGENERABLE = ("node_modules", "dist", "build", ".next", ".output", "target", ".venv", "__pycache__",
                "test-results", ".api-port", ".tanstack", "*.tsbuildinfo", "*.gen.*", ".env*")
 KEEP_LINE_NAMES = 5  # ignored entries a "keep" line names before it counts the rest
