@@ -48,13 +48,22 @@ def opted_in(root):
     return str(env.get("DK_REQUIRE_WORKTREE", "")).strip() not in ("", "0", "false")
 
 
+def base(root):
+    """dk:issue-flow's base from local refs only: a fetch here could outlast the hook's timeout."""
+    refs = (git(root, "for-each-ref", "--format=%(refname)", "refs/remotes/origin/pre-main") or "").splitlines()
+    return "origin/pre-main" if "refs/remotes/origin/pre-main" in refs else "origin/main"
+
+
 def worktree_command(root):
     try:
         with open(os.path.join(root, WORKFLOW)) as f:
             match = COMMAND.search(f.read())
     except (OSError, UnicodeDecodeError):
         match = None
-    return match.group(1) if match else "git worktree add ../<repo>-<issue> -b <type>/<issue>-<slug>"
+    if match:
+        return match.group(1)
+    return (f"git worktree add ~/workspace/{os.path.basename(root)}-<issue> -b <type>/<issue>-<slug> "
+            f"{base(root)}")
 
 
 def decide(data):
