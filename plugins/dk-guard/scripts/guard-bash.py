@@ -5,7 +5,8 @@ Reads the hook JSON on stdin and answers with a permission decision:
 deny for commands that destroyed shared state before (docker prune, unfiltered
 mass removal, pushes to main, force pushes, git clean of ignored files),
 leaked a credential (reading a credential file) or broke the shell (a zsh
-special parameter such as `path` as a loop or read variable), ask for
+special parameter such as `path` as a loop or read variable) or blocked the
+session (a CI or merge wait outside run_in_background), ask for
 rewriting the shared pre-main branch, a push to the current branch when the
 guard cannot tell which branch that is, or answering dk-gc's question for the
 human (--yes, piped input), and
