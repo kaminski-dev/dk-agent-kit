@@ -13,15 +13,15 @@ The shared sequence for every repo that works issue → branch → PR into `pre-
 
 ## 2. Worktree before the first edit
 
-One issue, one branch, one worktree, based on the remote `pre-main`:
+One issue, one branch, one worktree, based on the remote **base**: the branch worktrees start from and PRs target, `pre-main` unless `workflow.md` names another.
 
 ```sh
-git ls-remote --heads origin pre-main     # the local origin/pre-main ref can outlive the branch
+git ls-remote --heads origin <base>     # the local origin/<base> ref can outlive the branch
 git fetch -q origin
-git worktree add ~/workspace/<prefix>-<N> -b <type>/<N>-<slug> origin/pre-main
+git worktree add ~/workspace/<prefix>-<N> -b <type>/<N>-<slug> origin/<base>
 ```
 
-The **base** is the branch worktrees start from and PRs target: `pre-main`, unless `workflow.md` names another. When `ls-remote` prints nothing, `pre-main` is missing: ask the maintainer to restore it, branching from `main` only on their word. Run the fresh-worktree setup from `workflow.md` before any gate means anything.
+When `ls-remote` prints nothing, the base is missing: ask the maintainer to restore it, branching from `main` only on their word. Run the fresh-worktree setup from `workflow.md` before any gate means anything.
 
 Scratch files live in `$SCRATCH/<N>/` (`$SCRATCH` = the session's scratchpad directory), one directory per agent, never in the tree. Parallel agents each get their own worktree and their own scratch directory; a shared one is how two agents overwrote each other's `network-failure.ts`. `git stash` is one list across all worktrees, so set work aside with a WIP commit or a patch file in `$SCRATCH`.
 
@@ -64,7 +64,7 @@ What it pushes and when it refuses is in its header (`head -12 "$(command -v dk-
 
 ## 6. Open the PR
 
-Rebase onto the current `origin/pre-main`, push the branch, and open the PR against `pre-main` (`gh pr create --base pre-main --body-file …`), body written with the `dk:pr` skill. The body carries:
+Rebase onto the current `origin/<base>`, push the branch, and open the PR against the base (`gh pr create --base <base> --body-file …`), body written with the `dk:pr` skill. The body carries:
 
 - `Closes #N` when no post-deploy acceptance criterion remains, `Refs #N` when one does (a 24 h, 48 h or 7 d window on production logs or errors).
   GitHub acts on these keywords only in a PR into the default branch, so on this PR they do nothing. The batch PR into `main` repeats the line: its merge closes a `Closes #N` issue, and a `Refs #N` issue stays open for the post-deploy check (step 7).
