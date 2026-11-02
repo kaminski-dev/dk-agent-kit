@@ -9,6 +9,10 @@ State lives in <workspace>/.tracker/state.json. Every call is logged to
 the highest PR number, in whatever order their checks finish.
 Calls hold a lock on the state, so parallel agents do not lose each other's writes; `pr create` lets
 go of it while the acceptance check runs (at most CHECK_TIMEOUT seconds per run).
+An issue's "blocked_by" lists its native blockers, read by `is:blocked` in a
+search and by `gh api .../dependencies/blocked_by`, and added by a POST there.
+"search_qualifiers": false makes a search with is:blocked fail, as on a GitHub without it.
+"other_repos" maps "owner/repo" to {number: state}, for `gh issue view N --repo owner/repo`.
 """
 import fcntl
 import json
@@ -101,6 +105,20 @@ def issue_json(state, num):
     }
 
 
+def open_blockers(state, num):
+    return [b for b in state["issues"][num].get("blocked_by", []) if state["issues"][str(b)]["state"] == "open"]
+
+
+def blocked_filter(search):
+    """is:blocked (an open blocker) or -is:blocked in a --search; other search terms are ignored."""
+    words = (search or "").split()
+    if "is:blocked" in words:
+        return True
+    if "-is:blocked" in words:
+        return False
+    return None
+
+
 def pick(d, o):
     fields = o.get("--json")
     if not fields or fields is True:
@@ -131,6 +149,13 @@ def labels_from(values):
 
 def cmd_issue(sub, args, state):
     pos, o = opts(args, VALUE_FLAGS, MULTI)
+    repo = o.get("--repo") or o.get("-R")
+    if sub == "view" and repo and repo != state["repo"]:
+        other = state.get("other_repos", {}).get(repo, {}).get(pos[0].lstrip("#") if pos else "")
+        if other is None:
+            fail(f"GraphQL: Could not resolve to an issue or pull request in {repo}.")
+        emit(pick({"number": int(pos[0].lstrip("#")), "state": other.upper()}, o), o)
+        return
     if sub == "view":
         num = issue_number(pos, state)
         d = issue_json(state, num)
@@ -144,13 +169,19 @@ def cmd_issue(sub, args, state):
     elif sub == "list":
         want_state = (o.get("--state") or o.get("-s") or "open").lower()
         want_labels = labels_from(o.get("--label") or o.get("-l"))
+        want_blocked = blocked_filter(o.get("--search") or o.get("-S"))
+        if want_blocked is not None and state.get("search_qualifiers") is False:
+            fail("HTTP 422: Validation Failed: the is:blocked qualifier is not supported")
         rows = []
         for num, i in state["issues"].items():
             if want_state != "all" and i["state"] != want_state:
                 continue
             if any(l not in i["labels"] for l in want_labels):
                 continue
+            if want_blocked is not None and bool(open_blockers(state, num)) != want_blocked:
+                continue
             rows.append(issue_json(state, num))
+        rows = rows[:int(o.get("--limit") or o.get("-L") or 30)]
         if "--json" in o:
             emit([pick(r, o) for r in rows], o)
         else:
@@ -247,12 +278,55 @@ def write_record(path, num, record):
     path.write_text(record)
 
 
+def pr_json(state, pr):
+    return {**pr, "url": f"https://github.com/{state['repo']}/pull/{pr['number']}"}
+
+
+def cmd_api(args, state):
+    pos, o = opts(args, VALUE_FLAGS, MULTI)
+    method = (o.get("--method") or o.get("-X") or "GET").upper()
+    parts = pos[0].strip("/").split("/") if pos else []
+    if method not in ("GET", "POST") or len(parts) < 5 or parts[:3] != ["repos", *state["repo"].split("/")] \
+            or parts[3] != "issues":
+        fail(f"gh api {method} {'/'.join(parts)}: not supported by this repo's tracker stand-in")
+    num = parts[4]
+    if num not in state["issues"]:
+        fail("gh: Not Found (HTTP 404)")
+
+    def rest_issue(n):
+        i = state["issues"][n]
+        return {"number": int(n), "id": 900000 + int(n), "title": i["title"], "state": i["state"],
+                "labels": [{"name": l} for l in i["labels"]],
+                "issue_dependencies_summary": {"blocked_by": len(open_blockers(state, n)),
+                                               "total_blocked_by": len(i.get("blocked_by", []))}}
+    if method == "POST" and parts[5:] == ["dependencies", "blocked_by"]:
+        values = [o["-F"]] if isinstance(o.get("-F"), str) else []
+        values += [v for flag in ("--field", "-f", "--raw-field") for v in o.get(flag, [])]
+        fields = dict(v.partition("=")[::2] for v in values)
+        blocker = str(int(fields.get("issue_id", "0")) - 900000)
+        if blocker not in state["issues"]:
+            fail("gh: Validation Failed (HTTP 422): issue_id names no issue in this repository")
+        blocked_by = state["issues"][num].setdefault("blocked_by", [])
+        if int(blocker) not in blocked_by:
+            blocked_by.append(int(blocker))
+        save(state)
+        emit(rest_issue(blocker), o)
+    elif method == "POST":
+        fail(f"gh api POST {'/'.join(parts)}: not supported by this repo's tracker stand-in")
+    elif parts[5:] == []:
+        emit(rest_issue(num), o)
+    elif parts[5:] == ["dependencies", "blocked_by"]:
+        emit([rest_issue(str(b)) for b in state["issues"][num].get("blocked_by", [])], o)
+    else:
+        fail(f"gh api {'/'.join(parts)}: not supported by this repo's tracker stand-in")
+
+
 def cmd_pr(sub, args, state):
     pos, o = opts(args, VALUE_FLAGS, MULTI)
     if sub == "create":
         head = o.get("--head") or o.get("-H") or current_branch(os.getcwd())
         base = o.get("--base") or o.get("-B") or "main"
-        num = len(state["prs"]) + 1
+        num = max([p["number"] for p in state["prs"]], default=0) + 1
         pr = {"number": num, "title": o.get("--title") or o.get("-t") or "", "body": body_of(o),
               "base": base, "head": head, "state": "OPEN"}
         state["prs"].append(pr)
@@ -277,9 +351,14 @@ def cmd_pr(sub, args, state):
                 prs = [p for p in prs if p["head"] == current_branch(os.getcwd())]
             if not prs:
                 fail("no pull requests found")
-            emit(pick(prs[0], o), o)
+            emit(pick(pr_json(state, prs[0]), o), o)
         else:
-            emit([pick(p, o) for p in prs], o)
+            want_state = (o.get("--state") or o.get("-s") or "open").upper()
+            for flag, key in (("--base", "base"), ("-B", "base"), ("--head", "head"), ("-H", "head")):
+                if flag in o:
+                    prs = [p for p in prs if p[key] == o[flag]]
+            prs = [p for p in prs if want_state == "ALL" or p["state"] == want_state]
+            emit([pick(pr_json(state, p), o) for p in prs][:int(o.get("--limit") or o.get("-L") or 30)], o)
     else:
         fail(f"gh pr {sub}: not supported by this repo's tracker stand-in")
 
@@ -299,6 +378,8 @@ def main(argv):
         cmd_issue(sub, args, state)
     elif cmd == "pr":
         cmd_pr(sub, args, state)
+    elif cmd == "api":
+        cmd_api(rest, state)
     elif cmd == "run" and sub in ("list", "view"):
         pos, o = opts(args, VALUE_FLAGS | {"--workflow", "-w", "--branch"}, MULTI)
         runs = state.get("runs", [])

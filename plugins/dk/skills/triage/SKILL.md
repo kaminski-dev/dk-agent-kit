@@ -52,6 +52,7 @@ The maintainer invokes `/dk:triage` and describes what they want in natural lang
 - "Let's look at #42" (issue or PR)
 - "Move #42 to ready-for-agent"
 - "What's ready for agents to pick up?"
+- "Is #42 blocked?"
 
 ## Show what needs attention
 
@@ -64,6 +65,18 @@ Query the issue tracker and present three buckets, oldest first:
 When PRs are in scope, include external PRs in these buckets and tag each line `[PR]` or `[issue]`. Discovery surfaces only *external* PRs (the tracker config defines who counts as external), so a collaborator's in-flight PR is not triage work. This filter is discovery-only; an explicitly named PR is always triaged regardless of author.
 
 Show counts and a one-line summary per item. Let the maintainer pick.
+
+## Show what's ready
+
+The ready list is a read: open `ready-for-agent` issues with no open blocker, whether a native dependency or a `Blocked by: #n` line in the body (`owner/repo#n` for another repo's issue). From the repo's checkout, with `<base directory>` the one this skill's header names, written out literally:
+
+```sh
+python3 -I <base directory>/ready.py
+```
+
+It prints `## Ready` and `## Blocked`, oldest first, each blocked issue with its open blockers; `--help` says how it decides. Present both sections as printed, one line per issue. "Is #42 blocked?" is the tracker doc's blocker read for that issue, plus any `Blocked by: #n` line in its body whose `#n` is open.
+
+Done when every open `ready-for-agent` issue appears once: under Ready, or under Blocked with its open blockers.
 
 ## Triage a specific issue or PR
 

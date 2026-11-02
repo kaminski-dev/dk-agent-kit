@@ -6,6 +6,7 @@ Issues, specs and PRs for this repo live on GitHub (`kaminski-dev/dk-agent-kit`,
 
 - **Read**: `gh issue view N --json number,title,body,labels,comments,state`.
 - **List**: `gh issue list --state open --label <label> --json number,title,labels`. Same files or area: add `--search "<term>"`.
+- **Ready** (first cut): `gh issue list --state open --label ready-for-agent --search "-is:blocked" --limit 1000 --json number,title,labels,body`. `is:blocked` counts only open native blockers; GitHub does not document it, and it was checked by hand on 2026-11-02. `/dk:triage` also leaves out an issue whose body names an open `Blocked by: #n`.
 - **Create**: `gh issue create --title "…" --body-file <file> --label <label>`.
 - **Comment**: `gh issue comment N --body-file <file>`.
 - **Labels**: `gh issue edit N --add-label <a> --remove-label <b>`.
@@ -14,7 +15,7 @@ Issues, specs and PRs for this repo live on GitHub (`kaminski-dev/dk-agent-kit`,
 ## Epics and links
 
 - **Spec (epic)**: an issue labelled `spec`. Its tickets are sub-issues: `gh issue create --parent <spec> …`, or `gh issue edit <spec> --add-sub-issue <child>`.
-- **Blocking**: native dependencies. `gh api --method POST repos/kaminski-dev/dk-agent-kit/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where the database id is `gh api repos/kaminski-dev/dk-agent-kit/issues/<n> --jq .id`. Without them, a `Blocked by: #n` line at the top of the body.
+- **Blocking**: native dependencies. `gh api --method POST repos/kaminski-dev/dk-agent-kit/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where the database id is `gh api repos/kaminski-dev/dk-agent-kit/issues/<n> --jq .id`. Read an issue's blockers with `gh api repos/kaminski-dev/dk-agent-kit/issues/<n>/dependencies/blocked_by --jq '.[] | "#\(.number) \(.state)"'`. Without them, a `Blocked by: #n` line at the top of the body.
 - **Scope amendment**: a comment on the issue starting `Scope amendment:` records work folded into the current PR; the PR lists it under "Also in this PR".
 
 ## Pull requests

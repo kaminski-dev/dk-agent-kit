@@ -340,6 +340,97 @@ check("361 triage: the Audit Log list it names already defines its order",
       '" ORDER BY changed_at DESC, entity_type, entity_id, action, changed_by, field_name"' in store, store[-900:])
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
+# The ready-list fixture: open ready-for-agent issues, #371 blocked by the open #372 through a native link,
+# #375 only by a body line naming #372; #373 and #376 name blockers that are closed.
+ws = scaffold("triage-ready")
+READY_PY = ROOT / "plugins" / "dk" / "skills" / "triage" / "ready.py"
+
+
+def numbers(cmd):
+    r = run(ws, cmd)
+    return sorted(i["number"] for i in json.loads(r.stdout)) if r.returncode == 0 else r.stderr
+
+
+def ready_py():
+    """ready.py's two sections as ({ready numbers}, {blocked number: [blocker numbers]}), or its stderr."""
+    r = run(ws, f"python3 -I '{READY_PY}'", cwd=ws / "app")
+    if r.returncode != 0:
+        return r.stderr or r.stdout
+    section, ready_list, blocked_by = None, [], {}
+    for line in r.stdout.splitlines():
+        if line.startswith("## "):
+            section = line[3:]
+        elif line.startswith("- #") and section == "Ready":
+            ready_list.append(int(line[3:].split()[0]))
+        elif line.startswith("- #") and section == "Blocked":
+            blocked_by[int(line[3:].split()[0])] = [int(n) for n in re.findall(r"#(\d+)", line.split("blocked by")[-1])]
+    return sorted(ready_list), blocked_by
+
+
+ready = "gh issue list --state open --label ready-for-agent --json number"
+by_label, unblocked, blocked = numbers(ready), numbers(ready + " --search '-is:blocked'"), numbers(ready + " --search is:blocked")
+check("ready: the label alone lists the blocked #371 and #375 too", by_label == [370, 371, 372, 373, 375, 376], by_label)
+check("ready: -is:blocked leaves out #371 alone", unblocked == [370, 372, 373, 375, 376], unblocked)
+check("ready: is:blocked counts only an open native blocker", blocked == [371], blocked)
+blockers = json.loads(run(ws, "gh api repos/acme/ledger/issues/371/dependencies/blocked_by").stdout)
+check("ready: the API names #372 as #371's open blocker",
+      [(b["number"], b["state"]) for b in blockers] == [(372, "open")], blockers)
+summary = json.loads(run(ws, "gh api repos/acme/ledger/issues/373 --jq .issue_dependencies_summary").stdout)
+check("ready: #373's only blocker is closed", summary == {"blocked_by": 0, "total_blocked_by": 1}, summary)
+
+got = ready_py()
+check("ready.py: leaves out the native-blocked #371 and the body-blocked #375",
+      got == ([370, 372, 373, 376], {371: [372], 375: [372]}), got)
+
+state_file = ws / ".tracker" / "state.json"
+state = json.loads(state_file.read_text())
+state_file.write_text(json.dumps({**state, "search_qualifiers": False}))
+r = run(ws, ready + " --search '-is:blocked'")
+check("ready: a GitHub without the qualifier rejects it", r.returncode != 0, r.stdout)
+got = ready_py()
+check("ready.py: without the qualifier, the same list through the API",
+      got == ([370, 372, 373, 376], {371: [372], 375: [372]}), got)
+state_file.write_text(json.dumps(state))
+
+# The tracker doc's blocking write, as written there: #370 blocked by the open #372.
+db_id = run(ws, "gh api repos/acme/ledger/issues/372 --jq .id").stdout.strip()
+r = run(ws, f"gh api --method POST repos/acme/ledger/issues/370/dependencies/blocked_by -F issue_id={db_id}")
+check("ready: the doc's blocking write reaches the stand-in", r.returncode == 0, r.stderr)
+got = ready_py()
+check("ready.py: then leaves out #370 too", got == ([372, 373, 376], {370: [372], 371: [372], 375: [372]}), got)
+
+# Past gh's default page of 30: the docs' first cut, run as written, and ready.py.
+state = json.loads(state_file.read_text())
+for n in range(400, 440):
+    state["issues"][str(n)] = {"title": f"Issue {n}", "body": "", "state": "open", "labels": ["ready-for-agent"],
+                               "comments": []}
+state_file.write_text(json.dumps(state))
+sources = [ROOT / "docs/agents/issue-tracker.md", ROOT / "plugins/dk/skills/setup/issue-tracker.md",
+           EVALS / "_fixture/app/docs/agents/issue-tracker.md"]
+commands = [(src, c) for src in sources for c in re.findall(r"`(gh issue list [^`]*ready-for-agent[^`]*)`", src.read_text())]
+check("ready: each tracker doc carries the first cut", len(commands) == 3, commands)
+for src, cmd in commands:
+    got = numbers(cmd)
+    check(f"ready: {src.relative_to(ROOT)}'s first cut lists all 44", isinstance(got, list) and len(got) == 44,
+          (cmd, got if isinstance(got, str) else len(got)))
+got = ready_py()
+check("ready.py: lists all 43 past 30", isinstance(got, tuple) and len(got[0]) == 43, got)
+
+# Blockers in another repo: acme/billing#5 is closed, acme/billing#6 open; this repo has no #5 or #6.
+state = json.loads(state_file.read_text())
+state["other_repos"] = {"acme/billing": {"5": "closed", "6": "open"}}
+for n, ref in (("377", "acme/billing#5"), ("378", "acme/billing#6")):
+    state["issues"][n] = {"title": f"Issue {n}", "body": f"Blocked by: {ref}\n", "state": "open",
+                          "labels": ["ready-for-agent"], "comments": []}
+state_file.write_text(json.dumps(state))
+r = run(ws, f"python3 -I '{READY_PY}'", cwd=ws / "app")
+ready_part, _, blocked_part = r.stdout.partition("## Blocked")
+check("ready.py: a closed cross-repo blocker leaves the issue ready", r.returncode == 0 and "- #377 " in ready_part,
+      (r.returncode, r.stdout[-400:], r.stderr))
+check("ready.py: an open cross-repo blocker is named as such",
+      "- #378 Issue 378: blocked by acme/billing#6" in blocked_part, (r.stdout[-400:], r.stderr))
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
 # --- #1091 fixture: govulncheck red on go1.27.1 and x/net v0.59.0 --------------------------------
 
 ws = scaffold("triage-1091")
