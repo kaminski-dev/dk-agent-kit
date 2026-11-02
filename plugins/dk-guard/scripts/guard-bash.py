@@ -14,8 +14,9 @@ directory), ask for
 rewriting the shared pre-main branch, a push to the current branch when the
 guard cannot tell which branch that is, or answering dk-gc's question for the
 human (--yes, piped input), and
-hints for `gh pr view --comments`, which drops the body, and for an unlabelled
-Postgres server that dk-pg should start instead. Everything else passes.
+hints for `gh pr view --comments`, which drops the body, for an unlabelled
+Postgres server that dk-pg should start instead, and for `git worktree remove`
+in a loop, which dk-gc does. Everything else passes.
 
 The rules match on words: the command is split once, as the shell reads it,
 into segments of words (quotes, here-docs, redirections, substitutions and
@@ -950,6 +951,35 @@ def dk_gc_words(segs):
     return []
 
 
+WORKTREE_LOOP = ("hint", "This loop removes worktrees by hand. `dk-gc --dry-run` lists the worktrees and branches of "
+                 "merged PRs and the databases of closed issues; `dk-gc` removes them after the human's yes and keeps "
+                 "a worktree with uncommitted changes.")
+RAW_WORKTREE_LOOP = re.compile(START + r"(" + "|".join(k for k in LOOP_KEYWORDS if k != "repeat")
+                               + r")\b(?=.*?\bgit\b[^;&|\n]*?\sworktree\s+remove\b)", re.S)
+
+
+def check_worktree_loop(cmd):
+    cmd = strip_heredocs(cmd)
+    return [WORKTREE_LOOP] if any(not quoted_text(cmd, m.start(1)) for m in RAW_WORKTREE_LOOP.finditer(cmd)) else []
+
+
+def worktree_loop_words(segs):
+    loops = []  # innermost last
+    for seg in segs:
+        for kw in itertools.takewhile(lambda w: w in LEAD or w in LOOP_KEYWORDS and w != "repeat", seg.words):
+            if kw in LOOP_KEYWORDS:
+                loops.append(kw)
+            elif kw == "done" and loops:
+                loops.pop()
+        if seg.words == ["end"] and loops[-1:] == ["foreach"]:  # zsh: foreach x (…) … end
+            loops.pop()
+        _, words = command(seg)
+        if loops and words and os.path.basename(words[0]) == "git" \
+                and git_subcommand(words, None)[0][:2] == ["worktree", "remove"]:
+            return [WORKTREE_LOOP]
+    return []
+
+
 # zsh names that break the shell when assigned: `path` is tied to PATH (later commands are "not found"), the
 # others are read-only or special arrays. The Bash tool runs zsh, so a loop, `read` or assignment on them breaks the
 # call.
@@ -1358,6 +1388,7 @@ def decide(cmd, cwd, background=False):
             + postgres_words(segs) + dk_gc_words(segs) + zsh_name_words(segs) + wait_words(segs) \
             + modifier_words(segs) + command_variable_words(segs) + function_name_words(segs) \
             + verify_rm_words(segs, cwd)
+    findings += check_worktree_loop(cmd) if segs is None else worktree_loop_words(segs)
     if background:  # the same wait started with run_in_background blocks nothing
         findings = [f for f in findings if f is not FOREGROUND_WAIT]
     for level in ("deny", "ask"):

@@ -3,10 +3,13 @@
 
 Repo and branch, whether the session is in a linked worktree or the primary
 checkout, uncommitted changes, the open PR for the branch, the labels of the
-issue the branch names (`<type>/<issue>-<slug>`), and the dk-pg databases
-running for that issue. Claude Code adds the output to the session's context.
-Outside a git repo it prints nothing. gh and docker are asked with a short
-timeout and left out when they fail; any other error prints nothing (fails open).
+issue the branch names (`<type>/<issue>-<slug>`), the dk-pg databases
+running for that issue, and, from 5 linked worktrees on, their count and the
+dk-gc command that lists the finished ones (git only: `dk-gc --dry-run` asks
+GitHub about every branch and takes longer than the hook may). Claude Code
+adds the output to the session's context. Outside a git repo it prints
+nothing. gh and docker are asked with a short timeout and left out when they
+fail; any other error prints nothing (fails open).
 """
 import json
 import os
@@ -19,12 +22,13 @@ MAX_LINES = 15
 MAX_FILES = 5
 MAX_DBS = 3
 MAX_CHARS = 200
+MIN_WORKTREES = 5
 ISSUE = re.compile(r"^[^/]+/(\d+)(?:-|$)")
 DEFAULT_TIMEOUT = 5.0
 
 
 def timeout():
-    """Seconds each gh or docker call gets; the three calls run side by side, inside the hook's timeout."""
+    """Seconds each git, gh or docker call gets; the gh and docker calls run side by side, inside the hook's timeout."""
     try:
         value = float(os.environ.get("DK_BASELINE_TIMEOUT", DEFAULT_TIMEOUT))
     except ValueError:
@@ -62,11 +66,12 @@ def baseline(cwd):
     lines = changes(top)
     match = ISSUE.match(branch)
     issue = match.group(1) if match else None
-    with ThreadPoolExecutor(3) as pool:
+    with ThreadPoolExecutor(4) as pool:
+        worktree_lines = pool.submit(worktrees, top)
         pr_lines = pool.submit(pull_request, top, branch)
         issue_lines = pool.submit(issue_labels, top, issue)
         db_lines = pool.submit(databases, top, primary, issue)
-        lines += pr_lines.result() + issue_lines.result() + db_lines.result()
+        lines += worktree_lines.result() + pr_lines.result() + issue_lines.result() + db_lines.result()
     # The head keeps its paths whole; titles, labels and file names are cut.
     return [head] + [line if len(line) <= MAX_CHARS else line[:MAX_CHARS - 1] + "…" for line in lines]
 
@@ -83,6 +88,14 @@ def changes(top):
     if len(entries) > MAX_FILES:
         lines.append(f"  … {len(entries) - MAX_FILES} more")
     return lines
+
+
+def worktrees(top):
+    listing = git(top, "worktree", "list", "--porcelain")
+    if listing is None:
+        return []
+    linked = sum(line.startswith("worktree ") for line in listing.splitlines()) - 1
+    return [f"{linked} linked worktrees; dk-gc --dry-run lists the finished ones"] if linked >= MIN_WORKTREES else []
 
 
 def gh_json(top, *args):
