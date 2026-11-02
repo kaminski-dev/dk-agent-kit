@@ -10,7 +10,7 @@ the highest PR number, in whatever order their checks finish.
 Calls hold a lock on the state, so parallel agents do not lose each other's writes; `pr create` lets
 go of it while the acceptance check runs (at most CHECK_TIMEOUT seconds per run).
 An issue's "blocked_by" lists its native blockers, read by `is:blocked` in a
-search and by `gh api .../dependencies/blocked_by`.
+search and by `gh api .../dependencies/blocked_by`, and added by a POST there.
 """
 import fcntl
 import json
@@ -275,7 +275,8 @@ def cmd_api(args, state):
     pos, o = opts(args, VALUE_FLAGS, MULTI)
     method = (o.get("--method") or o.get("-X") or "GET").upper()
     parts = pos[0].strip("/").split("/") if pos else []
-    if method != "GET" or len(parts) < 5 or parts[:3] != ["repos", *state["repo"].split("/")] or parts[3] != "issues":
+    if method not in ("GET", "POST") or len(parts) < 5 or parts[:3] != ["repos", *state["repo"].split("/")] \
+            or parts[3] != "issues":
         fail(f"gh api {method} {'/'.join(parts)}: not supported by this repo's tracker stand-in")
     num = parts[4]
     if num not in state["issues"]:
@@ -287,7 +288,21 @@ def cmd_api(args, state):
                 "labels": [{"name": l} for l in i["labels"]],
                 "issue_dependencies_summary": {"blocked_by": len(open_blockers(state, n)),
                                                "total_blocked_by": len(i.get("blocked_by", []))}}
-    if parts[5:] == []:
+    if method == "POST" and parts[5:] == ["dependencies", "blocked_by"]:
+        values = [o["-F"]] if isinstance(o.get("-F"), str) else []
+        values += [v for flag in ("--field", "-f", "--raw-field") for v in o.get(flag, [])]
+        fields = dict(v.partition("=")[::2] for v in values)
+        blocker = str(int(fields.get("issue_id", "0")) - 900000)
+        if blocker not in state["issues"]:
+            fail("gh: Validation Failed (HTTP 422): issue_id names no issue in this repository")
+        blocked_by = state["issues"][num].setdefault("blocked_by", [])
+        if int(blocker) not in blocked_by:
+            blocked_by.append(int(blocker))
+        save(state)
+        emit(rest_issue(blocker), o)
+    elif method == "POST":
+        fail(f"gh api POST {'/'.join(parts)}: not supported by this repo's tracker stand-in")
+    elif parts[5:] == []:
         emit(rest_issue(num), o)
     elif parts[5:] == ["dependencies", "blocked_by"]:
         emit([rest_issue(str(b)) for b in state["issues"][num].get("blocked_by", [])], o)
