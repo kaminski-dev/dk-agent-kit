@@ -1,10 +1,12 @@
 schema_version: "1.1"
 name: implement-wave
 description: >
-  dk:implement with two briefed tickets (#353 and #376) whose fixes edit the same query, worked by
-  parallel subagents. The briefs must name no user-only skill and ask for no harness worktree
-  isolation, the wave stays within the 20-subagent limit, each ticket reaches a PR into pre-main,
-  and the report names the result of a dry merge of the two branches. The tracker is the
+  dk:implement with two briefed tickets (#353 and #376), worked by parallel subagents. The fixture
+  makes their branches conflict: #353 changes list_by_entity's ORDER BY and #376's brief drops the
+  row LIMIT on the line below it, so any pair of branches that meets both briefs conflicts
+  (tests/test_evals.py checks both facts and that the reference fixes conflict). The briefs must
+  name no user-only skill and ask for no harness worktree isolation, the wave stays within the
+  20-subagent limit, each ticket reaches a PR into pre-main, and the report names the conflict. The tracker is the
   workspace's gh stand-in, so the PRs are files, never real ones.
 tags: [implement]
 runs: 1
@@ -63,7 +65,8 @@ graders:
   - name: reports-the-merge
     type: llm
     criteria: >
-      Both tickets change the same query in ledger/audit_store.py, so their branches conflict. PASS when
+      The tickets' briefs make their branches conflict in ledger/audit_store.py (#353 changes the
+      ORDER BY of list_by_entity, #376 drops the row LIMIT on the adjacent line). PASS when
       the final message names that conflict: #353 and #376 (or their branches) together with
       ledger/audit_store.py. FAIL when it reports no dry-merge result, says the branches merge cleanly,
       or mentions a conflict without naming both tickets and the file.
