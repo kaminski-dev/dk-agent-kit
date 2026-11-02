@@ -68,7 +68,7 @@ Show counts and a one-line summary per item. Let the maintainer pick.
 
 ## Show what's ready
 
-The ready list is a read: open `ready-for-agent` issues with no open blocker. Run the tracker doc's **Ready** command. A doc without one predates it: run `gh issue list --state open --label ready-for-agent --search "-is:blocked" --json number,title,labels,body`, and tell the maintainer `/dk:setup` adds the line. Where search rejects `is:blocked` (an older GitHub Enterprise), list by the label alone and keep each issue whose `gh api repos/<owner>/<repo>/issues/<n> --jq .issue_dependencies_summary.blocked_by` prints 0. A `Blocked by: #n` line in a body blocks while `#n` is open.
+The ready list is a read: open `ready-for-agent` issues with no open blocker. Run the tracker doc's **Ready** command. A doc without one predates it: run `gh issue list --state open --label ready-for-agent --search "-is:blocked" --limit 1000 --json number,title,labels,body`, and tell the maintainer `/dk:setup` adds the line. Where search rejects `is:blocked` (an older GitHub Enterprise), list by the label alone (`gh issue list --state open --label ready-for-agent --limit 1000 --json number,title,labels,body`) and keep each issue whose `gh api repos/<owner>/<repo>/issues/<n> --jq .issue_dependencies_summary.blocked_by` prints 0. A `Blocked by: #n` line in a body blocks while `#n` is open.
 
 List the result oldest first, one line per issue. Under it, name each `ready-for-agent` issue the query left out with its open blockers (the tracker doc's blocker read), so the maintainer sees why it is missing. "Is #42 blocked?" is that blocker read for one issue.
 

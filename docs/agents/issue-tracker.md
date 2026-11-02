@@ -6,7 +6,7 @@ Issues, specs and PRs for this repo live on GitHub (`kaminski-dev/dk-agent-kit`,
 
 - **Read**: `gh issue view N --json number,title,body,labels,comments,state`.
 - **List**: `gh issue list --state open --label <label> --json number,title,labels`. Same files or area: add `--search "<term>"`.
-- **Ready**: `gh issue list --state open --label ready-for-agent --search "-is:blocked" --json number,title,labels,body`. `is:blocked` counts only open blockers; a `Blocked by: #n` line in a body still blocks while `#n` is open.
+- **Ready**: `gh issue list --state open --label ready-for-agent --search "-is:blocked" --limit 1000 --json number,title,labels,body`. `is:blocked` counts only open blockers; a `Blocked by: #n` line in a body still blocks while `#n` is open.
 - **Create**: `gh issue create --title "…" --body-file <file> --label <label>`.
 - **Comment**: `gh issue comment N --body-file <file>`.
 - **Labels**: `gh issue edit N --add-label <a> --remove-label <b>`.
