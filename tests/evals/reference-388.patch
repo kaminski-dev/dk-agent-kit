@@ -12,10 +12,10 @@ index 96c36eb..cdb0d84 100644
              self.conn.execute("UPDATE outbox SET sent_at = ? WHERE id = ?", (stamp(now), msg["id"]))
          return msg["id"]
 diff --git a/tests/test_outbox.py b/tests/test_outbox.py
-index 44bba6c..5a12499 100644
+index c85a929..56dcddd 100644
 --- a/tests/test_outbox.py
 +++ b/tests/test_outbox.py
-@@ -44,10 +44,12 @@ class SendNext(unittest.TestCase):
+@@ -52,10 +52,12 @@ class SendNext(unittest.TestCase):
  
  class OutboxTabTest(unittest.TestCase):
      def test_lists_each_message_and_whether_it_went_out(self):
