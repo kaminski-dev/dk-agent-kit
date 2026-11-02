@@ -334,5 +334,6 @@
   {"why": "PR #61 review: a redirection's target is read by the shell, never a pattern argument", "cmd": "grep . < ~/.netrc 'unterminated", "expect": "deny"},
   {"cmd": "grep . < ~/.netrc", "expect": "deny"},
   {"why": "PR #61 review: a long run of escapes in a sed script must not backtrack past the hook's timeout", "cmd": "sed '/\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\./d' notes.txt", "max_seconds": 1, "expect": "allow"},
-  {"cmd": "sed 's/\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.x/y/' notes.txt 'unterminated", "max_seconds": 1, "expect": "allow"}
+  {"cmd": "sed 's/\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.\\.x/y/' notes.txt 'unterminated", "max_seconds": 1, "expect": "allow"},
+  {"why": "PR #61 review: a substitution in a leading assignment is no function name, so the pipe still reaches dk-gc", "cmd": "echo y | X=$(date) dk-gc", "expect": "ask"}
 ]
