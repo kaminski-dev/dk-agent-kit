@@ -33,8 +33,8 @@ import sys
 PROTECTED = {"main", "master", "pre-main"}
 KEPT_PREFIX = "verify-assets/"  # PR bodies embed screenshots from these branches
 # Ignored entries a worktree may lose: build output, dependencies, generated code, local env.
-REGENERABLE = ("node_modules", "dist", "build", ".next", "target", ".venv", "__pycache__",
-               "*.tsbuildinfo", "*.gen.*", ".env*")
+REGENERABLE = ("node_modules", "dist", "build", ".next", ".output", "target", ".venv", "__pycache__",
+               "test-results", ".api-port", "*.tsbuildinfo", "*.gen.*", ".env*")
 KEEP_LINE_NAMES = 5  # ignored entries a "keep" line names before it counts the rest
 
 
