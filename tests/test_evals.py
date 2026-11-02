@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 EVALS = ROOT / "plugins" / "dk" / "evals"
@@ -122,6 +123,21 @@ check("wave: list_by_entity's ORDER BY and row LIMIT are adjacent lines",
 brief376 = json.loads(run(ws, "gh issue view 376 --json comments").stdout)["comments"][-1]["body"]
 check("wave: #376's brief cuts the page in list_by_entity's statement, dropping its row LIMIT",
       "in the `list_by_entity` statement itself: its row `LIMIT ?` goes" in brief376, brief376)
+
+# Parallel agents share the stand-in: a PR whose acceptance check is slow leaves every other gh call free.
+(ws / ".tracker" / "acceptance-353.py").write_text("import time\ntime.sleep(6)\n")
+slow = subprocess.Popen(["bash", "-c", '. "$HOME/.bashrc"; gh pr create --base pre-main --head fix/353-check --title t --body b'],
+                        cwd=ws / "app", env={"PATH": os.environ["PATH"], "HOME": str(ws.parent), "TERM": "dumb"},
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+time.sleep(1)
+started = time.monotonic()
+r = run(ws, "gh issue view 376 --json title")
+took = time.monotonic() - started
+check("wave: a gh call answers while another PR's acceptance check runs",
+      r.returncode == 0 and took < 3 and slow.poll() is None, (round(took, 1), r.stderr, slow.poll()))
+slow.communicate(timeout=60)
+pull = (ws / ".tracker" / "pulls" / "353.md").read_text()
+check("wave: the slow PR's record lands once its check ends", "acceptance: pass" in pull and "## Body\n\nb\n" in pull, pull)
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
 
