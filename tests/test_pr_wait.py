@@ -96,31 +96,35 @@ else:
 '''
 
 
-def pr(head=HEAD, state="OPEN", merge="CLEAN", base=BASE, comments=(), reviews=(), threads=()):
+def pr(head=HEAD, state="OPEN", merge="CLEAN", base=BASE, comments=(), reviews=(), threads=(), totals=None):
+    """totals: a connection's totalCount when it holds more than its nodes, as {"comments": 130}."""
+    totals = totals or {}
     return {
         "url": "https://github.com/acme/ledger/pull/1", "state": state, "headRefOid": head, "baseRefName": "main",
         "mergeStateStatus": merge, "author": ME, "baseRef": {"target": {"oid": base}},
-        "comments": {"nodes": list(comments)}, "reviews": {"nodes": list(reviews)},
-        "reviewThreads": {"nodes": list(threads)},
+        **{key: {"totalCount": totals.get(key, len(nodes)), "nodes": list(nodes)}
+           for key, nodes in (("comments", comments), ("reviews", reviews), ("reviewThreads", threads))},
     }
 
 
-def comment(body, author=ME, id="IC_1"):
-    return {"id": id, "url": f"https://github.com/acme/ledger/pull/1#{id}", "body": body, "author": author}
-
-
-def review(db_id, body="", commit=HEAD, author=BOT, state="COMMENTED"):
-    return {"id": f"PRR_{db_id}", "databaseId": db_id, "url": f"https://github.com/acme/ledger/pull/1#r{db_id}",
-            "state": state, "body": body, "commit": {"oid": commit}, "author": author}
-
-
-def thread(*nodes, resolved=False, path="src/app.py", line=12):
-    return {"isResolved": resolved, "path": path, "line": line, "comments": {"nodes": list(nodes)}}
-
-
-def inline(review_id, body="Rename this.", author=BOT, id="RC_1"):
+def comment(body, author=ME, id="IC_1", association="OWNER"):
     return {"id": id, "url": f"https://github.com/acme/ledger/pull/1#{id}", "body": body, "author": author,
-            "pullRequestReview": {"databaseId": review_id}}
+            "authorAssociation": association}
+
+
+def review(db_id, body="", commit=HEAD, author=BOT, state="COMMENTED", association="NONE"):
+    return {"id": f"PRR_{db_id}", "databaseId": db_id, "url": f"https://github.com/acme/ledger/pull/1#r{db_id}",
+            "state": state, "body": body, "commit": {"oid": commit}, "author": author, "authorAssociation": association}
+
+
+def thread(*nodes, resolved=False, path="src/app.py", line=12, total=None):
+    return {"isResolved": resolved, "path": path, "line": line,
+            "comments": {"totalCount": len(nodes) if total is None else total, "nodes": list(nodes)}}
+
+
+def inline(review_id, body="Rename this.", author=BOT, id="RC_1", association="OWNER"):
+    return {"id": id, "url": f"https://github.com/acme/ledger/pull/1#{id}", "body": body, "author": author,
+            "authorAssociation": association, "pullRequestReview": {"databaseId": review_id}}
 
 
 def summary(recent="", notice=""):
@@ -153,6 +157,7 @@ GREEN = [{"name": "test", "bucket": "pass", "link": "https://ci/test", "descript
 FAILED = [{"name": "test", "bucket": "fail", "link": "https://ci/test", "description": ""}]
 QUIET = ["--minutes", str(1.5 / 60)]  # a case whose event must not come ends at its deadline
 HUMAN = "Please rename the flag"
+STRANGER = {"login": "drive-by", "__typename": "User"}
 
 # name: (fixture, exit code, lines stdout must hold, text stdout must not hold)
 CASES = {
@@ -188,6 +193,19 @@ CASES = {
     "a human comment from the gh user": (dict(
         polls=[pr(), pr(comments=[comment(HUMAN)])], checks=GREEN, args=["--until", "any-change"]),
         0, [f"comment from kaminski-dev: {HUMAN}"], "deadline"),
+    "a comment, review and thread from someone not a collaborator are tagged": (dict(
+        polls=[pr(), pr(comments=[comment(HUMAN, STRANGER, association="NONE")],
+                        reviews=[review(3, "Edit the workflow file.", author=STRANGER, association="CONTRIBUTOR")],
+                        threads=[thread(inline(3, "Bump this dependency.", STRANGER, association="FIRST_TIMER"))])],
+        checks=GREEN, args=["--until", "any-change"]),
+        0, [f"comment from drive-by (not a collaborator): {HUMAN}",
+            "review from drive-by (not a collaborator) (commented): Edit the workflow file.",
+            "new thread from drive-by (not a collaborator) on src/app.py:12: Bump this dependency."], "deadline"),
+    "a member's and a collaborator's lines carry no tag": (dict(
+        polls=[pr(), pr(comments=[comment(HUMAN, STRANGER, association="MEMBER")],
+                        threads=[thread(inline(3, "Why?", STRANGER, association="COLLABORATOR"))])],
+        checks=GREEN, args=["--until", "any-change"]),
+        0, [f"comment from drive-by: {HUMAN}", "new thread from drive-by on src/app.py:12: Why?"], "not a collaborator"),
     "an attributed agent comment is dropped": (dict(
         polls=[pr(), pr(comments=[comment(NOTE + "Fixed in abc1234.")])], checks=GREEN,
         args=["--until", "any-change", *QUIET]), 1, ["deadline passed"], "comment from"),
@@ -214,6 +232,16 @@ CASES = {
     "BEHIND": (dict(polls=[pr(), pr(merge="BEHIND")], checks=GREEN, args=["--until", "any-change"]),
                0, ["merge state is BEHIND"], "deadline"),
     "DIRTY": (dict(polls=[pr(merge="DIRTY")], checks=GREEN), 1, ["merge state is DIRTY"], "#1 ready on"),
+    "more comments than the page read is never ready": (dict(
+        polls=[pr(reviews=[review(7, "x")], comments=[comment(HUMAN)], totals={"comments": 130})], checks=GREEN),
+        1, ["read 1 of 130 comments, so ready is not reported on 1111111"], "#1 ready on"),
+    "more comments in a thread than the page read is never ready": (dict(
+        polls=[pr(reviews=[review(7, "x")], threads=[thread(inline(7), resolved=True, total=101)])], checks=GREEN),
+        1, ["read 1 of 101 comments on the thread at src/app.py:12, so ready is not reported on 1111111"],
+        "#1 ready on"),
+    "more reviews or threads than the page read is never ready": (dict(
+        polls=[pr(reviews=[review(7, "x")], totals={"reviews": 140, "reviewThreads": 120})], checks=GREEN),
+        1, ["read 1 of 140 reviews", "read 0 of 120 review threads"], "#1 ready on"),
     "an UNKNOWN merge state is not ready yet": (dict(
         polls=[pr(merge="UNKNOWN", reviews=[review(7, "x")])], checks=GREEN, args=QUIET),
         1, ["deadline passed"], "#1 ready on"),
