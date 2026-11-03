@@ -335,6 +335,9 @@ for what, pattern in (
     ("the Ready to merge verdict", r"\*\*Ready to merge\*\*"),
     ("the Waiting for required approval verdict", r"\*\*Waiting for required approval\*\*"),
     ("the Blocked verdict", r"\*\*Blocked\*\*"),
+    # The implement eval's agents said Ready to merge when the gh stand-in reported no mergeable state.
+    ("a condition that cannot be read as not passed, so Blocked",
+     r"condition you cannot read[^.]*has not passed[^.]*\*\*Blocked\*\*"),
 ):
     if gate and not re.search(pattern, gate, re.S):
         errors.append(f"skills/issue-flow: step 6's **Ready gate.** paragraph does not name {what}")
