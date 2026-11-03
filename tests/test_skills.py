@@ -128,6 +128,12 @@ if not re.search(r"\bwhen a subject that does nothing\b.*\breturns\b", empty_res
     errors.append("skills/code-review: the Correctness brief's **Test** question must flag an empty-result-only assertion "
                   "(`toEqual([])`) only when a subject that does nothing still returns that result, and say in the same "
                   "clause that a no-op returns `undefined` or `None` (#87: reviewers took a no-op to return [])")
+# The retro's correct step judges a test as the review does (pstack correct, e5136d8).
+retro_test = re.search(r"^   \d\. \*\*Test\*\*.*$", skills["retro"].read_text(), re.M)
+if not retro_test or not re.search(r"still passes when the behaviour it checks breaks.*fails when only the internals change",
+                                   retro_test.group(0)):
+    errors.append("skills/retro: the correct step's **Test** level does not ask for a test that fails when the behaviour "
+                  "breaks and keeps passing when only the internals change")
 
 flow = skills["issue-flow"].read_text()
 bot = re.search(r"^\*\*Review bot\.\*\*.*?(?=^## )", flow, re.M | re.S)
