@@ -456,5 +456,15 @@
   {"cmd": "until gh api graphql -F n=5 -f query='query($n: Int!) { repository(owner: \"o\", name: \"r\") { pullRequest(number: $n) { merged } } }' --jq .data.repository.pullRequest.merged | grep -q true; do :; done 'unterminated", "expect": "deny"},
   {"cmd": "for n in 41 42; do gh api -X POST search/issues -f q=x; sleep 10; done 'unterminated", "expect": "allow"},
   {"cmd": "foreach c (\"git status\") $c; end", "expect": "deny"},
-  {"cmd": "foreach c (\"git status\" \"git log -1\") ${=c}; end 'unterminated", "expect": "allow"}
+  {"cmd": "foreach c (\"git status\" \"git log -1\") ${=c}; end 'unterminated", "expect": "allow"},
+  {"why": "#96: an unquoted here-doc runs its backtick spans, so a Markdown code span in a PR body runs as a command", "cmd": "gh pr edit 5 --body-file - <<EOF\nMerged with `gh api -X PUT repos/o/r/pulls/1/merge` once CI passed.\nEOF", "expect": "deny"},
+  {"cmd": "gh pr edit 5 --body-file - <<-EOF\n\tMerged with `gh api -X PUT repos/o/r/pulls/1/merge` once CI passed.\n\tEOF", "expect": "deny"},
+  {"cmd": "git commit -m \"$(cat <<EOF\nRun `dk-gc --dry-run` first.\nEOF\n)\"", "repo": "feature", "expect": "deny"},
+  {"cmd": "gh pr edit 5 --body-file - <<EOF\nMerged with `gh api -X PUT repos/o/r/pulls/1/merge` once CI passed.\nEOF\necho 'unterminated", "expect": "deny"},
+  {"why": "#96: a quoted delimiter keeps the body text, an escaped backtick is a literal, and $(...) interpolates on purpose", "cmd": "gh pr edit 5 --body-file - <<'EOF'\nMerged with `gh api -X PUT repos/o/r/pulls/1/merge` once CI passed.\nEOF", "expect": "allow"},
+  {"cmd": "gh pr edit 5 --body-file - <<\"EOF\"\nMerged with `gh api -X PUT repos/o/r/pulls/1/merge` once CI passed.\nEOF", "expect": "allow"},
+  {"cmd": "gh pr edit 5 --body-file - <<\\EOF\nMerged with `gh api -X PUT repos/o/r/pulls/1/merge` once CI passed.\nEOF", "expect": "allow"},
+  {"cmd": "gh pr edit 5 --body-file - <<EOF\nMerged with \\`gh pr merge 1\\` once CI passed.\nEOF", "expect": "allow"},
+  {"cmd": "git commit -F - <<EOF\nPin the guard to $(git rev-parse HEAD)\nEOF", "repo": "feature", "expect": "allow"},
+  {"cmd": "gh pr edit 5 --body-file - <<'EOF'\nMerged with `gh api -X PUT repos/o/r/pulls/1/merge` once CI passed.\nEOF\necho 'unterminated", "expect": "allow"}
 ]
