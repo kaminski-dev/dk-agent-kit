@@ -106,6 +106,20 @@ Start it again after each push, after you handle a line that ended it, and when 
 
 `<model>` is the public model name the harness reports, such as `Claude Opus 5.5`, or the harness's own name when it reports none; `<login>` is `gh api user --jq .login`. This is the note's one definition: a script that skips your own comments matches a body against the Python `re` pattern `\A> \[!NOTE\]\r?\n> \*\*.+ responding on behalf of .+\*\*`. The PR body, commit messages and text the maintainer asks you to post verbatim carry no note. Post the body from a file, and keep the URL GitHub answers with: `gh pr comment <PR> --body-file <file>` and `gh issue comment N --body-file <file>` print it, and a thread reply gives it with `gh api "repos/{owner}/{repo}/pulls/<PR>/comments/<id>/replies" -F body=@<file> --jq .html_url`. Resolve a review thread only once its reply posted and GitHub returned the reply's URL.
 
+**Ready gate.** The PR goes to the maintainer once it passes this gate on the latest commit. Read the live PR with `gh pr view <PR> --json headRefOid,state,isDraft,reviewDecision`: it is open, not a draft, and on its `headRefOid`:
+
+- your proof (step 5) covers every change in the diff, the review fixes included;
+- required checks are green;
+- every bot finding is fixed or answered on its thread, a body finding in its PR comment;
+- no human review requests changes: `gh pr view <PR> --json latestReviews --jq '.latestReviews[] | select(.state == "CHANGES_REQUESTED") | .author.login'` prints nothing;
+- the branch is up to date with the base, and GitHub reports it mergeable.
+
+`python3 -I <base directory>/pr-wait <PR> --until ready` reports the mechanical part: its `ready on <sha>` line, for that head, covers the checks, the bot's verdict, the threads and a branch neither BEHIND nor DIRTY. The proof, the answers and the human reviews are yours to check. A condition you cannot read, such as a mergeable state GitHub leaves empty, has not passed: the verdict is **Blocked**, and it names what you could not read. Your handoff of the PR ends with exactly one verdict, its last line:
+
+- **Ready to merge**: the gate passes. The PR stays open for the maintainer to merge.
+- **Waiting for required approval**: the gate passes, and only a required human approval remains (`reviewDecision` is `REVIEW_REQUIRED`).
+- **Blocked**: a condition fails that you cannot fix. Name it, what you tried, and what it needs.
+
 ## 7. After the merge
 
 - Batch PR review findings come from the review bot, fetched as step 6's **Review bot** says, and from the maintainer's own review of the batch PR: inline review comments, review bodies, and PR comments asking for a change. Read the maintainer's with each bot round, and whenever they say they reviewed: inline comments with the inline query of step 6's **Review bot.** item 1, `.user.type == "User"` in place of the bot's login and its review-id filter dropped; review bodies with `gh api --paginate "repos/{owner}/{repo}/pulls/<PR>/reviews" --jq '.[] | select(.user.type == "User" and .state != "PENDING" and .body != "") | {id, body}'`; PR comments with `gh api --paginate "repos/{owner}/{repo}/issues/<PR>/comments" --jq '.[] | select(.user.type == "User") | {id, html_url, body}'`. The type filter keeps other bots out. Your own fix and skip records post from the same account and open with the attribution note (step 6's **Comments.**): they are records, so leave them out, and a finding that already has its record is done (an inline record is a reply whose `in_reply_to_id` is the finding's id: the same inline query, its `in_reply_to_id == null` dropped). Both take the route `workflow.md` sets as **Batch-review fixes**, `pr` when it sets none:
