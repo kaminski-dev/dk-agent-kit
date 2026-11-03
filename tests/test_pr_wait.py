@@ -193,6 +193,11 @@ CASES = {
     "the base moved over untouched files": (dict(
         polls=[pr(), pr(base=MOVED)], checks=GREEN, files=["src/app.py"], moved=["docs/a.md"],
         args=["--until", "any-change", *QUIET]), 1, ["deadline passed"], "moved"),
+    "a base move whose overlap cannot be read is said, then retried": (dict(
+        polls=[pr(), pr(base=MOVED)], files=["src/app.py"], moved=["src/app.py"], fail={"compare": 1},
+        checks=[{"name": "test", "bucket": "pending", "link": "", "description": ""}], args=["--until", "green", *QUIET]),
+        1, ["main moved to bbbbbbb; could not read", "main moved to bbbbbbb and touches files in this PR: src/app.py"],
+        "#1 green on"),
     "BEHIND": (dict(polls=[pr(), pr(merge="BEHIND")], checks=GREEN, args=["--until", "any-change"]),
                0, ["merge state is BEHIND"], "deadline"),
     "DIRTY": (dict(polls=[pr(merge="DIRTY")], checks=GREEN), 1, ["merge state is DIRTY"], "#1 ready on"),
