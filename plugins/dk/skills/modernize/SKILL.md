@@ -53,7 +53,7 @@ Be willing to recommend CLOSE. Age alone is not evidence, and sunk effort is no 
 
 For MODERNIZE only:
 
-1. Make the worktree as `dk:issue-flow` step 2 does, with `<N>` the PR's issue (the PR number when it links none), detached at the observed sha so no local branch is touched: `git worktree add --detach ~/workspace/<prefix>-<N> <observed sha>`. Run the fresh-worktree setup from `workflow.md`.
+1. Make the worktree as `dk:issue-flow` step 2 does, with `<N>` the PR's issue (the PR number when it links none), detached at the observed sha so no local branch is touched: `git worktree add --detach ~/workspace/<prefix>-<N> <observed sha>`. When the PR's old worktree is still at that path, its uncommitted work is the user's: reuse it detached (`git -C <path> checkout --detach <observed sha>`) only when `git -C <path> status --porcelain` prints nothing, and otherwise add `~/workspace/<prefix>-<N>-modernize` beside it. Run the fresh-worktree setup from `workflow.md`.
 2. `git rebase origin/<base>`.
 3. Resolve each conflict by the PR's intent and the base's newer invariants. A conflict that exposes a product or architecture disagreement sends you back to step 3, not to a guess.
 4. Compare the commit series before and after: `git range-diff <merge-base>..<observed sha> origin/<base>..HEAD`, then read the final diff (`git diff origin/<base>...HEAD`). Done when no intended behaviour has dropped out and no behaviour the base already landed comes back.
