@@ -12,7 +12,7 @@ Report against the brief's word limit, one line per finding:
 
 `<id> [blocker|should|nit] <file>:<line> <claim>. Fix: <fix>`
 
-The claim cites the rule or spec line the finding breaks. Judge the severity against the change's intent, whatever label the rule itself carries:
+The claim cites the rule or spec line the finding breaks. Judge the severity against the change's intent, whatever label the rule itself carries, unless the brief sets a floor, as the Standards brief does for a documented standard:
 
 - **blocker**: the intended case is wrong; the change does not do what it is for.
 - **should**: a real bug callers will hit.
