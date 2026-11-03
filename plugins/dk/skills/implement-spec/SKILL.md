@@ -33,7 +33,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 6. If this changes the **frontier** of available tickets, kick off more **implementer subagents** to work on the new tickets. This allows for maximum concurrency.
 
-7. Once all tickets are complete, call the Skill tool with `dk:verify` and prove the whole spec in a running stack, then call the Skill tool with `dk:code-review` on the integration branch against `origin/<base>`. A single fresh **implementer subagent** answers its findings by `dk:code-review`'s **Answer findings** step (ledger, round budget, shortstat), as `dk:implement` does.
+7. Once all tickets are complete, call the Skill tool with `dk:verify` and prove the whole spec in a running stack, then call the Skill tool with `dk:code-review` on the integration branch against `origin/<base>`. A single fresh **implementer subagent** answers its findings by `dk:code-review`'s **Answer findings** step (ledger, round budget, shortstat), as `dk:implement` does, in its own worktree off the integration branch, made by you as in step 4; a **merger subagent** merges its branch into the integration branch before step 8, as in step 5.
 
 8. Open one PR from the integration branch into the base, body from the `dk:pr` skill, with a `Closes #N` (or `Refs #N`, per `dk:issue-flow`) line for the spec and for every ticket, then watch it and hand it over through `dk:issue-flow` step 6's **Ready gate.**
 

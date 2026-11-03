@@ -29,7 +29,7 @@ A question in a plain message reads like a finished run, so it goes unseen. When
 - the goal is ambiguous in a way that changes the result;
 - another PR makes this one obsolete.
 
-Ask through the AskUserQuestion tool, and put the PR link, what blocks you and the options in the question, your recommendation first. With no question tool, or no answer from it, take the safe path: stop where the work stands, and open your final message with the question.
+Ask through the AskUserQuestion tool, and put the PR link when one exists, what blocks you and the options in the question, your recommendation first. With no question tool, or no answer from it, take the safe path: stop where the work stands, and open your final message with the question.
 
 Decide everything else with a sensible default, including the seams `dk:tdd` asks you to agree, and list each decision under **Decisions taken** in the report.
 
@@ -41,4 +41,4 @@ Before reporting, dry-merge the tickets' branches: fetch, then run `git merge-tr
 
 ## Report
 
-The final message is the report: the PR link and its head, the proof, the ledger's outcome, the **Decisions taken** with the reason for each, and the risks that remain. It ends with the verdict from `dk:issue-flow` step 6's **Ready gate.**, one per PR.
+The final message is the report: the PR link and its head, the proof, `dk:code-review`'s **Answer findings** report (the rounds run, the ledger, the shortstat before and after, each declined finding's issue number), the **Decisions taken** with the reason for each, and the risks that remain. It ends with the verdict from `dk:issue-flow` step 6's **Ready gate.**, one per PR. A run stopped before any PR reports where it stopped, the question and the **Decisions taken**, and ends on the question, with no verdict line.
