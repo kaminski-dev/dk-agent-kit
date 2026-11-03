@@ -441,6 +441,13 @@ r = run(ws, "gh issue create --title T --body B --blocked-by 372,373")
 new = r.stdout.strip().rsplit("/", 1)[-1]
 check("ready: `gh issue create --blocked-by` adds every edge",
       r.returncode == 0 and new.isdigit() and blockers_of(new) == [372, 373], (r.stdout, r.stderr))
+r = run(ws, "gh issue edit 373 --add-blocked-by 372 --add-blocked-by 376")
+check("ready: a repeated `--add-blocked-by` adds every edge",
+      r.returncode == 0 and set(blockers_of(373)) >= {372, 376}, (r.stderr, blockers_of(373)))
+r = run(ws, "gh issue create --title T --body B --blocked-by 372 --blocked-by 373")
+new = r.stdout.strip().rsplit("/", 1)[-1]
+check("ready: a repeated `gh issue create --blocked-by` adds every edge",
+      r.returncode == 0 and new.isdigit() and blockers_of(new) == [372, 373], (r.stdout, r.stderr))
 r = run(ws, "gh issue edit 376 --add-blocked-by 999")
 check("ready: `--add-blocked-by` an unknown issue fails", r.returncode != 0, r.stdout)
 state_file.write_text(saved)
