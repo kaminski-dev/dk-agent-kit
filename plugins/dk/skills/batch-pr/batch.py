@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Collect what the batch PR from pre-main into main carries. Opens nothing.
 
-Run from inside the repo. It fetches origin's main and pre-main, then prints:
+Run from inside the repo. Every gh call asks about origin's github.com repo, whatever
+GH_REPO says. It fetches origin's main and pre-main, then prints:
 
   ## PRs              each PR merged into pre-main that main does not hold yet
   ## Lines            their Closes #N / Refs #N lines, one per issue
@@ -18,6 +19,7 @@ An issue named by both a Closes and a Refs line gets Refs: a post-deploy
 check outranks closing on merge.
 """
 import json
+import os
 import re
 import subprocess
 import sys
@@ -32,6 +34,15 @@ def sh(*cmd, ok=(0,)):
     if r.returncode not in ok:
         sys.exit(f"{' '.join(cmd)}: {r.stderr.strip() or r.returncode}")
     return r
+
+
+def origin_repo():
+    """owner/name of origin on github.com, from the configured URL (before any insteadOf)."""
+    url = sh("git", "config", "--get", "remote.origin.url", ok=(0, 1)).stdout.strip()
+    m = re.search(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", url)
+    if not m:
+        sys.exit(f"origin's URL ({url or 'none'}) names no github.com repo, so there is no repo to ask gh about.")
+    return m.group(1)
 
 
 def gh_json(*args):
@@ -54,6 +65,7 @@ def main():
         print(__doc__.strip())
         return 0 if sys.argv[1] in ("-h", "--help") else 1
 
+    os.environ["GH_REPO"] = origin_repo()  # an inherited GH_REPO would point gh at another repo
     open_batch = gh_json("pr", "list", "--base", "main", "--head", "pre-main", "--state", "open", "--json", "url")
     if open_batch:
         print(f"A batch PR is already open: {open_batch[0]['url']}")
