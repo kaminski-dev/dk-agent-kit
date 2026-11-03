@@ -50,7 +50,7 @@ Done when every finding is fixed on `pre-main` (a pushed SHA, or a merged fix PR
 Call the Skill tool with `dk:pr` and write the body to `batch-pr.md` in the session's scratchpad directory:
 
 - **Summary**: the `## PRs` list as printed. A PR from `## Without a line` gets `(no issue)` after its title.
-- **Evidence**: the latest CI run on `pre-main` (`gh run list --branch pre-main --limit 1 --json workflowName,conclusion,url`); each PR carries its own evidence.
+- **Evidence**: the batch PR's own checks, which run the CI workflows `docs/agents/workflow.md` names on the batch head: name those workflows here, and step 4 reads their result. When `workflow.md` names a run of that CI against `pre-main` (a nightly), add its latest run: `gh run list --workflow <workflow> --limit 1 --json workflowName,headBranch,headSha,conclusion,url`, one call per workflow, since the latest run across all workflows can be a Dependabot run that tests nothing. Each PR carries its own evidence.
 - **Merge Danger**: read each PR's own Merge Danger (`gh pr view N --json body`). The batch is a one-way door when any of them is, and names that PR.
 - **Local review**: each finding from step 2 with its file and line and what became of it: the fix's SHA, the fix PR, the issue it was filed as, or the reason it was skipped. When the review did not run, say why.
 - **Closing lines**: every line under `## Lines`, exactly as printed, as the body's last lines.
@@ -63,4 +63,4 @@ Done when every PR from step 1 appears in the Summary, every finding from step 2
 gh pr create --base main --head pre-main --title "Batch: pre-main into main, <YYYY-MM-DD>" --body-file <scratchpad>/batch-pr.md
 ```
 
-Give the user the URL, and name each `(no issue)` PR: an issue it was meant to close stays open after the merge. Then wait for the review bot as `dk:issue-flow` step 6's **Review bot** says; what it still finds takes step 7's route.
+Give the user the URL, and name each `(no issue)` PR: an issue it was meant to close stays open after the merge. Read its checks as `dk:issue-flow` step 6 says: they are the batch's evidence. Then wait for the review bot as `dk:issue-flow` step 6's **Review bot** says; what it still finds takes step 7's route.

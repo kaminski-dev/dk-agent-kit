@@ -87,7 +87,7 @@ A failed check is fixed on the branch and watched again before you report.
 **Review bot.** A PR into a base that `workflow.md` lists under **Review bot** gets a review from the bot it names; with no such line, that is `coderabbitai[bot]` on PRs into `main`: the batch PR, or every PR when the base is `main`. You fetch its findings yourself, so the maintainer never pastes them:
 
 1. Wait in the background for the bot's verdict on the head: start `python3 -I <base directory>/wait-review.py <PR>` (with `--bot <login>` when `workflow.md` names another bot) with `run_in_background`, and keep answering. It reads the head SHA (`headRefOid`) on every 30 s poll, and a push restarts its 20 minutes. A review counts when its `commit_id` is that SHA and it has a body or inline comments of its own; a bot review holding only thread replies does not. It ends with:
-   - exit 0 and `reviews <id>…`: read them (item 2); exit 0 and `clean`: the summary comment's recent-review block reports no actionable comments for the head, a round that leaves no review.
+   - exit 0 and `reviews <id>…`: read them (item 2); exit 0 and `clean`: the bot's summary comment reports no actionable comments for the head, a round that leaves no review.
    - exit 3 and `rate limited` or `paused`: the bot's notice names this head, which it will not review on its own. Tell the user; asking it to review is theirs.
    - exit 2: a `gh` call failed, or origin is no github.com repo. Tell the user its error.
    - exit 1: no verdict after 20 minutes. Tell the user, since the bot skips drafts.
