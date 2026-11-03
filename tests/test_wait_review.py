@@ -4,7 +4,7 @@
 Each case is one PR state, served by a fake `gh` on PATH, which logs the GH_REPO
 each call carried. The script runs in a checkout whose origin is acme/ledger on
 github.com. The comment bodies copy the shapes CodeRabbit writes: its summary
-comment with the recent-review block, the rate-limit notice and the pause notice.
+comment with its status and recent-review blocks, the rate-limit notice and the pause notice.
 """
 import json
 import os
@@ -62,6 +62,11 @@ def summary(recent="", notice="", updated="2026-11-02T12:05:00Z"):
     return {"user": BOT, "updated_at": updated, "body": body}
 
 
+def status(verdict="No actionable comments were generated in the recent review."):
+    """The status block above the walkthrough, where a clean round now puts its verdict; the SHA stays in the recent-review block."""
+    return f"<!-- recent_review_status_start -->\n\n{verdict}\n\n<!-- recent_review_status_end -->\n<!-- walkthrough_start -->\n"
+
+
 def reviewed(sha, verdict="No actionable comments were generated in the recent review.\n"):
     return verdict + f"Reviewing files that changed from the base of the PR and between {OLD} and {sha}."
 
@@ -92,6 +97,10 @@ CASES = {
     "review of an older commit": (dict(heads=AT_NOON, reviews=[{"id": 9, "user": BOT, "commit_id": OLD, "body": "x"}]),
                                   1, "no verdict"),
     "clean round": (dict(heads=AT_NOON, notes=[summary(reviewed(HEAD))]), 0, "clean"),
+    "clean round in the status block": (dict(
+        heads=AT_NOON, notes=[summary(reviewed(HEAD, verdict=""), status())]), 0, "clean"),
+    "clean status block for an older commit": (dict(
+        heads=AT_NOON, notes=[summary(reviewed(OLD, verdict=""), status())]), 1, "no verdict"),
     "review in progress": (dict(heads=AT_NOON, notes=[summary(reviewed(HEAD), "review in progress by coderabbit.ai\n")]),
                            1, "no verdict"),
     "rate limited on the head": (dict(heads=AT_NOON, notes=[summary(reviewed(OLD), rate_limited(HEAD))]),
