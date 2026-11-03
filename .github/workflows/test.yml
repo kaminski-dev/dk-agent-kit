@@ -19,14 +19,16 @@ jobs:
         run: python3 -I tests/hooks/test_require_worktree.py
       - name: session baseline fixtures
         run: python3 -I tests/hooks/test_session_baseline.py
+      - name: fork-guard fixtures
+        run: python3 -I tests/hooks/test_fork_guard.py
       - name: skills frontmatter, references, provenance
         run: python3 -I tests/test_skills.py
       - name: skill-eval fixtures
         run: python3 -I tests/test_evals.py
       - name: retro extraction against fixture transcripts
         run: python3 -I tests/test_retro_extract.py
-      - name: review-bot wait against a stubbed gh
-        run: python3 -I tests/test_wait_review.py
+      - name: pr-wait watcher against a stubbed gh
+        run: python3 -I tests/test_pr_wait.py
       - name: batch-pr collection and review against a fixture repo
         run: python3 -I tests/test_batch_pr.py
       - name: bootstrap merge

@@ -3,7 +3,7 @@ name: diagnosing-bugs
 description: Diagnosis loop for a bug or slowdown whose cause is unknown. Use when asked to diagnose or debug, or something breaks, throws, fails or is slow.
 ---
 
-<!-- Adapted from mattpocock/skills@49dd158 skills/engineering/diagnosing-bugs, MIT (© 2026 Matt Pocock). Changed for dk-agent-kit: model-invoked with a shorter description; loops and the HITL copy live in the issue's scratch folder; artifacts captured through the helper docs/agents/observability.md names; the regression test goes through dk:tdd and the final proof through dk:verify, whose control run carries the Phase 2 scenario; the confirmed cause goes into the PR through dk:pr; a missing seam is handed to the user's /dk:improve-codebase-architecture. -->
+<!-- Adapted from mattpocock/skills@4ae2317 skills/engineering/diagnosing-bugs, MIT (© 2026 Matt Pocock). Changed for dk-agent-kit: model-invoked with a shorter description; loops and the HITL copy live in the issue's scratch folder; artifacts captured through the helper docs/agents/observability.md names; the regression test goes through dk:tdd and the final proof through dk:verify, whose control run carries the Phase 2 scenario; the confirmed cause goes into the PR through dk:pr; a missing seam is handed to the user's /dk:improve-codebase-architecture. -->
 
 # Diagnosing Bugs
 

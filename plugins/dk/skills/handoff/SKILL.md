@@ -5,6 +5,8 @@ argument-hint: "What will the next session be used for? Or the path of a handoff
 disable-model-invocation: true
 ---
 
+<!-- Adapted from t3dotgg/tstack@1085050 skills/takeover, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: pickup rules copied into each handoff document; imported commits come over by cherry-pick; replacement-PR, modernize and merge steps not taken. -->
+
 Write a handoff document summarising the current conversation so a fresh agent can continue the work. Save to the temporary directory of the user's OS (`$TMPDIR`, else `/tmp`; `%TEMP%` on Windows) - not the current workspace.
 
 Open the document with the "Picking up a handoff" section below, copied verbatim: the agent that picks it up reads the document, not this skill.
