@@ -201,10 +201,11 @@ def same_login(graphql_login: str | None, rest_login: str | None) -> bool:
 
 
 def bot_check(name: str, bot: str | None) -> bool:
-    """A check run the review bot posts itself (CodeRabbit's `CodeRabbit`), which never gates."""
-    word = re.match(r"[a-z0-9]+", name.lower())
+    """A check run the review bot posts itself, which never gates: its whole name, in lowercase alphanumerics, is the
+    login's stem, or the stem less a suffix of up to 4 characters (`CodeRabbit` for coderabbitai[bot])."""
+    check = re.sub(r"[^a-z0-9]", "", name.lower())
     login = re.sub(r"[^a-z0-9]", "", (bot or "").lower().removesuffix("[bot]"))
-    return bool(word) and len(word.group(0)) >= 4 and login.startswith(word.group(0))
+    return bool(check) and login.startswith(check) and len(login) - len(check) <= 4
 
 
 def who(node: Json) -> tuple[str, bool]:
