@@ -1,40 +1,52 @@
 #!/usr/bin/env python3
-"""pr-wait: watch one GitHub pull request and print one line per real event.
+# Adapted from t3dotgg/tstack@1085050 skills/babysit-pr/scripts/pr-wait, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: ends at a --minutes deadline (20 by default) restarted by a push to the head; the review bot and the bases it reviews come from docs/agents/workflow.md, Greptile and Macroscope gating removed; the gh user's comments are events, only those opening with dk:issue-flow's attribution note are skipped; the bot's verdict on the head (`reviews <id>...`, `clean`, `rate limited`, `paused`) taken over from wait-review.py; the repo comes from origin when neither --repo nor a URL names it; gh calls are bounded by the deadline.
+"""pr-wait: watch one GitHub pull request and print one line per real event (dk:issue-flow step 6).
 
-  pr-wait <pr> [--repo owner/name] [--until green|ready|any-change] [--interval 20]
+  python3 -I pr-wait <pr> [--until ready|green|any-change] [--repo owner/name] [--minutes 20] [--interval 20]
 
 <pr> is a PR number or PR URL. Without --repo, the repo comes from the URL or
-from the current checkout. Stdout carries only events, one line each, so a
-monitor (Claude Code's Monitor tool) wakes the agent once per real event.
-Progress and errors that do not end the run go to stderr.
+from origin's github.com URL in the current checkout, whatever GH_REPO says.
+Stdout carries only events, one line each, so a monitor (Claude Code's Monitor
+tool) wakes the agent once per real event. Progress and errors that do not end
+the run go to stderr.
 
 --until
   green       required checks passed on the current head (every CI check when
               the base branch requires none)
-  ready      green, Greptile or Macroscope reviewed the current head, and no
-              review thread is unresolved (default)
+  ready       green, the review bot gave its verdict on the current head, no
+              review thread is unresolved, and the branch is not BEHIND (default)
   any-change  stop after the first poll that prints an event
+
+The review bot is the one the **Review bot** line of the checkout's
+docs/agents/workflow.md names: the first backticked login ending in [bot], on
+the bases the line names in backticks (`main` when it names none). Without
+that line it is coderabbitai[bot] on PRs into main; a line naming no login
+means no bot. `ready` on a base the bot does not review waits for no bot.
 
 Exit codes
   0  the --until condition is met, or the PR merged
   1  the condition cannot be met without action: a required check failed, the
      branch conflicts with its base, the PR closed, `ready` is blocked by
-     unresolved threads or a BEHIND branch, or GitHub stayed unreachable
+     unresolved threads, a BEHIND branch or a bot that will not review the head
+     on its own, GitHub stayed unreachable, or the deadline passed (--minutes
+     after the last head change)
   2  bad arguments, unknown PR, or another pr-wait already watches this PR
 
 Events
   - a required check failed (name and link)
   - all checks finished on the head (one summary line)
-  - a new comment, review, thread, or thread reply from someone other than the
-    PR author or the gh user
-  - Greptile, Macroscope, or CodeRabbit finished on the head, or a Greptile or
-    Macroscope summary changed after that
+  - a new comment, review, thread, or thread reply from anyone but the review
+    bot, the gh user included; one that opens with the attribution note
+    (dk:issue-flow step 6, **Comments.**) is the agent's own and skipped
+  - the review bot's verdict on the head: `reviews <id>...` (the REST review
+    ids step 6 reads findings by), `clean` (its summary reports no actionable
+    comments), or `rate limited` or `paused` (it will not review on its own)
   - the base branch moved and the new commits touch files in this PR
   - merge state became BEHIND or DIRTY
   - the PR merged or closed
+  - the deadline passed
 
-CodeRabbit is advisory: pr-wait reports it but never waits for it. Comment
-edits are never events, and top-level comments from CI and deploy bots
+Comment edits are never events, and top-level comments from CI and deploy bots
 (github-actions, Vercel) are skipped, because checks already carry that news.
 
 State lives in ~/.local/state/pr-wait/. A lock makes a second watcher for the
@@ -59,8 +71,16 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, NoReturn
 
-GATING_BOTS = ("greptile", "macroscope")
-ADVISORY_BOTS = ("coderabbit",)
+DEFAULT_BOT = ("coderabbitai[bot]", {"main"})
+# dk:issue-flow step 6's attribution note, which opens every comment the agent posts; tests/test_skills.py keeps
+# this copy equal to the skill's
+ATTRIBUTION = re.compile(r"\A> \[!NOTE\]\r?\n> \*\*.+ responding on behalf of .+\*\*")
+# CodeRabbit's summary comment: each notice names the commit it is about.
+RATE_LIMITED = ("<!-- This is an auto-generated comment: rate limited by coderabbit.ai -->",
+                "<!-- end of auto-generated comment: rate limited by coderabbit.ai -->")
+RECENT = ("<!-- recent_review_start -->", "<!-- recent_review_end -->")
+STATUS = ("<!-- recent_review_status_start -->", "<!-- recent_review_status_end -->")
+NO_FINDINGS = "No actionable comments were generated in the recent review."
 # CI and deploy bots report through checks. Their PR comments are status reports.
 STATUS_BOTS = ("github-actions", "vercel", "netlify", "railway", "cloudflare")
 STATE_DIR = Path.home() / ".local" / "state" / "pr-wait"
@@ -68,6 +88,7 @@ STATE_DIR = Path.home() / ".local" / "state" / "pr-wait"
 # instead of replaying hours of comments as new events.
 STALE_STATE_SECONDS = 6 * 3600
 MAX_FAILED_POLLS = 10
+GH_TIMEOUT = 60
 TRANSIENT = re.compile(
     r"HTTP (5\d\d|429)|rate limit|timed? ?out|connection (reset|refused)|EOF|"
     r"temporar|could not resolve host|TLS handshake|Something went wrong",
@@ -88,12 +109,14 @@ query($owner: String!, $name: String!, $number: Int!) {
       baseRef { target { oid } }
       comments(last: 100) { nodes { id url body author { login __typename } } }
       reviews(last: 100) {
-        nodes { id url state body commit { oid } author { login __typename } }
+        nodes { id databaseId url state body commit { oid } author { login __typename } }
       }
       reviewThreads(last: 100) {
         nodes {
           isResolved path line
-          comments(first: 100) { nodes { id url body author { login __typename } } }
+          comments(first: 100) {
+            nodes { id url body author { login __typename } pullRequestReview { databaseId } }
+          }
         }
       }
     }
@@ -102,6 +125,7 @@ query($owner: String!, $name: String!, $number: Int!) {
 """
 
 Json = dict[str, Any]
+deadline = float("inf")  # monotonic; a push to the head moves it
 
 
 class GhError(Exception):
@@ -121,16 +145,20 @@ def fail(message: str, code: int = 2) -> NoReturn:
 
 
 def gh(args: list[str], allow: tuple[int, ...] = (0,)) -> subprocess.CompletedProcess[str]:
-    """Run gh. Retries transient failures (HTTP 5xx or 429, network) with backoff."""
+    """Run gh. Retries transient failures (HTTP 5xx or 429, network) with backoff, within the deadline."""
     delay = 2
     for attempt in range(5):
-        proc = subprocess.run(["gh", *args], capture_output=True, text=True)
+        left = deadline - time.monotonic()
+        try:
+            proc = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=max(1, min(GH_TIMEOUT, left)))
+        except subprocess.TimeoutExpired:
+            raise GhError(f"gh {' '.join(args[:2])} timed out", True)
         transient = proc.returncode != 0 and bool(TRANSIENT.search(proc.stderr))
         if not transient and proc.returncode in allow:
             return proc
         lines = proc.stderr.strip().splitlines()
         message = lines[-1] if lines else f"gh exited {proc.returncode}"
-        if not transient or attempt == 4:
+        if not transient or attempt == 4 or time.monotonic() + delay > deadline:
             raise GhError(message, transient)
         log(f"gh {' '.join(args[:2])}: {message}; retry in {delay}s")
         time.sleep(delay)
@@ -142,15 +170,50 @@ def gh_lines(args: list[str]) -> list[str]:
     return [line for line in gh(args).stdout.splitlines() if line]
 
 
-def bot_name(text: str | None) -> str | None:
-    """Which review bot a login or check name belongs to, if any."""
-    lowered = (text or "").lower()
-    return next((bot for bot in GATING_BOTS + ADVISORY_BOTS if bot in lowered), None)
+def origin_repo():
+    """None when origin is no github.com repo. Read from the configured URL, before any insteadOf rewrites it."""
+    url = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True).stdout.strip()
+    m = re.search(r"(?:^|[@/])github\.com(?::\d+)?[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", url, re.I)
+    return m.group(1) if m else None
+
+
+def review_bot() -> tuple[str | None, set[str]]:
+    """The review bot's REST login and the bases it reviews, from the checkout's workflow.md."""
+    root = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
+    try:
+        text = (Path(root) / "docs" / "agents" / "workflow.md").read_text() if root else ""
+    except OSError:
+        text = ""
+    line = re.search(r"^.*\*\*Review bot\*\*.*$", text, re.M)
+    if not line:
+        return DEFAULT_BOT
+    names = re.findall(r"`([^`\n]+)`", line.group(0))
+    logins = [n for n in names if n.endswith("[bot]")]
+    if not logins:
+        return None, set()
+    return logins[0], {n for n in names if not n.endswith("[bot]")} or {"main"}
+
+
+def same_login(graphql_login: str | None, rest_login: str | None) -> bool:
+    """GraphQL names a bot `coderabbitai`, REST `coderabbitai[bot]`."""
+    return bool(rest_login) and (graphql_login or "").lower() == rest_login.lower().removesuffix("[bot]")
+
+
+def bot_check(name: str, bot: str | None) -> bool:
+    """A check run the review bot posts itself (CodeRabbit's `CodeRabbit`), which never gates."""
+    word = re.match(r"[a-z0-9]+", name.lower())
+    login = re.sub(r"[^a-z0-9]", "", (bot or "").lower().removesuffix("[bot]"))
+    return bool(word) and len(word.group(0)) >= 4 and login.startswith(word.group(0))
 
 
 def who(node: Json) -> tuple[str, bool]:
     author = node.get("author") or {}
     return author.get("login") or "ghost", author.get("__typename") == "Bot"
+
+
+def ours(node: Json) -> bool:
+    """A comment the agent posted, which opens with the attribution note."""
+    return bool(ATTRIBUTION.match(node.get("body") or ""))
 
 
 def plain(body: str) -> str:
@@ -163,16 +226,9 @@ def snippet(body: str, limit: int = 100) -> str:
     return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
-def verdict(body: str) -> str:
-    """The verdict line of a bot summary (Macroscope, Greptile), if it has one."""
-    for line in plain(body).splitlines():
-        if re.search(r"verdict|confidence score", line, re.IGNORECASE):
-            return snippet(line.replace("*", ""), 80)
-    return ""
-
-
-def digest(body: str) -> str:
-    return hashlib.sha1(re.sub(r"\s+", " ", plain(body)).encode()).hexdigest()[:12]
+def section(body: str, markers: tuple[str, str]) -> str:
+    start, end = markers
+    return body.split(start, 1)[1].split(end, 1)[0] if start in body else ""
 
 
 def parse_target(raw: str | None, repo: str | None) -> tuple[str, int]:
@@ -189,13 +245,12 @@ def parse_target(raw: str | None, repo: str | None) -> tuple[str, int]:
         fail(f"'{raw}' is not a PR number or PR URL")
     if pr <= 0:
         fail(f"'{raw}' is not a valid PR number")
+    repo = repo or origin_repo()
     if not repo:
-        try:
-            repo = gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]).stdout.strip()
-        except GhError as error:
-            fail(f"no --repo given and the current directory has no GitHub repo ({error})")
+        fail("no --repo given and origin names no github.com repo: run it in the PR's checkout")
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo):
         fail(f"'{repo}' is not owner/name")
+    os.environ["GH_REPO"] = repo  # an inherited GH_REPO would point gh at another repo
     try:
         gh(["pr", "view", str(pr), "-R", repo, "--json", "number"])
     except GhError as error:
@@ -246,17 +301,20 @@ def required_checks(repo: str, base: str) -> set[str]:
 
 
 class Watcher:
-    def __init__(self, repo: str, pr: int, until: str, interval: int) -> None:
-        self.repo, self.pr, self.until, self.interval = repo, pr, until, interval
+    def __init__(self, repo: str, pr: int, until: str, interval: float, minutes: float,
+                 bot: str | None, bases: set[str]) -> None:
+        self.repo, self.pr, self.until, self.interval, self.minutes = repo, pr, until, interval, minutes
+        self.bot, self.bases = bot, bases
         self.owner, self.name = repo.split("/")
         self.path = STATE_DIR / f"{repo.replace('/', '__')}__{pr}.json"
         state = self.load()
         # First run for this PR: record what exists and report nothing.
         self.baseline = state is None
-        self.state: Json = state or {"reported": [], "summaries": {}, "base_oid": None, "merge_state": None}
+        self.state: Json = state or {"reported": [], "base_oid": None, "merge_state": None}
         self.reported: set[str] = set(self.state["reported"])
         self.printed: set[str] = set()
         self.events = 0
+        self.head: str | None = None
         self.required: set[str] | None = None
         self.prev_snapshot: list[tuple[str, str]] | None = None
         self.pr_files: dict[str, set[str]] = {}
@@ -341,7 +399,33 @@ class Watcher:
             return ""
         return f"; {count} commit{'' if count == '1' else 's'} behind {base}"
 
+    def bot_verdict(self, head: str, comments: list[Json], reviews: list[Json], threads: list[Json]) -> str | None:
+        """The review bot's verdict on head. A review counts when it has a body or starts a thread of its own;
+        one holding only thread replies does not."""
+        starters = {(nodes[0].get("pullRequestReview") or {}).get("databaseId")
+                    for nodes in (t["comments"]["nodes"] for t in threads) if nodes and same_login(who(nodes[0])[0], self.bot)}
+        ids = [str(r["databaseId"]) for r in reviews
+               if same_login(who(r)[0], self.bot) and (r.get("commit") or {}).get("oid") == head
+               and ((r.get("body") or "").strip() or r["databaseId"] in starters)]
+        if ids:
+            return "reviews " + " ".join(ids)
+        for comment in comments:
+            if not same_login(who(comment)[0], self.bot):
+                continue
+            body = comment.get("body") or ""
+            if f"and {head}" in section(body, RATE_LIMITED):
+                return "rate limited"
+            if "Reviews paused" in body and f"Latest commit, not reviewed: {head}" in body:
+                return "paused"
+            if "review in progress" in body:
+                return None
+            recent = section(body, RECENT)  # names the reviewed range; the verdict sits here or in the status block
+            if f"and {head}" in recent and (NO_FINDINGS in recent or NO_FINDINGS in section(body, STATUS)):
+                return "clean"
+        return None
+
     def poll(self) -> None:
+        global deadline
         pr = self.fetch_pr()
         if pr["state"] == "MERGED":
             self.finish(0, [f"merged: {pr['url']}"])
@@ -349,22 +433,25 @@ class Watcher:
             self.finish(1, [f"closed without merging: {pr['url']}"])
 
         base = pr["baseRefName"]
+        gating = bool(self.bot) and base in self.bases
         if self.required is None:
             self.required = required_checks(self.repo, base)
             gate = ", ".join(sorted(self.required)) or "none set, so every CI check gates"
-            log(f"watching {self.repo}#{self.pr} until {self.until}; required checks: {gate}")
+            log(f"watching {self.repo}#{self.pr} until {self.until} for {self.minutes:g} minutes; required checks: {gate}; "
+                f"review bot: {self.bot if gating else 'none on ' + base}")
         checks = self.fetch_checks()
         head = pr["headRefOid"]
         short = head[:7]
-        mine = {who(pr)[0], pr["viewer"]}
+        if head != self.head:  # a push restarts the deadline
+            self.head, deadline = head, time.monotonic() + self.minutes * 60
         comments = pr["comments"]["nodes"]
         reviews = pr["reviews"]["nodes"]
         threads = pr["reviewThreads"]["nodes"]
         self.events = 0
 
         # Required checks. With no required checks configured, every CI check
-        # gates except the review bots' own checks.
-        gate = self.required or {name for name in checks if not bot_name(name)}
+        # gates except the review bot's own check.
+        gate = self.required or {name for name in checks if not bot_check(name, self.bot)}
         label = "required check" if self.required else "check"
 
         def bucket(name: str) -> str:
@@ -376,7 +463,7 @@ class Watcher:
                 link = checks[name]["link"]
                 fail_lines.append(f"{label} failed: {name} {link}")
                 self.emit(f"fail:{head}:{name}:{link}", fail_lines[-1])
-        watched = {name: c for name, c in checks.items() if bot_name(name) not in ADVISORY_BOTS}
+        watched = {name: c for name, c in checks.items() if not bot_check(name, self.bot)}
         gate_done = bool(gate) and all(bucket(n) != "pending" for n in gate)
         all_done = gate_done and all(c["bucket"] != "pending" for c in watched.values())
         # Checks appear a few seconds after a push. Two identical polls in a row
@@ -386,15 +473,16 @@ class Watcher:
         self.prev_snapshot = snapshot
         green = gate_done and stable and not fail_lines
 
-        # People and bots talking. Edits are never events.
+        # People and bots talking. Edits are never events. The maintainer and the agent share the gh account, so the
+        # agent's own comments are told apart by their attribution note, and the review bot speaks through its verdict.
         for comment in comments:
             login, is_bot = who(comment)
-            if login in mine or bot_name(login) or (is_bot and any(b in login for b in STATUS_BOTS)):
+            if ours(comment) or same_login(login, self.bot) or (is_bot and any(b in login for b in STATUS_BOTS)):
                 continue
             self.emit(f"c:{comment['id']}", f"comment from {login}: {snippet(comment['body'])} {comment['url']}")
         for review in reviews:
             login, is_bot = who(review)
-            if login in mine or is_bot:
+            if ours(review) or is_bot:
                 continue
             if review["state"] in ("APPROVED", "CHANGES_REQUESTED") or review["body"].strip():
                 state = review["state"].lower().replace("_", " ")
@@ -407,50 +495,21 @@ class Watcher:
             where = f"{thread['path']}:{thread['line']}" if thread["line"] else thread["path"]
             for index, comment in enumerate(nodes):
                 login, _ = who(comment)
-                if login in mine:
+                if ours(comment) or same_login(login, self.bot):
                     continue
                 kind = "new thread" if index == 0 else "thread reply"
                 self.emit(f"c:{comment['id']}", f"{kind} from {login} on {where}: {snippet(comment['body'])} {comment['url']}")
 
-        # Review bots on the current head. A bot with checks is done when they
-        # finish. Otherwise it is done once it reviews the head commit or its
-        # summary names the head.
-        bot_status: dict[str, str] = {}
-        reviewed: list[str] = []
-        for bot in GATING_BOTS + ADVISORY_BOTS:
-            own_checks = {name: c for name, c in checks.items() if bot_name(name) == bot}
-            summaries = [c for c in comments if bot_name(who(c)[0]) == bot]
-            own_reviews = [r for r in reviews if bot_name(who(r)[0]) == bot]
-            on_head = any((r.get("commit") or {}).get("oid") == head for r in own_reviews)
-            if own_checks:
-                done = all(c["bucket"] != "pending" for c in own_checks.values())
-            else:
-                done = on_head or any(short in s["body"] for s in summaries)
-            seen = bool(own_checks or summaries or own_reviews)
-            if bot in ADVISORY_BOTS and own_checks:
-                desc = next(iter(own_checks.values()))
-                bot_status[bot] = f"{bot} {desc['description'] or desc['bucket']} (advisory)"
-            elif seen:
-                bot_status[bot] = f"{bot} {'done' if done else 'pending'}{' (advisory)' if bot in ADVISORY_BOTS else ''}"
-            key = f"bot:{bot}:{head}"
-            was_done = key in self.reported
-            if done:
-                if bot in GATING_BOTS:
-                    reviewed.append(bot)
-                failed = [name for name, c in own_checks.items() if c["bucket"] in FAILED]
-                detail = "; ".join(filter(None, [
-                    next((v for v in map(verdict, (s["body"] for s in summaries)) if v), ""),
-                    f"failed: {', '.join(failed)}" if failed else "",
-                ]))
-                tag = " (advisory, not waited on)" if bot in ADVISORY_BOTS else ""
-                self.emit(key, f"{bot} finished on {short}{': ' + detail if detail else ''}{tag}")
-            if bot in GATING_BOTS:
-                for s in summaries:
-                    new, old = digest(s["body"]), self.state["summaries"].get(s["id"])
-                    self.state["summaries"][s["id"]] = new
-                    if was_done and old and old != new:
-                        text = verdict(s["body"]) or snippet(s["body"])
-                        self.emit(f"summary:{s['id']}:{new}", f"{bot} summary changed on {short}: {text} {s['url']}")
+        # The review bot's verdict on the current head.
+        verdict = self.bot_verdict(head, comments, reviews, threads) if self.bot else None
+        bot_lines: list[str] = []
+        if verdict in ("rate limited", "paused"):
+            bot_lines = [f"{self.bot} {verdict} on {short}: it will not review this head on its own"]
+        elif verdict:
+            bot_lines = [f"{self.bot} reviewed {short}: {verdict}"]
+        if verdict:
+            self.emit(f"bot:{head}:{verdict}", bot_lines[0])
+        bot_status = f"{self.bot} {verdict or 'pending'}" if gating else f"no review bot on {base}"
 
         # Base branch and merge state.
         base_oid = ((pr.get("baseRef") or {}).get("target") or {}).get("oid")
@@ -485,9 +544,8 @@ class Watcher:
             f"required {sum(bucket(n) in ('pass', 'skipping') for n in self.required)}/{len(self.required)} green"
             if self.required
             else "",
-            ", ".join(bot_status[b] for b in GATING_BOTS + ADVISORY_BOTS if b in bot_status)
-            or "no Greptile or Macroscope yet",
-            f"{len(unresolved)} unresolved threads",
+            bot_status,
+            f"{len(unresolved)} unresolved thread{'' if len(unresolved) == 1 else 's'}",
             f"merge state {merge_state}",
         ]
         summary = "; ".join(p for p in parts if p)
@@ -503,20 +561,26 @@ class Watcher:
             if green and self.until == "green":
                 self.reported.add(checks_key)
                 self.finish(0, [f"green on {short}: {summary}{self.behind(base, base_oid, head)}"])
-            # ready waits for Greptile or Macroscope, never for CodeRabbit.
-            if green and reviewed:
+        if self.until == "ready":
+            if gating and verdict in ("rate limited", "paused"):
+                self.finish(1, bot_lines)
+            # ready waits for the review bot's verdict only on a base it reviews.
+            if green and (verdict or not gating):
                 if unresolved:
-                    self.finish(1, [f"blocked by {len(unresolved)} unresolved threads on {short}: {' '.join(unresolved)}"])
+                    s = "" if len(unresolved) == 1 else "s"
+                    self.finish(1, bot_lines + [f"blocked by {len(unresolved)} unresolved thread{s} on {short}: {' '.join(unresolved)}"])
                 if merge_state == "BEHIND":
-                    self.finish(1, [behind_line])
+                    self.finish(1, bot_lines + [behind_line])
                 self.reported.add(checks_key)
-                self.finish(0, [f"ready on {short}: {summary}{self.behind(base, base_oid, head)}"])
+                self.finish(0, bot_lines + [f"ready on {short}: {summary}{self.behind(base, base_oid, head)}"])
         if all_done and (stable or self.baseline):
             self.emit(checks_key, f"checks finished on {short}: {summary}")
         if self.until == "any-change" and self.events:
             self.finish(0)
 
     def run(self) -> NoReturn:
+        global deadline
+        deadline = time.monotonic() + self.minutes * 60
         failures = 0
         while True:
             try:
@@ -534,19 +598,25 @@ class Watcher:
                 if self.baseline:
                     log(f"baseline recorded for {self.repo}#{self.pr}; reporting only new events")
                 self.baseline = False
-            time.sleep(self.interval)
+            left = deadline - time.monotonic()
+            if left <= 0:
+                goal = "event" if self.until == "any-change" else self.until
+                self.finish(1, [f"deadline passed: no {goal} on {(self.head or '?')[:7]} after {self.minutes:g} minutes"])
+            time.sleep(min(self.interval, left))
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="pr-wait", description="Watch a GitHub PR and print one line per real event.")
     parser.add_argument("pr", nargs="?", help="PR number or URL")
-    parser.add_argument("--repo", help="owner/name (default: from the URL or the current checkout)")
+    parser.add_argument("--repo", help="owner/name (default: from the URL or origin)")
     parser.add_argument("--until", choices=("green", "ready", "any-change"), default="ready")
-    parser.add_argument("--interval", type=int, default=20, help="seconds between polls (default 20, min 5)")
+    parser.add_argument("--minutes", type=float, default=20, help="deadline after the last head change (default 20)")
+    parser.add_argument("--interval", type=float, default=20, help="seconds between polls (default 20)")
     args = parser.parse_args()
     repo, pr = parse_target(args.pr, args.repo)
     _lock = lock(repo, pr)
-    Watcher(repo, pr, args.until, max(args.interval, 5)).run()
+    bot, bases = review_bot()
+    Watcher(repo, pr, args.until, max(args.interval, 0), args.minutes, bot, bases).run()
 
 
 if __name__ == "__main__":

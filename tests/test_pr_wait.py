@@ -4,7 +4,7 @@
 Each case is one PR state, served by a fake `gh` on PATH that logs every call
 with the GH_REPO it carried. The GraphQL answer comes from the case's `polls`
 list, one entry per poll (the last one repeats), or from its `timeline`, picked
-by the seconds since the first poll. The watcher runs in a checkout whose origin
+by the seconds since the first poll; `check_polls` does the same for the checks. The watcher runs in a checkout whose origin
 is acme/ledger on github.com, with HOME in the case's directory so its lock and
 state files stay there. The summary-comment bodies copy the shapes CodeRabbit
 writes: its status and recent-review blocks, the rate-limit and the pause notice.
@@ -60,7 +60,7 @@ if n < fix.get("fail", {}).get(name, 0):
 if name == "view":
     print(json.dumps({"number": 1}))
 elif name == "checks":
-    rows = fix.get("checks", [])
+    rows = fix["check_polls"][min(n, len(fix["check_polls"]) - 1)] if "check_polls" in fix else fix.get("checks", [])
     if not rows:
         print("no checks reported on the 'feat/1-x' branch", file=sys.stderr)
         sys.exit(1)
@@ -153,11 +153,14 @@ CASES = {
     "a required check not yet started": (dict(
         polls=[pr()], required=["test"], args=["--until", "green", *QUIET],
         checks=[{"name": "lint", "bucket": "pass", "link": "https://ci/lint", "description": ""}]),
-        1, ["deadline passed"], "green on"),
+        1, ["deadline passed"], "#1 green on"),
     "checks green": (dict(polls=[pr()], required=["test"], checks=GREEN, args=["--until", "green"]),
                      0, ["green on 1111111"], "deadline"),
+    "a check that registers late is not green by omission": (dict(
+        polls=[pr()], check_polls=[GREEN, GREEN + [{"name": "e2e", "bucket": "pending", "link": "", "description": ""}]],
+        args=["--until", "green", *QUIET]), 1, ["deadline passed"], "#1 green on"),
     "a check failed": (dict(polls=[pr()], required=["test"], checks=FAILED),
-                       1, ["required check failed: test https://ci/test"], "ready on"),
+                       1, ["required check failed: test https://ci/test"], "#1 ready on"),
     "a human comment from the gh user": (dict(
         polls=[pr(), pr(comments=[comment(HUMAN)])], checks=GREEN, args=["--until", "any-change"]),
         0, [f"comment from kaminski-dev: {HUMAN}"], "deadline"),
@@ -172,7 +175,7 @@ CASES = {
         0, ["thread reply from kaminski-dev on src/app.py:12: Still unsure."], "Because"),
     "an unresolved thread blocks ready": (dict(
         polls=[pr(reviews=[review(7, "Two findings.")], threads=[thread(inline(7))])], checks=GREEN),
-        1, ["coderabbitai[bot] reviewed 1111111: reviews 7", "blocked by 1 unresolved thread"], "ready on"),
+        1, ["coderabbitai[bot] reviewed 1111111: reviews 7", "blocked by 1 unresolved thread"], "#1 ready on"),
     "the base moved over touched files": (dict(
         polls=[pr(), pr(base=MOVED)], checks=GREEN, files=["src/app.py", "README.md"], moved=["src/app.py", "docs/a.md"],
         args=["--until", "any-change"]), 0, ["main moved to bbbbbbb and touches files in this PR: src/app.py"], "deadline"),
@@ -181,14 +184,14 @@ CASES = {
         args=["--until", "any-change", *QUIET]), 1, ["deadline passed"], "moved"),
     "BEHIND": (dict(polls=[pr(), pr(merge="BEHIND")], checks=GREEN, args=["--until", "any-change"]),
                0, ["merge state is BEHIND"], "deadline"),
-    "DIRTY": (dict(polls=[pr(merge="DIRTY")], checks=GREEN), 1, ["merge state is DIRTY"], "ready on"),
+    "DIRTY": (dict(polls=[pr(merge="DIRTY")], checks=GREEN), 1, ["merge state is DIRTY"], "#1 ready on"),
     "merged": (dict(polls=[pr(state="MERGED")]), 0, ["merged: https://github.com/acme/ledger/pull/1"], "deadline"),
     "closed": (dict(polls=[pr(state="CLOSED")]), 1, ["closed without merging"], "deadline"),
     "a 5xx then success": (dict(polls=[pr()], required=["test"], checks=GREEN, fail={"graphql": 1},
                                 args=["--until", "green", "--minutes", "0.5"], err="HTTP 502"),
                            0, ["green on 1111111"], "stopped"),
     "the deadline passing": (dict(polls=[pr()], checks=GREEN, args=QUIET),
-                             1, ["deadline passed: no ready on 1111111 after"], "ready on"),
+                             1, ["deadline passed: no ready on 1111111 after"], "#1 ready on"),
     "the bot login read from workflow.md": (dict(
         polls=[pr(reviews=[review(8, "x"), review(9, "y", author={"login": "greptile-apps", "__typename": "Bot"})])],
         checks=GREEN, checkout="greptile"), 0, ["greptile-apps[bot] reviewed 1111111: reviews 9", "ready on"], "reviews 8"),
@@ -216,9 +219,9 @@ CASES = {
         polls=[pr(comments=[summary(reviewed(HEAD), "review in progress by coderabbit.ai\n")])], checks=GREEN, args=QUIET),
         1, ["deadline passed"], "clean"),
     "rate limited on the head": (dict(polls=[pr(comments=[summary(reviewed(OLD), rate_limited(HEAD))])], checks=GREEN),
-                                 1, ["coderabbitai[bot] rate limited on 1111111"], "ready on"),
+                                 1, ["coderabbitai[bot] rate limited on 1111111"], "#1 ready on"),
     "paused after the head commit": (dict(polls=[pr(comments=[summary(notice=paused(OLD, HEAD))])], checks=GREEN),
-                                     1, ["coderabbitai[bot] paused on 1111111"], "ready on"),
+                                     1, ["coderabbitai[bot] paused on 1111111"], "#1 ready on"),
     "a pause naming an older commit": (dict(polls=[pr(comments=[summary(notice=paused(OLD, OLD))])], checks=GREEN, args=QUIET),
                                        1, ["deadline passed"], "paused"),
     "a push to the head restarts the deadline": (dict(
