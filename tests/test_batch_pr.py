@@ -83,7 +83,6 @@ class Workspace:
         return r, log.read_text() if log.exists() else ""
 
     def repos_asked(self):
-        """The repo each gh call so far was asked for, as the stand-in logged it."""
         log = self.root / ".tracker" / "repos.log"
         return [line.split("\t", 1)[0] for line in log.read_text().splitlines()] if log.exists() else []
 
@@ -237,8 +236,6 @@ check("unknown merge commit: exits 1 and names the PR",
       r.returncode == 1 and "#52" in r.stderr and "## Lines" not in r.stdout, (r.returncode, r.stdout, r.stderr))
 ws.remove()
 
-# Merge commits on pre-main, but gh lists no merged PR for them (a repo that is not where they were merged):
-# stop and name the repo asked, rather than print an empty batch.
 ws = Workspace()
 ws.git("branch", "pre-main")
 ws.git("checkout", "-q", "-b", "fix/701-merged")
@@ -252,7 +249,6 @@ check("merge commits but no merged PR: exits 1 and names the repo asked",
       r.returncode == 1 and "acme/ledger" in r.stderr and "## PRs" not in r.stdout, (r.returncode, r.stdout, r.stderr))
 ws.remove()
 
-# Commits pushed onto pre-main directly, as the push route for batch-review fixes does, have no PR.
 ws = Workspace()
 ws.git("branch", "pre-main")
 ws.git("checkout", "-q", "pre-main")
@@ -260,7 +256,7 @@ ws.commit("pushed")
 ws.push()
 ws.state([])
 r, _ = ws.run()
-check("a direct commit and no merged PR: an empty batch, exit 0", r.returncode == 0 and "## PRs" in r.stdout,
+check("a commit pushed onto pre-main (the push route) and no merged PR: an empty batch, exit 0", r.returncode == 0 and "## PRs" in r.stdout,
       (r.returncode, r.stdout, r.stderr))
 ws.remove()
 

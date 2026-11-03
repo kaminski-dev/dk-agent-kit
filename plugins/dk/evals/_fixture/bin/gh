@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Stand-in for the GitHub CLI inside an eval workspace: nothing leaves the machine.
 
-State lives in <workspace>/.tracker/state.json. Every call is logged to
-.tracker/calls.log, and to .tracker/repos.log after the repo it was asked for (--repo or -R,
-else GH_REPO, else `-` for the checkout's own) and a tab; what the graders read is written as plain text:
+State lives in <workspace>/.tracker/state.json. Every call is logged to .tracker/calls.log.
+.tracker/repos.log logs it too, as the repo it was asked for, a tab, the call; that repo is
+--repo or -R, else GH_REPO, else `-` (the checkout's own). What the graders read is written as plain text:
 .tracker/issue-<N>.md (labels, state and every comment), .tracker/pr.md
 (the last PR opened, with the acceptance result for its head branch) and
 .tracker/pulls/<N>.md (the last PR for issue N, read from a <type>/<N>-<slug> head); "last" is

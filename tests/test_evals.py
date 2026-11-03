@@ -406,7 +406,6 @@ got = ready_py()
 check("ready.py: leaves out the native-blocked #371 and the body-blocked #375",
       got == ([370, 372, 373, 376], {371: [372], 375: [372]}), got)
 
-# A session started in another checkout carries that repo's GH_REPO; ready.py asks about origin's repo all the same.
 repos_log = ws / ".tracker" / "repos.log"
 repos_log.write_text("")
 r = run(ws, f"GH_REPO=kaminski-dev/dk-agent-kit python3 -I '{READY_PY}'", cwd=ws / "app")
