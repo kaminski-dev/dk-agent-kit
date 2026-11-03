@@ -161,6 +161,15 @@ CASES = {
         args=["--until", "green", *QUIET]), 1, ["deadline passed"], "#1 green on"),
     "no checks and none required, stable over two polls, is green": (dict(polls=[pr()], args=["--until", "green"]),
                                                                        0, ["green on 1111111: no checks reported"], "deadline"),
+    "the review bot's own check never gates": (dict(
+        polls=[pr()], args=["--until", "green"],
+        checks=GREEN + [{"name": "CodeRabbit", "bucket": "pending", "link": "", "description": ""}]),
+        0, ["green on 1111111"], "deadline"),
+    "a check named like the bot's first letters gates": (dict(
+        polls=[pr()], args=["--until", "green"],
+        checks=GREEN + [{"name": n, "bucket": "fail", "link": "https://ci/x", "description": ""}
+                        for n in ("code-lint", "Code style", "coder")]),
+        1, ["check failed: code-lint", "check failed: Code style", "check failed: coder"], "#1 green on"),
     "a check failed": (dict(polls=[pr()], required=["test"], checks=FAILED),
                        1, ["required check failed: test https://ci/test"], "#1 ready on"),
     "a human comment from the gh user": (dict(
