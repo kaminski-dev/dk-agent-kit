@@ -165,8 +165,11 @@ CASES = {
     "a check that registers late is not green by omission": (dict(
         polls=[pr()], check_polls=[GREEN, GREEN + [{"name": "e2e", "bucket": "pending", "link": "", "description": ""}]],
         args=["--until", "green", *QUIET]), 1, ["deadline passed"], "#1 green on"),
-    "no checks and none required, stable over two polls, is green": (dict(polls=[pr()], args=["--until", "green"]),
-                                                                       0, ["green on 1111111: no checks reported"], "deadline"),
+    "no checks and none required on a fresh head is not green yet": (dict(polls=[pr()], args=["--until", "green", *QUIET]),
+                                                                      1, ["deadline passed"], "#1 green on"),
+    "no checks and none required, stable, on a head seen 3 minutes ago is green": (dict(
+        polls=[pr()], env={"PR_WAIT_REGISTER_SECONDS": "0"}, args=["--until", "green"]),
+        0, ["green on 1111111: no checks reported"], "deadline"),
     "the review bot's own check never gates": (dict(
         polls=[pr()], args=["--until", "green"],
         checks=GREEN + [{"name": "CodeRabbit", "bucket": "pending", "link": "", "description": ""}]),
