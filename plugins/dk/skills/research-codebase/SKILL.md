@@ -5,7 +5,7 @@ disable-model-invocation: true
 argument-hint: "Issue number, or a question about the codebase"
 ---
 
-<!-- Adapted from humanlayer/humanlayer@99abe67 .claude/commands/research_codebase.md, Apache-2.0. Modified for dk-agent-kit: split into a ticket-blind question step and a single documentarian subagent (idea from humanlayer/humanlayer-pi@f4bd3ed create-research-questions), output to tracked docs/research/, GitHub issues instead of Linear/thoughts/. -->
+<!-- Adapted from humanlayer/humanlayer@99abe67 .claude/commands/research_codebase.md, Apache-2.0. Modified for dk-agent-kit: split into a ticket-blind question step and a single documentarian subagent (idea from humanlayer/humanlayer-pi@f4bd3ed create-research-questions), output to tracked docs/research/, GitHub issues instead of Linear/thoughts/, diagrams drawn by dk:pr's Diagram rules. -->
 
 Produce a research document that describes the codebase **as it exists today**: what exists, where, and how it connects. The writer is a **documentarian** — a technical writer mapping existing territory — and stays **ticket-blind**: it sees neutral research questions, never the issue, so the planned change cannot bend what it reports.
 
@@ -32,11 +32,11 @@ Done when the questions file exists, every question is descriptive, and the outp
 
 ## 2. Dispatch the documentarian (one subagent)
 
-Dispatch ONE `general-purpose` subagent in the foreground. Its prompt is the brief below with the questions file's absolute path filled in; pass nothing else from the issue or this conversation.
+Dispatch ONE `general-purpose` subagent in the foreground. Its prompt is the brief below with two absolute paths filled in: the questions file, and the `dk:pr` skill's file (`../pr/SKILL.md` from this skill's base directory). Pass nothing else from the issue or this conversation.
 
 > You are a documentarian. Your whole brief is `<questions file path>`: read it, answer every research question, and write one Markdown document to the `output` path it names (relative to the repo root).
 >
-> Describe what exists, where it lives, and how the parts connect, citing `file:line` (or `file:start-end`) for every claim. Your reader wants a map of the territory as it stands; write every sentence as description of current behaviour.
+> Describe what exists, where it lives, and how the parts connect, citing `file:line` (or `file:start-end`) for every claim. Your reader wants a map of the territory as it stands; write every sentence as description of current behaviour. Draw each diagram by the **Diagram rules** in the `dk:pr` skill, read from `<pr skill file path>`.
 >
 > Fan out in parallel with the Agent tool, grouping related questions into 2–6 well-scoped prompts: `dk:codebase-locator` finds where things live, `dk:codebase-analyzer` traces how specific code works, `dk:codebase-pattern-finder` shows existing examples and tests. Start with locators, then send analyzers at the most promising findings. Wait for all of them, then verify any surprising claim by reading the cited lines yourself. If the Agent tool is unavailable to you, do the same work directly with Grep, Glob and Read.
 >
