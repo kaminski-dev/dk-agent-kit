@@ -35,6 +35,6 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 7. Once all tickets are complete, call the Skill tool with `dk:verify` and prove the whole spec in a running stack, then call the Skill tool with `dk:code-review` on the integration branch against `origin/<base>`. A single fresh **implementer subagent** answers its findings by `dk:code-review`'s **Answer findings** step (ledger, round budget, shortstat), as `dk:implement` does.
 
-8. Open one PR from the integration branch into the base, body from the `dk:pr` skill, with a `Closes #N` (or `Refs #N`, per `dk:issue-flow`) line for the spec and for every ticket.
+8. Open one PR from the integration branch into the base, body from the `dk:pr` skill, with a `Closes #N` (or `Refs #N`, per `dk:issue-flow`) line for the spec and for every ticket, then watch it and hand it over through `dk:issue-flow` step 6's **Ready gate.**
 
 9. Clean up all remaining **implementer subagent** worktrees.
