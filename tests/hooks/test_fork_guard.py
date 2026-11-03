@@ -54,6 +54,7 @@ def assert_allowed(result):
 
 def case_a_fork_handed_a_worktree_path_is_denied():
     assert_denied(run(fork(WORKTREE_BRIEF)))
+    assert_denied(run(fork("The worktree already exists. Commit per green step and report the SHAs.")))
 
 
 def case_a_fork_handed_a_worktree_path_and_its_branch_is_denied():
@@ -70,15 +71,29 @@ def case_a_fork_told_to_implement_an_issue_is_denied():
     assert_denied(run(fork("Carry out the work and report back.", description="Implement #44 search order")))
 
 
+def case_a_fork_assigned_a_ticket_in_other_words_is_denied():
+    assert_denied(run(fork("You are responsible for ticket #42. Fix the checkout bug in /home/u/acme-42 and open the PR.")))
+    assert_denied(run(fork("Take issue #45 and report back the commit list.")))
+    assert_denied(run(fork("Fix ticket #46 in the shared checkout.")))
+    assert_denied(run(fork("The empty-cart crash is #47; when it passes, open a PR against pre-main.")))
+
+
 def case_a_fork_handed_a_git_worktree_command_is_denied():
     assert_denied(run(fork("Verify on a fresh checkout: `git worktree add ~/workspace/acme-verify --detach "
                            "origin/main`, drive the stack, report PASS or FAIL per check.")))
+    assert_denied(run(fork("Run `git -C . worktree add ../acme-42 -b fix/42` and work there.")))
+    assert_denied(run(fork('Run git -C "my repo" worktree add ../acme-43 -b fix/43, then work there.')))
 
 
 def case_a_read_only_sweep_fork_is_allowed():
     assert_allowed(run(fork(SWEEP_BRIEF, description="Sweep components")))
     assert_allowed(run(fork("Read src/billing/ and list every caller of charge() with file:line. Change nothing.",
                             description="Map charge callers")))
+
+
+def case_a_sweep_fork_told_the_worktree_already_exists_is_allowed():
+    assert_allowed(run(fork("The worktree already exists; do not commit. Read src/cart/ and list every TODO with "
+                            "file:line for #41, and do not open a PR.", description="List cart TODOs")))
 
 
 def case_a_sweep_fork_in_the_parents_worktree_and_branch_is_allowed():
