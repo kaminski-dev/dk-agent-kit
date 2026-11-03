@@ -192,6 +192,10 @@ CASES = {
     "a 5xx then success": (dict(polls=[pr()], required=["test"], checks=GREEN, fail={"graphql": 1},
                                 args=["--until", "green", "--minutes", "0.5"], err="HTTP 502"),
                            0, ["green on 1111111"], "stopped"),
+    "a 5xx reading the required checks is retried, not read as none required": (dict(
+        polls=[pr()], required=["test"], fail={"rules": 1}, args=["--until", "green", *QUIET],
+        checks=GREEN + [{"name": "lint", "bucket": "fail", "link": "https://ci/lint", "description": ""}]),
+        0, ["green on 1111111", "required 1/1 green"], "check failed"),
     "the deadline passing": (dict(polls=[pr()], checks=GREEN, args=QUIET),
                              1, ["deadline passed: no ready on 1111111 after"], "#1 ready on"),
     "the bot login read from workflow.md": (dict(
