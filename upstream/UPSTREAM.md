@@ -7,7 +7,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 - **Section heading**: `## <owner>/<repo> [label] (<license>) @ <short commit>`. The first word is the GitHub repo; the commit ends the line. One commit per section: a file taken at another commit of the same repo gets its own section.
 - **Upstream path column** (the second): paths from the repo root, comma-separated, no globs and no shorthand (`pstack/skills/a, pstack/skills/b`, not `pstack/skills/a, b`). A directory covers everything under it. Backticks are ignored.
 
-## mattpocock/skills (MIT) @ 49dd158
+## mattpocock/skills (MIT) @ 4ae2317
 
 | dk skill | Upstream path | Changes |
 |---|---|---|
