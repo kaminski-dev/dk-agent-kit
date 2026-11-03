@@ -10,7 +10,8 @@ before a zsh modifier, a variable holding a spaced command as the command, a
 function named like one of the user's zsh aliases) or blocked the session (a CI
 or merge wait outside run_in_background) or dropped the issue body (`gh issue
 view --comments`) or a dk:verify run's evidence (`rm` inside a verify.XXXXXX run
-directory), ask for
+directory) or ran a Markdown code span (a backtick span in an unquoted here-doc
+body), ask for
 rewriting the shared pre-main branch, a push to the current branch when the
 guard cannot tell which branch that is, or answering dk-gc's question for the
 human (--yes, piped input), and
@@ -52,20 +53,27 @@ PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:(?:sudo|command|exec|nohup|time|
 END = r"[^;&|\n)`]*"
 
 
-def strip_heredocs(cmd):
-    """Drop heredoc bodies; they are data, not commands."""
-    lines, out, i = cmd.split("\n"), [], 0
+def heredoc_lines(cmd):
+    """Yield (line, None) for each command line and (line, expands) for each line of a heredoc body, `expands`
+    True when its delimiter is unquoted."""
+    lines, i = cmd.split("\n"), 0
     while i < len(lines):
         line = lines[i]
-        out.append(line)
         i += 1
-        for dash, _, delim in re.findall(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2", line):
+        yield line, None
+        for dash, quote, delim in re.findall(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2", line):
             while i < len(lines):
                 body = lines[i]
                 i += 1
                 if (body.lstrip("\t") if dash else body) == delim:
                     break
-    return "\n".join(out)
+                yield body, not quote
+
+
+def strip_heredocs(cmd):
+    """The command lines without heredoc bodies, for the raw-string command checks; check_heredoc_backticks reads
+    the bodies that expand."""
+    return "\n".join(line for line, expands in heredoc_lines(cmd) if expands is None)
 
 
 def segments(cmd, program):
@@ -118,6 +126,7 @@ class Segment:
         self.shell, self.substituted = shell, substituted
         self.words, self.redirects, self.subs, self.scripts = [], [], [], set()
         self.modifier_names = []  # `$name:x`, x a zsh modifier, unquoted or double-quoted
+        self.heredoc_backticks = []  # the backtick substitutions in the body of its unquoted here-docs
         self.defines = None  # the function name when the segment is `f()`, `f ()` or `function f`
         self.loop_last = None  # for a one-line `for x (a b) cmd` header, the last segment of the sublist it repeats
         self.piped_in = self.piped_out = self.started = False
@@ -132,7 +141,8 @@ class Splitter:
         if depth > 16:
             raise Unsplittable("nested too deep")
         self.s, self.i, self.shell, self.substituted, self.depth = text, 0, shell, substituted, depth
-        self.out, self.heredocs, self.modifier_names = [], [], []
+        self.out, self.heredocs, self.modifier_names, self.backticks = [], [], [], []
+        self.command_subs = 0  # how many `$(...)` the cursor is inside
 
     def run(self):
         self.parse(None, self.substituted)
@@ -295,6 +305,7 @@ class Splitter:
                 self.out += body.out
                 seg.subs += subs
                 seg.modifier_names += body.modifier_names
+                seg.heredoc_backticks += body.backticks
 
     def word(self):
         """Read one word at the cursor: (text without quotes, whether any part was quoted, substitutions)."""
@@ -396,10 +407,13 @@ class Splitter:
     def nested(self):
         """Split a `$(...)` or `<(...)` body; the cursor is past its opening parenthesis."""
         start = len(self.out)
+        self.command_subs += 1
         self.parse(")", True)
+        self.command_subs -= 1
         return self.out[start:]
 
     def backtick(self):
+        start = self.i
         self.i += 1
         buf = []
         while True:
@@ -415,6 +429,8 @@ class Splitter:
             else:
                 buf.append(c)
                 self.i += 1
+        if not self.command_subs:
+            self.backticks.append(self.s[start:self.i])
         inner = Splitter("".join(buf), self.shell, True, self.depth + 1).run()
         self.out += inner
         return inner
@@ -1426,6 +1442,27 @@ def check_verify_rm(cmd, cwd):
     return []
 
 
+UNESCAPED_BACKTICK = re.compile(r"(?<!\\)(?:\\\\)*`(?:([^`]*)`)?")
+
+
+def heredoc_backtick_findings(span):
+    """`span` is the backtick substitution, or None for a backtick that never closes."""
+    runs = f"{span} runs as a command" if span else "a backtick that never closes stops the shell with a parse error"
+    return [("deny", f"The shell runs each backtick span in an unquoted here-doc body, so {runs} instead of staying "
+             "text. Quote the delimiter (`<<'EOF'`) to keep the body as text; `$(...)` is the way to interpolate "
+             "on purpose.")]
+
+
+def check_heredoc_backticks(cmd):
+    body = "\n".join(line for line, expands in heredoc_lines(cmd) if expands)
+    m = UNESCAPED_BACKTICK.search(body)
+    return heredoc_backtick_findings(None if m.group(1) is None else f"`{m.group(1)}`") if m else []
+
+
+def heredoc_backtick_words(segs):
+    return next((heredoc_backtick_findings(span) for seg in segs for span in seg.heredoc_backticks), [])
+
+
 def decide(cmd, cwd, background=False):
     segs = split(cmd)
     if segs is None:  # a command the splitter cannot read gets the raw-string checks, so the guard never fails open
@@ -1433,12 +1470,12 @@ def decide(cmd, cwd, background=False):
         findings = check_docker(raw) + check_git(raw, cwd) + check_credentials(raw) + check_gh(raw) \
             + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw) + check_waits(raw) \
             + check_modifiers(raw) + check_command_variable(raw) + check_function_names(raw) \
-            + check_verify_rm(raw, cwd)
+            + check_verify_rm(raw, cwd) + check_heredoc_backticks(cmd)
     else:
         findings = docker_words(segs) + git_words(segs, cwd) + credential_words(segs) + gh_words(segs) \
             + postgres_words(segs) + dk_gc_words(segs) + zsh_name_words(segs) + wait_words(segs) \
             + modifier_words(segs) + command_variable_words(segs) + function_name_words(segs) \
-            + verify_rm_words(segs, cwd)
+            + verify_rm_words(segs, cwd) + heredoc_backtick_words(segs)
     findings += check_worktree_loop(cmd) if segs is None else worktree_loop_words(segs)
     if background:  # the same wait started with run_in_background blocks nothing
         findings = [f for f in findings if f is not FOREGROUND_WAIT]
