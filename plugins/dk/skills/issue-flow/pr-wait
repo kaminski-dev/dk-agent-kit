@@ -296,7 +296,7 @@ def required_checks(repo: str, base: str) -> set[str]:
             names.update(gh_lines(["api", path, "--jq", jq]))
         except GhError as error:
             if "HTTP 404" not in str(error):  # 404 means no protection, which is normal
-                log(f"could not read required checks from {path}: {error}")
+                raise  # the poll retries, rather than reading a failed read as none required
     return names
 
 
