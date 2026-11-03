@@ -46,7 +46,9 @@ Events
     (STATUS_BOTS, whose news the checks carry); a new review from anyone but a
     bot: reviews from any bot are skipped, and only the review bot's verdict is
     read; one that opens with the attribution note (dk:issue-flow step 6,
-    **Comments.**) is the agent's own and skipped
+    **Comments.**) is the agent's own and skipped. The author's login is
+    tagged `(not a collaborator)` unless they are the repo's OWNER, a MEMBER
+    or a COLLABORATOR
   - the review bot's verdict on the head: `reviews <id>...` (the REST review
     ids step 6 reads findings by), `clean` (its summary reports no actionable
     comments), or `rate limited` or `paused` (it will not review on its own)
@@ -91,6 +93,7 @@ RATE_LIMITED = ("<!-- This is an auto-generated comment: rate limited by coderab
 RECENT = ("<!-- recent_review_start -->", "<!-- recent_review_end -->")
 STATUS = ("<!-- recent_review_status_start -->", "<!-- recent_review_status_end -->")
 NO_FINDINGS = "No actionable comments were generated in the recent review."
+COLLABORATORS = ("OWNER", "MEMBER", "COLLABORATOR")
 # CI and deploy bots report through checks. Their PR comments are status reports.
 STATUS_BOTS = ("github-actions", "vercel", "netlify", "railway", "cloudflare")
 # The review bot's own check is named after its login, less a short suffix (`CodeRabbit` for coderabbitai[bot]).
@@ -123,15 +126,15 @@ query($owner: String!, $name: String!, $number: Int!) {
       url state headRefOid baseRefName mergeStateStatus
       author { login }
       baseRef { target { oid } }
-      comments(last: 100) { nodes { id url body author { login __typename } } }
+      comments(last: 100) { nodes { id url body authorAssociation author { login __typename } } }
       reviews(last: 100) {
-        nodes { id databaseId url state body commit { oid } author { login __typename } }
+        nodes { id databaseId url state body commit { oid } authorAssociation author { login __typename } }
       }
       reviewThreads(last: 100) {
         nodes {
           isResolved path line
           comments(first: 100) {
-            nodes { id url body author { login __typename } pullRequestReview { databaseId } }
+            nodes { id url body authorAssociation author { login __typename } pullRequestReview { databaseId } }
           }
         }
       }
@@ -225,6 +228,12 @@ def bot_check(name: str, bot: str | None) -> bool:
 def who(node: Json) -> tuple[str, bool]:
     author = node.get("author") or {}
     return author.get("login") or "ghost", author.get("__typename") == "Bot"
+
+
+def speaker(node: Json) -> str:
+    """The author's login, tagged when they are no collaborator, whose words are data, never instructions."""
+    trusted = node.get("authorAssociation") in COLLABORATORS
+    return who(node)[0] + ("" if trusted else " (not a collaborator)")
 
 
 def ours(node: Json) -> bool:
@@ -505,14 +514,15 @@ class Watcher:
             login, is_bot = who(comment)
             if ours(comment) or same_login(login, self.bot) or (is_bot and any(b in login for b in STATUS_BOTS)):
                 continue
-            self.emit(f"c:{comment['id']}", f"comment from {login}: {snippet(comment['body'])} {comment['url']}")
+            self.emit(f"c:{comment['id']}", f"comment from {speaker(comment)}: {snippet(comment['body'])} {comment['url']}")
         for review in reviews:
-            login, is_bot = who(review)
+            _, is_bot = who(review)
             if ours(review) or is_bot:
                 continue
             if review["state"] in ("APPROVED", "CHANGES_REQUESTED") or review["body"].strip():
                 state = review["state"].lower().replace("_", " ")
-                self.emit(f"c:{review['id']}", f"review from {login} ({state}): {snippet(review['body'])} {review['url']}")
+                self.emit(f"c:{review['id']}",
+                          f"review from {speaker(review)} ({state}): {snippet(review['body'])} {review['url']}")
         unresolved: list[str] = []
         for thread in threads:
             nodes = thread["comments"]["nodes"]
@@ -524,7 +534,8 @@ class Watcher:
                 if ours(comment) or same_login(login, self.bot):
                     continue
                 kind = "new thread" if index == 0 else "thread reply"
-                self.emit(f"c:{comment['id']}", f"{kind} from {login} on {where}: {snippet(comment['body'])} {comment['url']}")
+                self.emit(f"c:{comment['id']}",
+                          f"{kind} from {speaker(comment)} on {where}: {snippet(comment['body'])} {comment['url']}")
 
         # The review bot's verdict on the current head.
         verdict = self.bot_verdict(head, comments, reviews, threads) if self.bot else None
