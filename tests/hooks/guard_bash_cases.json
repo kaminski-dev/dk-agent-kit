@@ -215,6 +215,8 @@
   {"cmd": "gh pr checks 3 --watch 'unterminated", "expect": "deny"},
   {"why": "#45: the same waits started with run_in_background", "cmd": "sleep 20; gh pr checks 1338 --watch", "background": true, "expect": "allow"},
   {"cmd": "gh pr checks 12 --watch --fail-fast", "background": true, "expect": "allow"},
+  {"why": "#124: dk:issue-flow step 6's watcher in its run_in_background fallback (Monitor runs it outside the Bash guard)", "cmd": "python3 -I /Users/me/.claude/plugins/marketplaces/dk-agent-kit/plugins/dk/skills/issue-flow/pr-wait 42", "background": true, "expect": "allow"},
+  {"cmd": "cd ~/workspace/dk-agent-kit-124 && python3 -I ~/.claude/plugins/marketplaces/dk-agent-kit/plugins/dk/skills/issue-flow/pr-wait 42 --until green", "background": true, "expect": "allow"},
   {"cmd": "until gh run view 5 --json status -q .status | grep -q completed; do sleep 15; done", "background": true, "expect": "allow"},
   {"cmd": "for i in $(seq 1 30); do gh pr view 9 --json mergeable; sleep 30; done", "background": true, "expect": "allow"},
   {"why": "#45: one read of the checks, or a loop that reads each PR once, waits on nothing", "cmd": "gh pr checks 12", "expect": "allow"},

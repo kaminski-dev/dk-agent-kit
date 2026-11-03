@@ -4,7 +4,7 @@ The kit's scripts take the repo they ask `gh` about from the checkout's `origin`
 
 ## Why this is out of scope
 
-`batch.py`, `wait-review.py` and `ready.py` each read `owner/repo` from `origin`'s configured URL in `origin_repo()` and set it as `GH_REPO` before their first `gh` call; `dk-gc`'s `slug_of()` reads it with the same pattern. The URL must name the host `github.com`, in any case, with or without an ssh port:
+`batch.py`, `pr-wait` and `ready.py` each read `owner/repo` from `origin`'s configured URL in `origin_repo()` and set it as `GH_REPO` before their first `gh` call (`pr-wait` takes `--repo` or a PR URL ahead of `origin`); `dk-gc`'s `slug_of()` reads it with the same pattern. The URL must name the host `github.com`, in any case, with or without an ssh port:
 
 | origin URL | repo |
 |---|---|
@@ -15,7 +15,7 @@ The alternative, letting `gh` resolve the repo itself (even with an inherited `G
 
 What each unsupported shape does:
 
-- **Fork**: the scripts ask about the fork. `wait-review.py` fails loudly, since the PR is on the upstream. `ready.py` lists the fork's issues without an error.
+- **Fork**: the scripts ask about the fork. `pr-wait` fails loudly, since the PR is on the upstream. `ready.py` lists the fork's issues without an error.
 - **ssh alias or GHE host**: no repo is found, and every script stops before its first `gh` call. `dk-gc` keeps everything in such a checkout.
 
 ## If a real case shows up
