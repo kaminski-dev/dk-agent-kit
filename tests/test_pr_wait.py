@@ -57,6 +57,9 @@ n = count(name)
 if n < fix.get("fail", {}).get(name, 0):
     print("gh: HTTP 502: Bad Gateway (https://api.github.com/graphql)", file=sys.stderr)
     sys.exit(1)
+if n < fix.get("rate_limit", {}).get(name, 0):
+    print("gh: API rate limit exceeded for user ID 1. (HTTP 403)", file=sys.stderr)
+    sys.exit(1)
 if name in fix.get("forbid", []):
     print("gh: Upgrade to GitHub Pro or make this repository public to enable this feature. (HTTP 403)", file=sys.stderr)
     sys.exit(1)
@@ -219,6 +222,10 @@ CASES = {
     "a 403 reading the required checks is said, and every CI check gates": (dict(
         polls=[pr()], forbid=["rules"], checks=GREEN, args=["--until", "green"]),
         0, ["required checks could not be read (HTTP 403", "every CI check gates", "green on 1111111"], "stopped"),
+    "a rate-limit 403 reading the required checks is retried": (dict(
+        polls=[pr()], required=["test"], rate_limit={"rules": 1}, args=["--until", "green", *QUIET],
+        checks=GREEN + [{"name": "lint", "bucket": "fail", "link": "https://ci/lint", "description": ""}]),
+        0, ["green on 1111111", "required 1/1 green"], "could not be read"),
     "the deadline passing": (dict(polls=[pr()], checks=GREEN, args=QUIET),
                              1, ["deadline passed: no ready on 1111111 after"], "#1 ready on"),
     "the bot login read from workflow.md": (dict(
