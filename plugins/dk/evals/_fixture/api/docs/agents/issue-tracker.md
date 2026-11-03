@@ -9,7 +9,7 @@ Issues and PRs live on GitHub (`acme/api`). Use `gh`, always with `--json` for r
 - **Create**: `gh issue create --title "…" --body-file <file> --label <label>`.
 - **Comment**: `gh issue comment N --body-file <file>`.
 - **Labels**: `gh issue edit N --add-label <a> --remove-label <b>`.
-- **Close**: `gh issue close N --comment "…"`.
+- **Close**: comment with `gh issue comment N --body-file <file>`, then `gh issue close N`, since on an already-closed issue `gh issue close` drops its `--comment` and still exits 0.
 
 ## CI
 
