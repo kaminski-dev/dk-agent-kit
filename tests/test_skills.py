@@ -317,6 +317,55 @@ if not rest or "-f base=<base>" not in rest.group(0) or "pre-main" in rest.group
     errors.append("skills/issue-flow: step 6 must open the PR through REST (`gh api \"repos/{owner}/{repo}/pulls\"`, "
                   "`-f base=<base>`, never pre-main) when `gh pr create` hits GraphQL's rate limit")
 
+# A PR reaches the maintainer through one gate, checked on the latest commit, and one verdict (#126, tstack
+# full-send's merge gate and full-stop's handoff). Merging stays the maintainer's: no merge grant is taken.
+gate = re.search(r"^\*\*Ready gate\.\*\*.*?(?=^\*\*[A-Z]|\Z)", step6, re.M | re.S)
+gate = gate.group(0) if gate else ""
+if not gate:
+    errors.append("skills/issue-flow: step 6 has no **Ready gate.** paragraph")
+for what, pattern in (
+    ("the latest commit it is checked on", r"latest commit"),
+    ("proof that covers every change in the diff", r"proof[^.;]*covers every change in the diff"),
+    ("required checks green", r"[Rr]equired checks are green"),
+    ("every bot finding fixed or answered on its thread", r"[Ee]very bot finding is fixed or answered on its thread"),
+    ("no human review requesting changes", r"[Nn]o human review requests changes"),
+    ("a branch up to date and mergeable", r"up to date[^.;]*mergeable"),
+    ("pr-wait --until ready for the mechanical part", r"`[^`]*pr-wait[^`]*--until ready`[^.]*mechanical"),
+    ("exactly one verdict ending the handoff", r"handoff[^.]*ends with exactly one"),
+    ("the Ready to merge verdict", r"\*\*Ready to merge\*\*"),
+    ("the Waiting for required approval verdict", r"\*\*Waiting for required approval\*\*"),
+    ("the Blocked verdict", r"\*\*Blocked\*\*"),
+):
+    if gate and not re.search(pattern, gate, re.S):
+        errors.append(f"skills/issue-flow: step 6's **Ready gate.** paragraph does not name {what}")
+if re.search(r"gh pr merge|--admin|--auto\b|merge queue", gate) or "Merging is the maintainer's" not in step6:
+    errors.append("skills/issue-flow: step 6 keeps merging the maintainer's; its gate grants no merge")
+
+# An unattended run asks only for a closed list of reasons, through the question tool, and lists the rest as
+# decisions it took (#126, tstack full-send's "Asking the user").
+asking = re.search(r"^## Asking\n.*?(?=^## |\Z)", implement, re.M | re.S)
+asking = asking.group(0) if asking else ""
+if not asking:
+    errors.append("skills/implement: has no ## Asking section")
+for what, pattern in (
+    ("no proof possible", r"^- [^\n]*no proof[^\n]*possible"),
+    ("a ready gate that cannot pass", r"^- [^\n]*ready gate[^\n]*cannot pass"),
+    ("a step outside the grant", r"^- [^\n]*outside the grant"),
+    ("an ambiguous goal", r"^- [^\n]*goal is ambiguous"),
+    ("another PR making this one obsolete", r"^- [^\n]*another PR makes this one obsolete"),
+    ("AskUserQuestion with the recommendation first", r"AskUserQuestion.*recommendation first"),
+    ("the final message opening with the question when there is no question tool",
+     r"no question tool[^.]*open[^.]*final message with the question"),
+    ("the Decisions taken list", r"\*\*Decisions taken\*\*"),
+):
+    if asking and not re.search(pattern, asking, re.M | re.S):
+        errors.append(f"skills/implement: its ## Asking section does not name {what}")
+report = re.search(r"^## Report\n.*?(?=^## |\Z)", implement, re.M | re.S)
+report = report.group(0) if report else ""
+if "**Decisions taken**" not in report or not re.search(r"ends with[^.]*verdict[^.]*`dk:issue-flow` step 6", report):
+    errors.append("skills/implement: its ## Report must carry **Decisions taken** and end with the verdict "
+                  "from `dk:issue-flow` step 6's **Ready gate.**")
+
 fan_out = re.search(r"^\*\*Fan-out\.\*\*.*?(?=^## )", flow, re.M | re.S)
 waits = re.search(r"^- \*\*Waits\*\*:.*$", fan_out.group(0) if fan_out else "", re.M)
 if not waits or not re.search(r"every background wait", waits.group(0)) or not re.search(
