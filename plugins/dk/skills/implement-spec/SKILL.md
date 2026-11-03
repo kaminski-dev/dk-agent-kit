@@ -23,7 +23,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 3. Create the integration branch and its worktree from the remote base: `git worktree add ~/workspace/<prefix>-<spec> -b feat/<spec>-<slug> origin/<base>` (prefix from `docs/agents/workflow.md`).
 
-4. Use **implementer subagents** to implement each ticket, each in its own worktree on its own branch made from the integration branch: `git worktree add ~/workspace/<prefix>-<ticket> -b <type>/<ticket>-<slug> feat/<spec>-<slug>`. Create the worktrees and launch the implementers by the fan-out rules in `dk:issue-flow` step 2. Each implementer subagent:
+4. Use a fresh **implementer subagent** for each ticket, each in its own worktree on its own branch made from the integration branch: `git worktree add ~/workspace/<prefix>-<ticket> -b <type>/<ticket>-<slug> feat/<spec>-<slug>`. Create the worktrees and launch the implementers by the fan-out rules in `dk:issue-flow` step 2. Each implementer subagent:
    - works only inside its worktree and its own `$SCRATCH/<ticket>/`;
    - calls the Skill tool with `dk:tdd` to build the ticket, committing after each green step;
    - follows the scope-intake rule from `dk:issue-flow` for anything new it finds;
@@ -33,7 +33,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 6. If this changes the **frontier** of available tickets, kick off more **implementer subagents** to work on the new tickets. This allows for maximum concurrency.
 
-7. Once all tickets are complete, call the Skill tool with `dk:verify` and prove the whole spec in a running stack, then call the Skill tool with `dk:code-review` on the integration branch against `origin/<base>`. Fix all issues raised by the code review in a single **implementer subagent**.
+7. Once all tickets are complete, call the Skill tool with `dk:verify` and prove the whole spec in a running stack, then call the Skill tool with `dk:code-review` on the integration branch against `origin/<base>`. Fix all issues raised by the code review in a single fresh **implementer subagent**.
 
 8. Open one PR from the integration branch into the base, body from the `dk:pr` skill, with a `Closes #N` (or `Refs #N`, per `dk:issue-flow`) line for the spec and for every ticket.
 
