@@ -156,6 +156,14 @@ if "pull_request_review_id ==" in step7:
     errors.append("skills/issue-flow: step 7 repeats step 6's inline query; point at it instead")
 if "`<PR>-<comment>`" not in step7:
     errors.append("skills/issue-flow: step 7's push route needs a worktree key for a PR-comment finding")
+if not re.search(r"done.*inline record is a reply whose `in_reply_to_id`", route):
+    errors.append("skills/issue-flow: step 7's done check must find an inline finding's record among its thread's replies")
+pr_fix = re.search(r"^  - `pr`: .*$", step7, re.M)
+if not pr_fix or "record" not in pr_fix.group(0):
+    errors.append("skills/issue-flow: step 7's `pr` route must record each finding's fix PR on the batch PR")
+if not re.search(r"review-body finding post a PR comment with its key", step7) or not re.search(
+        r"skipped review-body finding gets it in a PR comment naming its key", step7):
+    errors.append("skills/issue-flow: step 7's review-body fix and skip records must name the finding's key")
 
 fan_out = re.search(r"^\*\*Fan-out\.\*\*.*?(?=^## )", flow, re.M | re.S)
 waits = re.search(r"^- \*\*Waits\*\*:.*$", fan_out.group(0) if fan_out else "", re.M)
