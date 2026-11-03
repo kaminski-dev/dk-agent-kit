@@ -171,6 +171,25 @@ if not waits or not re.search(r"every background wait", waits.group(0)) or not r
         r"deadline.*20 minutes.*reports", waits.group(0)):
     errors.append("skills/issue-flow: step 2's fan-out rules need a **Waits** rule: every background wait has a "
                   "deadline (20 minutes unless the step says otherwise) and reports when it expires")
+# A dispatched subagent starts with a fresh context window; a fork carries the orchestrator's whole context (#114).
+FRESH = "fresh context window"
+worktrees = re.search(r"^- \*\*Worktrees\*\*:.*$", fan_out.group(0) if fan_out else "", re.M)
+worktrees = worktrees.group(0) if worktrees else ""
+if FRESH not in worktrees or "`isolation`" not in worktrees or '`subagent_type: "fork"`' not in worktrees:
+    errors.append(f"skills/issue-flow: step 2's **Worktrees** rule must launch each subagent with a {FRESH}, "
+                  'ruling out both `isolation` and `subagent_type: "fork"`')
+for name, file in (("research", "SKILL.md"), ("grilling", "SKILL.md"),
+                   ("codebase-design", "DESIGN-IT-TWICE.md"), ("improve-codebase-architecture", "SKILL.md")):
+    if FRESH not in (DK / "skills" / name / file).read_text():
+        errors.append(f"skills/{name}/{file}: dispatches a subagent but does not start it with a {FRESH}")
+if FRESH in review:
+    errors.append(f"skills/code-review: launches named agent types, which never fork; it skips the {FRESH} line")
+spec_steps = skills["implement-spec"].read_text().replace("**", "")
+for step in ("4", "7"):
+    text = re.search(rf"^{step}\. .*$", spec_steps, re.M)
+    if not text or "fresh implementer subagent" not in text.group(0):
+        errors.append(f"skills/implement-spec: step {step} must use a fresh implementer subagent")
+
 manual = re.search(r"A worktree with no merged PR.*$", step7, re.M)
 if not manual or not re.search(r"dk-gc --in-use <worktree>.*git worktree remove", manual.group(0)):
     errors.append("skills/issue-flow: step 7's removal by hand must run `dk-gc --in-use <worktree>` before "
