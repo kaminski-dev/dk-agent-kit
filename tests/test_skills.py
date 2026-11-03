@@ -257,7 +257,7 @@ for what, pattern in (
     ("the worktree from dk:issue-flow step 2", r"`dk:issue-flow` step 2"),
     ("the base's new commits checked for conceptual conflicts", r"conceptual conflict"),
     ("the series compared with git range-diff", r"git range-diff"),
-    ("the push leased to the observed remote head", r"--force-with-lease=<branch>:<observed sha>"),
+    ("the push leased to the observed remote head", r"git push --force-with-lease=<branch>:<observed sha>"),
 ):
     if modernize and not re.search(pattern, modernize_text, re.S):
         errors.append(f"skills/modernize: does not name {what}")
