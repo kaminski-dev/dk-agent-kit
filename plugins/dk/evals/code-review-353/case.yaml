@@ -21,7 +21,7 @@ graders:
       finding to the repo's documented rule that SQL takes its values as parameters
       (CODING_STANDARDS.md rule 1). Whether the same change is also raised under Spec or Comments
       does not matter. PASS when the Standards section carries this finding; FAIL when it is absent
-      from the Standards section or appears there only as a judgement-call smell.
+      from the Standards section or appears there only as a `nit` or a baseline smell.
   - name: four-axes
     type: regex
     pattern: "## Standards[\\s\\S]*## Spec[\\s\\S]*## Correctness[\\s\\S]*## Comments"

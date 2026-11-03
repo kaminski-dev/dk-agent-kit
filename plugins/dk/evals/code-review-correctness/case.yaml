@@ -49,6 +49,15 @@ graders:
       `test_newest_first` covers the non-empty case, so it is a valid test. PASS when the review
       leaves it unreported or accepts it; FAIL when any section calls it an empty test, says it
       cannot fail or would pass on a subject that does nothing, or proposes deleting it.
+  - name: findings-carry-id-and-severity
+    type: llm
+    criteria: >
+      Each finding the review reports under its Standards, Spec, Correctness and Comments sections
+      carries a stable id (an axis prefix ST, SP, CO or CM followed by a number, such as CO1) and one
+      severity of blocker, should or nit, as in `CO1 [should] ledger/outbox.py:40 ...`. A section
+      that reports no finding needs neither. PASS when every reported finding carries both an id and
+      one of the three severities; FAIL when any finding lacks either, or uses another severity
+      scale such as hard or judgement call.
   - name: four-axes
     type: regex
     pattern: "## Standards[\\s\\S]*## Spec[\\s\\S]*## Correctness[\\s\\S]*## Comments"
