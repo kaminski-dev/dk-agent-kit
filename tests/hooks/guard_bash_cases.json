@@ -44,6 +44,7 @@
   {"cmd": "git push origin +fix/1047", "repo": "feature", "expect": "deny"},
   {"cmd": "git push --force-with-lease origin fix/1047", "repo": "feature", "expect": "allow"},
   {"cmd": "git push -q --force-with-lease -u origin fix/1010-push-readiness-strip 2>&1", "repo": "feature", "expect": "allow"},
+  {"why": "#123: dk:modernize pushes a rebased PR with a lease tied to the remote head it observed", "cmd": "git push --force-with-lease=fix/1047-network-failure:3f2a9c1e7b origin fix/1047-network-failure", "repo": "feature", "expect": "allow"},
   {"why": "screenshot branch is rebuilt each run", "cmd": "git push -q -f origin \"${c}:refs/heads/verify-assets/818\"", "repo": "feature", "expect": "allow"},
   {"cmd": "git push origin --delete verify-assets/1002", "repo": "feature", "expect": "allow"},
   {"cmd": "git push origin HEAD:pre-main", "repo": "feature", "expect": "allow"},
