@@ -179,6 +179,10 @@ CASES = {
         checks=GREEN + [{"name": n, "bucket": "fail", "link": "https://ci/x", "description": ""}
                         for n in ("code-lint", "Code style", "coder")]),
         1, ["check failed: code-lint", "check failed: Code style", "check failed: coder"], "#1 green on"),
+    "a check under 4 characters is never the bot's own": (dict(
+        polls=[pr()], args=["--until", "green"], checkout="short-bot",
+        checks=GREEN + [{"name": "QA", "bucket": "fail", "link": "https://ci/qa", "description": ""}]),
+        1, ["check failed: QA"], "#1 green on"),
     "a check failed": (dict(polls=[pr()], required=["test"], checks=FAILED),
                        1, ["required check failed: test https://ci/test"], "#1 ready on"),
     "a human comment from the gh user": (dict(
@@ -375,6 +379,7 @@ def main():
         os.chmod(f"{root}/bin/gh", 0o755)
         checkout(root, "checkout")
         checkout(root, "greptile", "- **Review bot**: `greptile-apps[bot]` on PRs into `main`.")
+        checkout(root, "short-bot", "- **Review bot**: `qa[bot]` on PRs into `main`.")
         checkout(root, "no-bot", "- **Review bot**: `coderabbitai[bot]` on PRs into `pre-main`.")
         with ThreadPoolExecutor(8) as pool:
             jobs = [pool.submit(run_case, root, name, *spec) for name, spec in CASES.items()]
