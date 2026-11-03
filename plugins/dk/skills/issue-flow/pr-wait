@@ -36,6 +36,8 @@ Exit codes
 Events
   - a required check failed (name and link)
   - all checks finished on the head (one summary line)
+  - the required checks could not be read (HTTP 403, as on a private repo on
+    GitHub's free plan), so every CI check gates; printed once per run
   - a new comment, thread, or thread reply from anyone but the review bot, the
     gh user included, and a new review from anyone but a bot: reviews from any
     bot are skipped, and only the review bot's verdict is read; one that opens
@@ -285,10 +287,11 @@ def lock(repo: str, pr: int) -> Any:
     return handle
 
 
-def required_checks(repo: str, base: str) -> set[str]:
+def required_checks(repo: str, base: str) -> tuple[set[str], list[str]]:
     """Required check names for the base branch, from rulesets and classic branch
-    protection. Knowing them up front means a required check that has not started
-    yet counts as pending, instead of green by omission."""
+    protection, and the sources that answered 403 (a private repo on GitHub's free
+    plan). Knowing them up front means a required check that has not started yet
+    counts as pending, instead of green by omission."""
     sources = (
         (
             f"repos/{repo}/rules/branches/{base}",
@@ -297,13 +300,16 @@ def required_checks(repo: str, base: str) -> set[str]:
         (f"repos/{repo}/branches/{base}/protection/required_status_checks", ".contexts[]?, .checks[]?.context"),
     )
     names: set[str] = set()
+    forbidden: list[str] = []
     for path, jq in sources:
         try:
             names.update(gh_lines(["api", path, "--jq", jq]))
         except GhError as error:
-            if "HTTP 404" not in str(error):  # 404 means no protection, which is normal
+            if "HTTP 403" in str(error):
+                forbidden.append(path)
+            elif "HTTP 404" not in str(error):  # 404 means no protection, which is normal
                 raise  # the poll retries, rather than reading a failed read as none required
-    return names
+    return names, forbidden
 
 
 class Watcher:
@@ -441,7 +447,10 @@ class Watcher:
         base = pr["baseRefName"]
         gating = bool(self.bot) and base in self.bases
         if self.required is None:
-            self.required = required_checks(self.repo, base)
+            self.required, forbidden = required_checks(self.repo, base)
+            if forbidden:
+                self.say(f"required checks could not be read (HTTP 403 from {', '.join(forbidden)})"
+                         + ("" if self.required else ", so every CI check gates"))
             gate = ", ".join(sorted(self.required)) or "none set, so every CI check gates"
             log(f"watching {self.repo}#{self.pr} until {self.until} for {self.minutes:g} minutes; required checks: {gate}; "
                 f"review bot: {self.bot if gating else 'none on ' + base}")
