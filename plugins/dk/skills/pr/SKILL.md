@@ -14,6 +14,8 @@ Use this template for writing the PR body:
 ```markdown
 ## Summary
 
+<one plain sentence: the problem, as the person who hit it would say it>
+
 <diagram, diff-sketch, or tree>
 
 ## Evidence
@@ -48,9 +50,15 @@ Drop "Also in this PR" and "Deviations" when empty. The last line is `Closes #N`
 
 Skip all preambles and keep prose brief. Use the user's domain language from `GLOSSARY.md`. The PR is English; customer-facing wording goes in the customer reply on the issue, not here.
 
+### Title
+
+The title says why the change matters: the effect the reader gets, not the mechanism. `cut websocket frame size by 70%+ with gzipping`, rather than `negotiate permessage-deflate on the websocket`. It keeps the repo's title conventions, which recently merged PRs show.
+
 ### Summary
 
-Pick the smallest view that makes the key point clear.
+Open with one plain sentence on the problem, before any visual: what went wrong or was missing, as the person who hit it would say it ("My new-worktree default was ignored on existing worktrees."), then the fix in a sentence. The opener names the problem; the files and functions changed belong in the visual.
+
+Then pick the smallest view that makes the key point clear.
 
 - Show logic or an algorithm as pseudocode:
 
