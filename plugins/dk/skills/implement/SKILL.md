@@ -15,7 +15,7 @@ Run typechecking regularly, single test files regularly, and the full test suite
 
 When the code is done, call the Skill tool with `dk:verify` and prove the change.
 
-Then call the Skill tool with `dk:code-review` to review the work, and fix what it finds.
+Then call the Skill tool with `dk:code-review` to review the work, and answer its findings by its **Answer findings** step: each id fixed, disagreed with or declined in the ledger, within its round budget. The PR body carries the ledger.
 
 Finally open the PR with the body from the `dk:pr` skill, per `dk:issue-flow`.
 
