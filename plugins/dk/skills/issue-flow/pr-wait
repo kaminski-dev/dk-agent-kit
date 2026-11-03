@@ -14,7 +14,8 @@ the run go to stderr.
   green       required checks passed on the current head (every CI check when
               the base branch requires none)
   ready       green, the review bot gave its verdict on the current head, no
-              review thread is unresolved, and the branch is not BEHIND (default)
+              review thread is unresolved, and the merge state is known and not
+              BEHIND (default)
   any-change  stop after the first poll that prints an event
 
 The review bot is the one the **Review bot** line of the checkout's
@@ -571,8 +572,9 @@ class Watcher:
                     self.finish(1, bot_lines + [f"blocked by {len(unresolved)} unresolved thread{s} on {short}: {' '.join(unresolved)}"])
                 if merge_state == "BEHIND":
                     self.finish(1, bot_lines + [behind_line])
-                self.reported.add(checks_key)
-                self.finish(0, bot_lines + [f"ready on {short}: {summary}{self.behind(base, base_oid, head)}"])
+                if merge_state and merge_state != "UNKNOWN":  # GitHub has not computed it yet: keep polling
+                    self.reported.add(checks_key)
+                    self.finish(0, bot_lines + [f"ready on {short}: {summary}{self.behind(base, base_oid, head)}"])
         if all_done and (stable or self.baseline):
             self.emit(checks_key, f"checks finished on {short}: {summary}")
         if self.until == "any-change" and self.events:
