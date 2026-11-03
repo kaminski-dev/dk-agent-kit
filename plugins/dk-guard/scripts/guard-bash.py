@@ -53,21 +53,28 @@ PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:(?:sudo|command|exec|nohup|time|
 END = r"[^;&|\n)`]*"
 
 
+# A here-doc operator and its delimiter word: plain characters, backslash escapes and closed quotes, starting the
+# way a delimiter does (a digit after `<<` is a shift, as in `1<<2`).
+HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)[ \t]*"
+                     r"""((?=[A-Za-z_'"\\])(?:[^\s;&|<>()'"\\]|\\.|'[^']*'|"(?:[^"\\]|\\.)*")+)(?!['"])""")
+
+
 def heredoc_lines(cmd):
     """Yield (line, None) for each command line and (line, expands) for each line of a heredoc body, `expands`
-    True when its delimiter is unquoted."""
+    True when no part of its delimiter word is quoted or escaped."""
     lines, i = cmd.split("\n"), 0
     while i < len(lines):
         line = lines[i]
         i += 1
         yield line, None
-        for dash, quote, delim in re.findall(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2", line):
+        for dash, word in HEREDOC.findall(line):
+            delim, expands = shlex.split(word)[0], not re.search(r"['\"\\]", word)
             while i < len(lines):
                 body = lines[i]
                 i += 1
                 if (body.lstrip("\t") if dash else body) == delim:
                     break
-                yield body, not quote
+                yield body, expands
 
 
 def strip_heredocs(cmd):
