@@ -23,7 +23,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 | improve-codebase-architecture | skills/engineering/improve-codebase-architecture | `dk:` references; glossary edits by the context and the `domain.md` rule |
 | pr | skills/engineering/pr | Also in this PR, Deviations, `Closes`/`Refs` (repeated on the batch PR), evidence on `verify-assets`, `dk:blast-radius` for one-way doors; Summary opens with one plain sentence on the problem before any visual, title says why the change matters (tstack file-pr); visuals section holds the kit's diagram rules (pstack statechart and ketchup, teach's build-up series); teach holds no explicit build-up-series text, so that rule rests on its working-memory and one-small-win points |
 | prototype | skills/engineering/prototype | tracking issue, tracked paths, pushed `proto/` branch, versioned artifact titles; production never renders a variant |
-| research | skills/engineering/research | narrower trigger; notes in `docs/research/` |
+| research | skills/engineering/research | narrower trigger; notes in `docs/research/`; the agent starts with a fresh context window, never as a fork |
 | retro | skills/engineering/retro | `dk:` references; a window of sessions, extracted by `extract.py`; correct step and rule-to-check table from pstack |
 | tdd | skills/engineering/tdd | `dk:` references |
 | teach | skills/productivity/teach | as-is |
