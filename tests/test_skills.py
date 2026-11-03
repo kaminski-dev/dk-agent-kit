@@ -138,6 +138,9 @@ if not retro_test or not re.search(r"still passes when the behaviour it checks b
 # Each finding carries a stable id and a severity judged against the change's intent, and the change's author
 # answers every id in a ledger over a bounded number of rounds (#125, tstack sol-loop).
 reviewer = agents["reviewer"].read_text()
+# The same sentence in the reviewer and in code-review's Judge step (#112, CodeRabbit on #136).
+IMPACT = re.escape("A rare path or a small cost is a nit unless its impact (data loss, security, money, a customer-visible "
+                   "break) makes it a blocker or should.")
 for what, pattern in (
     ("the finding line", r"`<id> \[blocker\|should\|nit\] <file>:<line> <claim>\. Fix: <fix>`"),
     ("the severity judged against the change's intent", r"against the change's intent"),
@@ -147,6 +150,9 @@ for what, pattern in (
     ("nit as everything else", r"\*\*nit\*\*[^\n]*everything else"),
     ("ids prefixed as the brief says", r"prefix the brief"),
     ("old ids kept and marked in a later round", r"`resolved`[^\n]*`still open: <reason>`"),
+    ("a Correctness finding citing its trigger and consequence, not a rule", r"Correctness finding[^.]*trigger[^.]*observable consequence"),
+    ("severity by impact and likelihood", r"impact and likelihood"),
+    ("a rare path or small cost kept a nit only when its impact is small", IMPACT),
 ):
     if not re.search(pattern, reviewer):
         errors.append(f"agents/reviewer: does not name {what}")
@@ -185,6 +191,10 @@ for what, pattern in (
     ("the diff size after each round", r"`git diff --shortstat <fixed-point>`"),
     ("growth cut first", r"cut first"),
     ("declined findings worth doing through scope intake", r"`dk:issue-flow` step 3"),
+    ("severity by impact and likelihood", r"impact and likelihood"),
+    ("a rare path or small cost kept a nit only when its impact is small", IMPACT),
+    ("each next-round prompt carrying its own axis's ledger rows", r"its own axis's ledger rows"),
+    ("the nits-only stop only when no nit's fix changed behaviour code", r"round brings only nits[^.]*no behaviour code"),
 ):
     if not re.search(pattern, answer, re.S):
         errors.append(f"skills/code-review: its Answer findings step does not name {what}")

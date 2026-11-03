@@ -113,9 +113,9 @@ End with a one-line summary: findings per axis and severity, and the worst issue
 
 When you wrote the change (`dk:implement` sends you here), or the user asks you to fix what the review found, answer every finding; otherwise step 5's report ends the review.
 
-**Budget.** 3 rounds, steps 4 and 5 being round 1. Extend to 5 only when the change touches security, permissions, auth, data loss or concurrency and a blocker or should stays open with evidence, or when the user asks. When a round brings only nits, the loop ends: declined nits and comment-, doc- or format-only fixes need no new round.
+**Budget.** 3 rounds, steps 4 and 5 being round 1. Extend to 5 only when the change touches security, permissions, auth, data loss or concurrency and a blocker or should stays open with evidence, or when the user asks. When a round brings only nits and their fixes change no behaviour code, the loop ends: declined nits and comment-, doc- or format-only fixes need no new round.
 
-1. **Judge** each finding and its severity yourself against the change's intent: another path, a rare case or a small cost is a nit, whatever label it came with.
+1. **Judge** each finding and its severity yourself, by impact and likelihood against the change's intent, whatever label it came with. A rare path or a small cost is a nit unless its impact (data loss, security, money, a customer-visible break) makes it a blocker or should.
 2. **Answer** each id in the **ledger**, a table of id, severity and outcome, kept in the scratch directory and carried into the PR body when one follows:
    - `fixed: <commit>, <the check that shows it>`: the smallest fix. Prefer deleting or narrowing code over a new lock, cache, helper or option; add one focused test that fails without the fix when the intent needs it.
    - `disagree: <why, with file:line, a test or output>`.
@@ -123,7 +123,7 @@ When you wrote the change (`dk:implement` sends you here), or the user asks you 
 
    Agree on the evidence alone, never to end the loop.
 3. **Measure.** Run `git diff --shortstat <fixed-point>` before the first fix and after each round's fixes, once the checks they touch pass and the fixes are committed. When review fixes grew the diff, cut first: undo or narrow what no blocker or should needs, before another round.
-4. **Next round**, only while budget remains and a blocker or should is open, or behaviour code changed since the last round. Run steps 4 and 5 again with the same diff command; each prompt adds the ledger and the change since the last round (`git diff <last round's HEAD>`), and asks for only the open ids and the code changed since. An open id is one no reviewer has marked `resolved` yet.
+4. **Next round**, only while budget remains and a blocker or should is open, or behaviour code changed since the last round. Run steps 4 and 5 again with the same diff command; each prompt adds its own axis's ledger rows and the change since the last round (`git diff <last round's HEAD>`), and asks for only the open ids and the code changed since. An open id is one no reviewer has marked `resolved` yet.
 
 Done when no blocker or should is open on the current diff. Stuck when an id stays disputed after two replies, or the budget ends with a blocker or should open: show both sides in 2-3 lines each, and the user decides. Budget end is not approval.
 
