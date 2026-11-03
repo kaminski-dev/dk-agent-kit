@@ -36,12 +36,10 @@ def gh(*args, check=True):
 
 
 def origin_repo():
-    """owner/name of origin on github.com, from the configured URL (before any insteadOf)."""
+    """None when origin is no github.com repo. Read from the configured URL, before any insteadOf rewrites it."""
     url = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True).stdout.strip()
-    m = re.search(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", url)
-    if not m:
-        sys.exit(f"origin's URL ({url or 'none'}) names no github.com repo, so there is no repo to ask gh about.")
-    return m.group(1)
+    m = re.search(r"(?:^|[@/])github\.com(?::\d+)?[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", url, re.I)
+    return m.group(1) if m else None
 
 
 def main():
@@ -49,7 +47,10 @@ def main():
         print(__doc__.strip())
         return 0 if sys.argv[1] in ("-h", "--help") else 1
 
-    repo = os.environ["GH_REPO"] = origin_repo()  # an inherited GH_REPO would point gh at another repo
+    repo = origin_repo()
+    if not repo:
+        sys.exit("origin names no github.com repo, so there is no repo to ask gh about.")
+    os.environ["GH_REPO"] = repo  # an inherited GH_REPO would point gh at another repo
     issues = json.loads(gh(*LIST[1:]).stdout)
     first_cut = gh(*LIST[1:], "--search", "-is:blocked", check=False)
     natively_free = {i["number"] for i in json.loads(first_cut.stdout)} if first_cut.returncode == 0 else set()

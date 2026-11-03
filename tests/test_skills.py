@@ -236,6 +236,14 @@ if not pr_route or "Once it is merged, run step 1 again and write step 3's body 
                    "collection predates the fix PR." not in pr_route.group(0):
     errors.append("skills/batch-pr: step 2's `pr` route does not run step 1 again after the fix PR merges")
 
+# Each skill ships its own copy, since `python3 -I` keeps a script's folder off sys.path; the copies stay one.
+copies = {}
+for script in ("batch-pr/batch.py", "issue-flow/wait-review.py", "triage/ready.py"):
+    m = re.search(r"^def origin_repo\(\):\n(?:    .*\n)+", (DK / "skills" / script).read_text(), re.M)
+    copies.setdefault(m.group(0) if m else None, []).append(script)
+if len(copies) != 1 or None in copies:
+    errors.append("skills: origin_repo() differs between " + " | ".join(", ".join(v) for v in copies.values()))
+
 for e in errors:
     print("FAIL", e)
 print(f"{len(skills)} skills, {len(agents)} agents, {len(errors)} problems")

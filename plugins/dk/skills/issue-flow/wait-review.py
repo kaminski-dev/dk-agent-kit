@@ -68,9 +68,9 @@ def gh_list(path):
 
 
 def origin_repo():
-    """owner/name of origin on github.com, from the configured URL (before any insteadOf)."""
+    """None when origin is no github.com repo. Read from the configured URL, before any insteadOf rewrites it."""
     url = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True).stdout.strip()
-    m = re.search(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", url)
+    m = re.search(r"(?:^|[@/])github\.com(?::\d+)?[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", url, re.I)
     return m.group(1) if m else None
 
 
