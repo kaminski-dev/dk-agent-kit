@@ -5,13 +5,13 @@ argument-hint: "PR number"
 disable-model-invocation: true
 ---
 
-<!-- Adapted from t3dotgg/tstack@1085050 skills/modernize, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: user-invoked; the base from docs/agents/workflow.md, the worktree from dk:issue-flow step 2, detached at the observed head; the push is --force-with-lease=<branch>:<observed sha> to HEAD:<branch>, from the worktree's literal path so the gate runs; checks from AGENTS.md; comments through dk:issue-flow; Codex agents/openai.yaml not taken. -->
+<!-- Adapted from t3dotgg/tstack@1085050 skills/modernize, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: user-invoked; the base from docs/agents/workflow.md, the worktree from dk:issue-flow step 2, detached at the observed head; the push is --force-with-lease=<branch>:<observed sha> to HEAD:<branch>, from the worktree's literal path so the gate runs; checks from AGENTS.md; comments open with dk:issue-flow step 6's attribution note; Codex agents/openai.yaml not taken. -->
 
 # Modernize
 
 Modernize the idea, not just the branch. A clean rebase does not prove the PR still belongs in the product.
 
-The grant covers rebasing the PR's commits and updating its branch. Merging, closing, retargeting the base and widening the scope stay the maintainer's. A PR comment is posted only when the user asked for one, written as `dk:issue-flow` step 6 says agent comments are written.
+The grant covers rebasing the PR's commits and updating its branch. Merging, closing, retargeting the base and widening the scope stay the maintainer's. A PR comment is posted only when the user asked for one, and opens with the attribution note from `dk:issue-flow` step 6's **Comments.** paragraph.
 
 ## 1. Record the PR
 
