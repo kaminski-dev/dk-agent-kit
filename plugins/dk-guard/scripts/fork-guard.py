@@ -4,7 +4,8 @@
 A fork (`subagent_type: "fork"`) inherits the orchestrator's whole context, so
 an implementer should launch as a plain subagent that works from its brief.
 A fork whose description or prompt hands over an issue to implement, a
-worktree with its branch, or a `git worktree add` to run is denied with that
+worktree with its branch (or one that already exists, with a branch, commit,
+push or open-PR cue), or a `git worktree add` to run is denied with that
 advice. Sweep forks, which work a slice of files and leave committing to the
 parent, and every plain subagent are left alone, and so is every call when the
 hook itself fails: it fails open.
@@ -18,16 +19,21 @@ import sys
 
 I = re.IGNORECASE
 PATH = r"[~/$][\w./~${}-]*"
+UNSAID = r"(?<!\bnot\s)(?<!n't\s)(?<!\bnever\s)"  # "do not commit" hands nothing over
+OPEN_PR = rf"{UNSAID}\bopen\s+(?:the|a)\s+PR\b"
+HANDOVER_CUE = rf"\bbranch\b|{UNSAID}\b(?:commit|push)\s+(?:per|after|each|every|the|your|it|to)\b|{OPEN_PR}"
 HANDOVERS = [
     ("an issue to implement", re.compile(
         r"\bdk:implement"
         r"|\bimplement(?:s|ing)?\s+(?:issue\s+|ticket\s+)?#\d+"
-        r"|\bowns?\s+(?:issue|ticket)\s+#\d+"
+        r"|\b(?:owns?|takes?|fix(?:es)?|responsible\s+for)\s+(?:issue|ticket)\s+#\d+"
+        rf"|(?s:\A(?=.*?#\d+).*?){OPEN_PR}"
         r"|\bfork\s+(?:for|that\s+owns)\s+(?:issue\s+|ticket\s+)?#\d+\s+only\b", I)),
     ("a worktree with its branch", re.compile(
-        r"\bworktree\b[\s(:]*(?:already\s+)?(?:exists|created)\b"
+        rf"(?s:\A(?=.*?(?:{HANDOVER_CUE})).*?)\bworktree\b[\s(:]*(?:already\s+)?(?:exists|created)\b"
         rf"|\bworktree\b[^.\n]{{0,40}}?{PATH}`?\s*(?:,|\bon\b)\s*(?:on\s+)?branch\b", I)),
-    ("a `git worktree add` to run", re.compile(rf"\bgit\s+(?:-C\s+{PATH}\s+)?worktree\s+add\b", I)),
+    ("a `git worktree add` to run", re.compile(
+        r"\bgit\s+(?:-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)\s+)?worktree\s+add\b", I)),
 ]
 
 
