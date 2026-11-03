@@ -265,6 +265,15 @@ if not pr_route or "Once it is merged, run step 1 again and write step 3's body 
                    "collection predates the fix PR." not in pr_route.group(0):
     errors.append("skills/batch-pr: step 2's `pr` route does not run step 1 again after the fix PR merges")
 
+# The latest run across all workflows can be a Dependabot run that tests nothing (#98).
+evidence = re.search(r"^- \*\*Evidence\*\*: .*$", skills["batch-pr"].read_text(), re.M)
+evidence = evidence.group(0) if evidence else ""
+runs = re.findall(r"gh run list [^`]*", evidence)
+if not runs or any("--workflow" not in r for r in runs) or "workflow.md" not in evidence \
+        or "batch PR's own checks" not in evidence:
+    errors.append("skills/batch-pr: step 3's Evidence must take the pre-main run of each CI workflow workflow.md "
+                  "names (`gh run list --workflow`), and point at the batch PR's own checks")
+
 # Each skill ships its own copy, since `python3 -I` keeps a script's folder off sys.path; the copies stay one.
 copies = {}
 for script in ("batch-pr/batch.py", "issue-flow/wait-review.py", "triage/ready.py"):
