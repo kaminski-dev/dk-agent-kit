@@ -54,10 +54,13 @@ graders:
     criteria: >
       Each finding the review reports under its Standards, Spec, Correctness and Comments sections
       carries a stable id (an axis prefix ST, SP, CO or CM followed by a number, such as CO1) and one
-      severity of blocker, should or nit, as in `CO1 [should] ledger/outbox.py:40 ...`. A section
-      that reports no finding needs neither. PASS when every reported finding carries both an id and
-      one of the three severities; FAIL when any finding lacks either, or uses another severity
-      scale such as hard or judgement call.
+      severity of blocker, should or nit, as in `CO1 [should] ledger/outbox.py:40 ...`. Judge only the
+      finding lines inside those four sections: a summary table, a closing note or a line that points
+      at other ids is not a finding. Markdown around the id (`**CO1 [should]**`), sub-bullets under a
+      finding, and a finding with no line number do not matter. A section that reports no finding
+      needs neither. PASS when every finding line carries both an id and one of the three
+      severities; FAIL when any finding line lacks either, or uses another severity scale such as
+      hard or judgement call.
   - name: four-axes
     type: regex
     pattern: "## Standards[\\s\\S]*## Spec[\\s\\S]*## Correctness[\\s\\S]*## Comments"
