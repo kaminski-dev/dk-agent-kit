@@ -91,6 +91,9 @@ STATUS = ("<!-- recent_review_status_start -->", "<!-- recent_review_status_end 
 NO_FINDINGS = "No actionable comments were generated in the recent review."
 # CI and deploy bots report through checks. Their PR comments are status reports.
 STATUS_BOTS = ("github-actions", "vercel", "netlify", "railway", "cloudflare")
+# The review bot's own check is named after its login, less a short suffix (`CodeRabbit` for coderabbitai[bot]).
+BOT_CHECK_SUFFIX = 4
+BOT_CHECK_MIN = 4
 STATE_DIR = Path.home() / ".local" / "state" / "pr-wait"
 # A state file older than this describes an old session. Start a fresh baseline
 # instead of replaying hours of comments as new events.
@@ -211,11 +214,10 @@ def same_login(graphql_login: str | None, rest_login: str | None) -> bool:
 
 
 def bot_check(name: str, bot: str | None) -> bool:
-    """A check run the review bot posts itself, which never gates: its whole name, in lowercase alphanumerics, is the
-    login's stem, or the stem less a suffix of up to 4 characters (`CodeRabbit` for coderabbitai[bot])."""
+    """A check run the review bot posts itself, which never gates."""
     check = re.sub(r"[^a-z0-9]", "", name.lower())
     login = re.sub(r"[^a-z0-9]", "", (bot or "").lower().removesuffix("[bot]"))
-    return bool(check) and login.startswith(check) and len(login) - len(check) <= 4
+    return len(check) >= BOT_CHECK_MIN and login.startswith(check) and len(login) - len(check) <= BOT_CHECK_SUFFIX
 
 
 def who(node: Json) -> tuple[str, bool]:
