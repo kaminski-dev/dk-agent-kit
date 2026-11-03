@@ -47,7 +47,8 @@ def decide(tool_input):
     return (f"this fork is handed {' and '.join(matched)}, and a fork inherits this whole conversation. "
             "Relaunch it as a plain subagent (leave out subagent_type, or name an agent type) with the brief in "
             "its prompt: the issue, the worktree path and branch, the scratch directory, the skills to call and "
-            "the report it owes. Forks stay for sweeps that work a slice of files and leave commits to you.")
+            "the report it owes (dk:issue-flow step 2, Fan-out). Forks stay for sweeps that work a slice of files "
+            "and leave commits to you.")
 
 
 def main():
