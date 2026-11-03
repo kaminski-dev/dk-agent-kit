@@ -430,6 +430,21 @@ check("ready: the doc's blocking write reaches the stand-in", r.returncode == 0,
 got = ready_py()
 check("ready.py: then leaves out #370 too", got == ([372, 373, 376], {370: [372], 371: [372], 375: [372]}), got)
 
+# The doc's gh 2.94+ blocking writes reach the stand-in too, rather than passing as unknown flags (#117).
+saved = state_file.read_text()
+blockers_of = lambda n: [b["number"] for b in json.loads(
+    run(ws, f"gh api repos/acme/ledger/issues/{n}/dependencies/blocked_by").stdout or "[]")]
+r = run(ws, "gh issue edit 376 --add-blocked-by 372")
+check("ready: `gh issue edit --add-blocked-by` adds the edge", r.returncode == 0 and blockers_of(376) == [372],
+      (r.stderr, blockers_of(376)))
+r = run(ws, "gh issue create --title T --body B --blocked-by 372,373")
+new = r.stdout.strip().rsplit("/", 1)[-1]
+check("ready: `gh issue create --blocked-by` adds every edge",
+      r.returncode == 0 and new.isdigit() and blockers_of(new) == [372, 373], (r.stdout, r.stderr))
+r = run(ws, "gh issue edit 376 --add-blocked-by 999")
+check("ready: `--add-blocked-by` an unknown issue fails", r.returncode != 0, r.stdout)
+state_file.write_text(saved)
+
 # Past gh's default page of 30: the docs' first cut, run as written, and ready.py.
 state = json.loads(state_file.read_text())
 for n in range(400, 440):
