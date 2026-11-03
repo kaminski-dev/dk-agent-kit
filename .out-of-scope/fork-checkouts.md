@@ -15,7 +15,7 @@ The alternative, letting `gh` resolve the repo itself (even with an inherited `G
 
 What each unsupported shape does:
 
-- **Fork**: the scripts ask about the fork. `pr-wait` fails loudly, since the PR is on the upstream. `ready.py` lists the fork's issues without an error.
+- **Fork**: the scripts ask about the fork. `pr-wait` given a bare PR number, with no `--repo` and no PR URL, fails loudly, since the PR is on the upstream; given either, it watches the upstream PR. `ready.py` lists the fork's issues without an error.
 - **ssh alias or GHE host**: no repo is found, and every script stops before its first `gh` call. `dk-gc` keeps everything in such a checkout.
 
 ## If a real case shows up
