@@ -342,6 +342,11 @@ for what, pattern in (
 ):
     if gate and not re.search(pattern, gate, re.S):
         errors.append(f"skills/issue-flow: step 6's **Ready gate.** paragraph does not name {what}")
+for line in ("could not read whether it touches files in this PR", "required checks could not be read (HTTP 403"):
+    if line not in watcher or line not in step6:
+        errors.append(f"skills/issue-flow: step 6's event list must name pr-wait's `{line}` line")
+if "the merge state known" not in step6:
+    errors.append("skills/issue-flow: step 6 must say `ready` waits for the merge state known")
 if not re.search(r"6 hours[^.]*fresh baseline", step6):
     errors.append("skills/issue-flow: step 6 must say the watcher keeps its state 6 hours, past which a restart "
                   "starts a fresh baseline")
