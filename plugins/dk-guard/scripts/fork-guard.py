@@ -31,12 +31,17 @@ HANDOVERS = [
 ]
 
 
+def handovers(tool_input):
+    """What an Agent call's input hands a fork, from HANDOVERS; empty for a plain subagent."""
+    if not isinstance(tool_input, dict) or tool_input.get("subagent_type") != "fork":
+        return []
+    text = "\n".join(v for v in (tool_input.get("description"), tool_input.get("prompt")) if isinstance(v, str))
+    return [what for what, rx in HANDOVERS if rx.search(text)]
+
+
 def decide(tool_input):
     """The deny reason for an Agent call's input, or None to let it through."""
-    if not isinstance(tool_input, dict) or tool_input.get("subagent_type") != "fork":
-        return None
-    text = "\n".join(v for v in (tool_input.get("description"), tool_input.get("prompt")) if isinstance(v, str))
-    matched = [what for what, rx in HANDOVERS if rx.search(text)]
+    matched = handovers(tool_input)
     if not matched:
         return None
     return (f"this fork is handed {' and '.join(matched)}, and a fork inherits this whole conversation. "
