@@ -79,7 +79,7 @@ def gh_json(*args):
 def slug_of(root):
     """owner/repo of origin on GitHub, from the configured URL (before any insteadOf)."""
     url = (git(root, "config", "--get", "remote.origin.url") or "").strip()
-    m = re.search(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", url)
+    m = re.search(r"(?:^|[@/])github\.com(?::\d+)?[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", url, re.I)
     return m.group(1) if m else None
 
 

@@ -231,8 +231,9 @@ state() {
   cat "$fx/docker-ps"
   ls "$ws"
 }
-has() { grep -qF -- "$2" <<<"$1" || fail "output lacks '$2':"$'\n'"$1"; }
-lacks() { ! grep -qF -- "$2" <<<"$1" || fail "output has '$2':"$'\n'"$1"; }
+# An expected text of several lines must appear as one block.
+has() { [[ "$1" == *"$2"* ]] || fail "output lacks '$2':"$'\n'"$1"; }
+lacks() { [[ "$1" != *"$2"* ]] || fail "output has '$2':"$'\n'"$1"; }
 
 # A dry run lists what finished and changes nothing.
 before=$(state)
@@ -406,4 +407,18 @@ stop "$pido"
 # A path that is no worktree is no all-clear: a typo stops the removal by hand.
 out=$("$dkgc" --in-use "$ws/notes-9") && fail "--in-use exited 0 on a path that does not exist"
 has "$out" "$ws/notes-9: no such directory"
+
+# Origin URL shapes, in a workspace of their own. gh has no o/r fixture, so a repo that names o/r shows
+# as one whose PRs it cannot list; the lookalike's database shows it names none.
+shapes="$tmp/shapes" sfx="$tmp/shapes-fixture"
+mkdir -p "$shapes" "$sfx"
+for spec in lookalike=https://notgithub.com/o/r.git caps=https://GitHub.com/o/r.git port=ssh://git@github.com:22/o/r.git; do
+  git init -q "$shapes/${spec%%=*}"
+  git -C "$shapes/${spec%%=*}" remote add origin "${spec#*=}"
+done
+printf '%s\t%s\t%s\t%s\n' c1 dk-pg-lookalike-1 "$shapes/lookalike" 1 >"$sfx/docker-ps"
+out=$(DKGC_FIXTURE="$sfx" "$dkgc" --dry-run --workspace "$shapes")
+has "$out" "lookalike (no GitHub origin)"$'\n'"  keep database dk-pg-lookalike-1 (issue #1; no GitHub checkout at $shapes/lookalike)"
+has "$out" "caps (o/r)"$'\n'"  branches skipped: gh could not list its PRs"
+has "$out" "port (o/r)"$'\n'"  branches skipped: gh could not list its PRs"
 echo "dk-gc: all checks passed"
