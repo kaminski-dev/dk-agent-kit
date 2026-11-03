@@ -10,8 +10,10 @@ GH_REPO says. It fetches origin's main and pre-main, then prints:
 
 Exit 0: collected. Exit 3: a PR from pre-main into main is already open; its
 URL is printed. Exit 4: nothing to batch (no pre-main on origin, or pre-main
-holds no commit that main lacks). Exit 1: git or gh failed, or a PR merged
-into pre-main has a merge commit this clone does not hold; it names them.
+holds no commit that main lacks). Exit 1: git or gh failed, origin is no
+github.com repo, a PR merged into pre-main has a merge commit this clone does
+not hold (it names them), or pre-main holds merge commits that no merged PR of
+origin's repo matches (it names the repo).
 Both branches are fetched by name, so a single-branch clone gets pre-main too;
 a shallow clone is deepened first.
 
@@ -65,7 +67,7 @@ def main():
         print(__doc__.strip())
         return 0 if sys.argv[1] in ("-h", "--help") else 1
 
-    os.environ["GH_REPO"] = origin_repo()  # an inherited GH_REPO would point gh at another repo
+    repo = os.environ["GH_REPO"] = origin_repo()  # an inherited GH_REPO would point gh at another repo
     open_batch = gh_json("pr", "list", "--base", "main", "--head", "pre-main", "--state", "open", "--json", "url")
     if open_batch:
         print(f"A batch PR is already open: {open_batch[0]['url']}")
@@ -102,6 +104,10 @@ def main():
         names = ", ".join(f"#{p['number']}" for p in unknown)
         sys.exit(f"Merged into pre-main since {since}, but their merge commit is not in this clone: {names}. "
                  "Fetch it, or check whether pre-main was rewritten, before opening the batch PR.")
+    if not batch and sh("git", "rev-list", "--merges", "origin/main..origin/pre-main").stdout.strip():
+        sys.exit(f"origin/main..origin/pre-main holds merge commits, but no PR merged into pre-main of "
+                 f"{repo} since {since} matches one. Check that {repo} "
+                 "is where this checkout's PRs are merged.")
     batch.sort(key=lambda p: p["number"])
 
     kind_of, without = {}, []
