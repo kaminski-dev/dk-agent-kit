@@ -42,7 +42,8 @@ Events
   - the review bot's verdict on the head: `reviews <id>...` (the REST review
     ids step 6 reads findings by), `clean` (its summary reports no actionable
     comments), or `rate limited` or `paused` (it will not review on its own)
-  - the base branch moved and the new commits touch files in this PR
+  - the base branch moved and the new commits touch files in this PR, or the
+    files they touch could not be read (the next poll reads them again)
   - merge state became BEHIND or DIRTY
   - the PR merged or closed
   - the deadline passed
@@ -380,15 +381,15 @@ class Watcher:
                 checks[row["name"]] = row
         return checks
 
-    def base_overlap(self, head: str, old: str, new: str) -> list[str]:
-        """Files this PR touches that the new base commits also touch."""
+    def base_overlap(self, head: str, old: str, new: str) -> list[str] | None:
+        """Files this PR touches that the new base commits also touch; None when they cannot be read."""
         try:
             if head not in self.pr_files:
                 self.pr_files[head] = set(gh_lines(["pr", "diff", str(self.pr), "-R", self.repo, "--name-only"]))
             moved = gh_lines(["api", f"repos/{self.repo}/compare/{old}...{new}", "--jq", ".files[].filename"])
         except GhError as error:
             log(f"could not compare base commits: {error}")
-            return []
+            return None
         return sorted(self.pr_files[head].intersection(moved))
 
     def behind(self, base: str, base_oid: str | None, head: str) -> str:
@@ -516,15 +517,19 @@ class Watcher:
         # Base branch and merge state.
         base_oid = ((pr.get("baseRef") or {}).get("target") or {}).get("oid")
         old_base = self.state["base_oid"]
+        touched: list[str] | None = []
         if base_oid and old_base and base_oid != old_base and not self.baseline:
             touched = self.base_overlap(head, old_base, base_oid)
-            if touched:
+            if touched is None:  # the saved base stays, so the next poll compares again
+                self.emit(f"base-unread:{base_oid}",
+                          f"{base} moved to {base_oid[:7]}; could not read whether it touches files in this PR")
+            elif touched:
                 more = f" and {len(touched) - 5} more" if len(touched) > 5 else ""
                 self.emit(
                     f"base:{base_oid}",
                     f"{base} moved to {base_oid[:7]} and touches files in this PR: {', '.join(touched[:5])}{more}",
                 )
-        if base_oid:
+        if base_oid and touched is not None:
             self.state["base_oid"] = base_oid
         merge_state = pr["mergeStateStatus"]
         dirty_line = f"merge state is DIRTY: the branch conflicts with {base}, rebase it"
