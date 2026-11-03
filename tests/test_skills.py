@@ -135,6 +135,63 @@ if not retro_test or not re.search(r"still passes when the behaviour it checks b
     errors.append("skills/retro: the correct step's **Test** level does not ask for a test that fails when the behaviour "
                   "breaks and keeps passing when only the internals change")
 
+# Each finding carries a stable id and a severity judged against the change's intent, and the change's author
+# answers every id in a ledger over a bounded number of rounds (#125, tstack sol-loop).
+reviewer = agents["reviewer"].read_text()
+for what, pattern in (
+    ("the finding line", r"`<id> \[blocker\|should\|nit\] <file>:<line> <claim>\. Fix: <fix>`"),
+    ("the severity judged against the change's intent", r"against the change's intent"),
+    ("blocker as the intended case wrong", r"\*\*blocker\*\*[^\n]*intended case is wrong"),
+    ("should as a real bug callers will hit", r"\*\*should\*\*[^\n]*real bug callers will hit"),
+    ("nit as everything else", r"\*\*nit\*\*[^\n]*everything else"),
+    ("ids prefixed as the brief says", r"prefix the brief"),
+    ("old ids kept and marked in a later round", r"`resolved`[^\n]*`still open: <reason>`"),
+):
+    if not re.search(pattern, reviewer):
+        errors.append(f"agents/reviewer: does not name {what}")
+comment_reviewer = agents["comment-reviewer"].read_text()
+if "<!-- Adapted from cursor/plugins pstack@" not in comment_reviewer:
+    errors.append("agents/comment-reviewer: lost its pstack provenance marker")
+for what, pattern in (
+    ("the finding line", r"`<id> \[should\|nit\] <file>:<line> "),
+    ("findings as nits unless the comment states something false", r"`nit` unless the comment states something false"),
+    ("Stale as a should", r"^- \*\*Stale\*\*:[^\n]*`should`"),
+):
+    if not re.search(pattern, comment_reviewer, re.M):
+        errors.append(f"agents/comment-reviewer: does not name {what}")
+for name, text in (("agents/reviewer", reviewer), ("agents/comment-reviewer", comment_reviewer),
+                   ("skills/code-review", review)):
+    if re.search(r"hard violation|judgement call|\bHard\.|hard or judgement", text, re.I):
+        errors.append(f"{name}: still marks findings hard or judgement call; the blocker, should or nit severity replaces it")
+spawn = re.search(r"^### 4\..*?(?=^### 5\.)", review, re.M | re.S)
+if not re.search(r"`ST`.*Standards.*`SP`.*Spec.*`CO`.*Correctness.*`CM`.*Comments", spawn.group(0) if spawn else "", re.S):
+    errors.append("skills/code-review: step 4 must hand each axis its id prefix (`ST`, `SP`, `CO`, `CM`), "
+                  "so ids stay unique across the four reports")
+steps = re.findall(r"^### (\d+)\. (.*)$", review, re.M)
+answer = re.search(r"^### \d+\. Answer findings\n.*?(?=^## |\Z)", review, re.M | re.S)
+answer = answer.group(0) if answer else ""
+if not steps or steps[-1][1] != "Answer findings":
+    errors.append("skills/code-review: its last step must be 'Answer findings'")
+for what, pattern in (
+    ("a ledger of id, severity and outcome", r"ledger.*id.*severity.*outcome"),
+    ("the fixed outcome with evidence", r"`fixed: [^`]+`"),
+    ("the disagree outcome with evidence", r"`disagree: [^`]+`"),
+    ("the declined outcome", r"`declined: [^`]+`"),
+    ("later rounds on the open ids and the code changed since", r"only the open ids and the code changed since"),
+    ("3 rounds by default", r"\b3 rounds\b"),
+    ("5 rounds for the named risk classes", r"\b5\b[^.]*security, permissions, auth, data loss or concurrency"),
+    ("stopping early on a round that brings only nits", r"round brings only nits"),
+    ("the diff size after each round", r"`git diff --shortstat <fixed-point>`"),
+    ("growth cut first", r"cut first"),
+    ("declined findings worth doing through scope intake", r"`dk:issue-flow` step 3"),
+):
+    if not re.search(pattern, answer, re.S):
+        errors.append(f"skills/code-review: its Answer findings step does not name {what}")
+implement = skills["implement"].read_text()
+if "fix what it finds" in implement or not re.search(r"\*\*Answer findings\*\*.*ledger", implement):
+    errors.append("skills/implement: must answer review findings through dk:code-review's **Answer findings** "
+                  "ledger, not fix what the review finds")
+
 flow = skills["issue-flow"].read_text()
 bot = re.search(r"^\*\*Review bot\.\*\*.*?(?=^## )", flow, re.M | re.S)
 bot = bot.group(0) if bot else ""
@@ -147,6 +204,11 @@ for what, pattern in (
         errors.append(f"skills/issue-flow: its **Review bot.** paragraph in step 6 does not name {what}")
 if not re.search(r"pulls/\S+/comments\" --jq '[^']*in_reply_to_id == null", bot):
     errors.append("skills/issue-flow: item 1's inline query must keep the bot's thread starters only (in_reply_to_id == null)")
+# The bot's rounds end by the same budget as dk:code-review's (#125).
+if "until a round brings no new finding" in bot or not re.search(
+        r"`dk:code-review`'s \*\*Answer findings\*\*[^.]*severit[^.]*ledger[^.]*round budget", bot):
+    errors.append("skills/issue-flow: step 6's bot rounds must follow dk:code-review's **Answer findings** severities, "
+                  "ledger and round budget, not run until a round brings no new finding")
 
 # One watcher, pr-wait, reports every PR event in step 6, run with Monitor (#124).
 watch = re.search(r"^\*\*Watch the PR\.\*\*.*?(?=^\*\*Review bot\.\*\*)", flow, re.M | re.S)
