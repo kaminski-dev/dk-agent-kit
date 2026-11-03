@@ -136,6 +136,23 @@ if not re.search(r"<PR>-<review>-<\w+>", step7) or "one at a time" not in step7:
     errors.append("skills/issue-flow: step 7's push route needs a worktree key unique per finding, "
                   "body findings of one review included, and works findings one at a time")
 
+# #99: the maintainer's own findings on the batch PR take the bot's route, read once with step 6's reads.
+route = re.search(r"^- [^\n]*\*\*Batch-review fixes\*\*.*?(?=^  - `pr`:)", step7, re.M | re.S)
+route = route.group(0) if route else ""
+for what, pattern in (
+    ("the review bot's findings", r"step 6's \*\*Review bot\*\*"),
+    ("the maintainer's own review", r"maintainer's own review"),
+    ("its inline comments, review bodies and PR comments", r"inline review comments.*review bodies.*PR comments"),
+    ("the filter that keeps other bots out", r'\.user\.type == "User"'),
+    ("the PR-comment endpoint", r"repos/\S+/issues/<PR>/comments"),
+):
+    if not re.search(pattern, route, re.S):
+        errors.append(f"skills/issue-flow: step 7's routing bullet does not name {what}")
+if "pull_request_review_id ==" in step7:
+    errors.append("skills/issue-flow: step 7 repeats step 6's inline query; point at it instead")
+if "`<PR>-<comment>`" not in step7:
+    errors.append("skills/issue-flow: step 7's push route needs a worktree key for a PR-comment finding")
+
 fan_out = re.search(r"^\*\*Fan-out\.\*\*.*?(?=^## )", flow, re.M | re.S)
 waits = re.search(r"^- \*\*Waits\*\*:.*$", fan_out.group(0) if fan_out else "", re.M)
 if not waits or not re.search(r"every background wait", waits.group(0)) or not re.search(
