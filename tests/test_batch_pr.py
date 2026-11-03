@@ -3,9 +3,10 @@
 and a `coderabbit` stand-in.
 
 The workspace copies the shape plugins/dk/evals/_fixture/build.sh builds: .bin/gh
-first on PATH, its state in .tracker/state.json, a bare origin beside the repo.
-Directories holding a real `coderabbit` are left off PATH. Nothing reaches GitHub
-or CodeRabbit, and no case may open a PR.
+first on PATH, its state in .tracker/state.json, a bare origin beside the repo, which
+origin's github.com URL is rewritten to. GH_REPO names another repo, as it does in a
+session started from another checkout. Directories holding a real `coderabbit` are left
+off PATH. Nothing reaches GitHub or CodeRabbit, and no case may open a PR.
 """
 import json
 import os
@@ -19,6 +20,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "plugins" / "dk" / "skills" / "batch-pr" / "batch.py"
 REVIEW = ROOT / "plugins" / "dk" / "skills" / "batch-pr" / "review.py"
 GH = ROOT / "plugins" / "dk" / "evals" / "_fixture" / "bin" / "gh"
+ORIGIN = "https://github.com/acme/ledger.git"
+INHERITED = "kaminski-dev/dk-agent-kit"
 
 failures = []
 
@@ -42,14 +45,16 @@ class Workspace:
         shutil.copy(GH, self.root / ".bin" / "gh")
         self.repo = self.root / "repo"
         path = [d for d in os.environ["PATH"].split(os.pathsep) if not (pathlib.Path(d) / "coderabbit").exists()]
+        gitconfig = self.root / ".gitconfig"
+        gitconfig.write_text(f'[url "file://{self.root / "origin.git"}"]\n\tinsteadOf = {ORIGIN}\n')
         self.env = {"PATH": os.pathsep.join([str(self.root / ".bin"), *path]), "HOME": str(self.root), "TERM": "dumb",
-                    "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+                    "GIT_CONFIG_GLOBAL": str(gitconfig), "GIT_CONFIG_NOSYSTEM": "1", "GH_REPO": INHERITED}
         self.git_in(self.root, "init", "-q", "--bare", "origin.git")
         self.repo.mkdir()
         self.git("init", "-q", "-b", "main")
         self.git("config", "user.name", "Test")
         self.git("config", "user.email", "test@example.com")
-        self.git("remote", "add", "origin", "../origin.git")
+        self.git("remote", "add", "origin", ORIGIN)
         self.commit("base")
 
     def git_in(self, cwd, *args):
@@ -77,6 +82,11 @@ class Workspace:
         log = self.root / ".tracker" / "calls.log"
         return r, log.read_text() if log.exists() else ""
 
+    def repos_asked(self):
+        """The repo each gh call so far was asked for, as the stand-in logged it."""
+        log = self.root / ".tracker" / "repos.log"
+        return [line.split("\t", 1)[0] for line in log.read_text().splitlines()] if log.exists() else []
+
     def remove(self):
         shutil.rmtree(self.root, ignore_errors=True)
 
@@ -103,6 +113,9 @@ check("two merged PRs: both lines, each once", r.stdout.count("Closes #101\n") =
 check("two merged PRs: the earlier batch's and the open PR's lines left out",
       "#100" not in r.stdout and "#103" not in r.stdout and "#10 " not in r.stdout, r.stdout)
 check("two merged PRs: opens no PR", "pr create" not in calls, calls)
+asked = ws.repos_asked()
+check("an inherited GH_REPO: every gh call asks for origin's acme/ledger",
+      asked and set(asked) == {"acme/ledger"}, asked)
 ws.remove()
 
 # A merged PR whose body carries no Closes or Refs line is named, so the batch body can say so;
@@ -189,7 +202,7 @@ first, second = ws.commit("first"), ws.commit("second")
 ws.push()
 ws.state([pr(41, "pre-main", "fix/401-first", "MERGED", "Closes #401", first),
           pr(42, "pre-main", "fix/402-second", "MERGED", "Closes #402", second)])
-ws.git_in(ws.root, "clone", "-q", "--depth", "1", "--no-single-branch", f"file://{ws.root / 'origin.git'}", "shallow")
+ws.git_in(ws.root, "clone", "-q", "--depth", "1", "--no-single-branch", ORIGIN, "shallow")
 r, _ = ws.run(cwd=ws.root / "shallow")
 check("shallow checkout: both PRs and both lines",
       r.returncode == 0 and "#41 PR 41" in r.stdout and "Closes #401\nCloses #402\n" in r.stdout,
@@ -204,7 +217,7 @@ first, second = ws.commit("first"), ws.commit("second")
 ws.push()
 ws.state([pr(43, "pre-main", "fix/403-first", "MERGED", "Closes #403", first),
           pr(44, "pre-main", "fix/404-second", "MERGED", "Closes #404", second)])
-ws.git_in(ws.root, "clone", "-q", "--depth", "1", "--branch", "main", f"file://{ws.root / 'origin.git'}", "single")
+ws.git_in(ws.root, "clone", "-q", "--depth", "1", "--branch", "main", ORIGIN, "single")
 r, _ = ws.run(cwd=ws.root / "single")
 check("single-branch shallow clone: both PRs and both lines",
       r.returncode == 0 and "#43 PR 43" in r.stdout and "Closes #403\nCloses #404\n" in r.stdout,
