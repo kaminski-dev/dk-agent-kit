@@ -271,8 +271,8 @@ evidence = evidence.group(0) if evidence else ""
 runs = re.findall(r"gh run list [^`]*", evidence)
 if not runs or any("--workflow" not in r for r in runs) or "workflow.md" not in evidence \
         or "batch PR's own checks" not in evidence:
-    errors.append("skills/batch-pr: step 3's Evidence must take the pre-main run of each CI workflow workflow.md "
-                  "names (`gh run list --workflow`), and point at the batch PR's own checks")
+    errors.append("skills/batch-pr: step 3's Evidence must point at the batch PR's own checks, and read a pre-main "
+                  "run per CI workflow workflow.md names (`gh run list --workflow`), never the latest run of any")
 
 # Each skill ships its own copy, since `python3 -I` keeps a script's folder off sys.path; the copies stay one.
 copies = {}
