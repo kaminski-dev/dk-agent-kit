@@ -136,6 +136,35 @@ if not re.search(r"<PR>-<review>-<\w+>", step7) or "one at a time" not in step7:
     errors.append("skills/issue-flow: step 7's push route needs a worktree key unique per finding, "
                   "body findings of one review included, and works findings one at a time")
 
+# The maintainer's own findings on the batch PR take the bot's route, read once with step 6's inline query.
+route = re.search(r"^- [^\n]*\*\*Batch-review fixes\*\*.*?(?=^  - `pr`:)", step7, re.M | re.S)
+route = route.group(0) if route else ""
+for what, pattern in (
+    ("the review bot's findings", r"step 6's \*\*Review bot\*\*"),
+    ("the maintainer's own review", r"maintainer's own review"),
+    ("its inline comments, review bodies and PR comments", r"inline review comments.*review bodies.*PR comments"),
+    ("the filter that keeps other bots out", r'\.user\.type == "User"'),
+    ("a review read that keeps humans' submitted reviews with a body only",
+     r'pulls/<PR>/reviews" --jq \'[^\']*\.user\.type == "User"[^\']*\.state != "PENDING"[^\']*\.body != ""'),
+    ("a PR-comment read that keeps humans' comments only", r'issues/<PR>/comments" --jq \'[^\']*\.user\.type == "User"'),
+    ("that your own fix and skip records, posted from the same account, are records and not findings (#99)",
+     r"records.*same account.*leave them out"),
+):
+    if not re.search(pattern, route, re.S):
+        errors.append(f"skills/issue-flow: step 7's routing bullet does not name {what}")
+if "pull_request_review_id ==" in step7:
+    errors.append("skills/issue-flow: step 7 repeats step 6's inline query; point at it instead")
+if "`<PR>-<comment>`" not in step7:
+    errors.append("skills/issue-flow: step 7's push route needs a worktree key for a PR-comment finding")
+if not re.search(r"done.*inline record is a reply whose `in_reply_to_id`", route):
+    errors.append("skills/issue-flow: step 7's done check must find an inline finding's record among its thread's replies")
+pr_fix = re.search(r"^  - `pr`: .*$", step7, re.M)
+if not pr_fix or "record" not in pr_fix.group(0):
+    errors.append("skills/issue-flow: step 7's `pr` route must record each finding's fix PR on the batch PR")
+if not re.search(r"review-body finding post a PR comment with its key", step7) or not re.search(
+        r"skipped review-body finding gets it in a PR comment naming its key", step7):
+    errors.append("skills/issue-flow: step 7's review-body fix and skip records must name the finding's key")
+
 fan_out = re.search(r"^\*\*Fan-out\.\*\*.*?(?=^## )", flow, re.M | re.S)
 waits = re.search(r"^- \*\*Waits\*\*:.*$", fan_out.group(0) if fan_out else "", re.M)
 if not waits or not re.search(r"every background wait", waits.group(0)) or not re.search(
