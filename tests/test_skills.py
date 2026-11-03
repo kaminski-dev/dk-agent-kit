@@ -264,6 +264,24 @@ for kind, name, path in marked:
         if not re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", dk_column_by_section_commit.get(commit, "")):
             errors.append(f"{kind}/{name}: adapted from {source}@{commit}, but upstream/UPSTREAM.md has no row for it in the section at that commit")
 
+# dk:diagnosing-bugs must fire on its own, before dk:tdd and dk:verify, so it is model-invoked; its
+# description then sits in the listing every turn (#27), so it stays short (#122).
+diagnosing = skills.get("diagnosing-bugs")
+if diagnosing is None:
+    errors.append("skills/diagnosing-bugs: missing (#122)")
+else:
+    fm, text = frontmatter(diagnosing), diagnosing.read_text()
+    if "disable-model-invocation" in fm:
+        errors.append("skills/diagnosing-bugs: must be model-invoked (no disable-model-invocation)")
+    if len(fm.get("description", "")) > 160:
+        errors.append(f"skills/diagnosing-bugs: description is {len(fm.get('description', ''))} chars (> 160, #27)")
+    if not re.search(r"<!-- Adapted from mattpocock/skills@[0-9a-f]+ skills/engineering/diagnosing-bugs, MIT", text):
+        errors.append("skills/diagnosing-bugs: no `<!-- Adapted from mattpocock/skills@<commit> "
+                      "skills/engineering/diagnosing-bugs, MIT` marker")
+    for script in sorted(set(re.findall(r"`(scripts/[\w./-]+)`", text))):
+        if not (diagnosing.parent / script).is_file():
+            errors.append(f"skills/diagnosing-bugs: names {script}, which it does not ship")
+
 # The shape upstream/sync.sh parses (the format note at the top of UPSTREAM.md).
 # sync.sh skips a section whose heading it cannot read and matches no file
 # against a glob or a shorthand path, so either one hides upstream changes.
