@@ -12,8 +12,8 @@ Exit 0: collected. Exit 3: a PR from pre-main into main is already open; its
 URL is printed. Exit 4: nothing to batch (no pre-main on origin, or pre-main
 holds no commit that main lacks). Exit 1: git or gh failed, origin is no
 github.com repo, a PR merged into pre-main has a merge commit this clone does
-not hold (it names them), or pre-main holds merge commits that no merged PR of
-origin's repo matches (it names the repo).
+not hold (it names them), or no merged PR of origin's repo matches pre-main
+although it holds merge commits of branches (it names the repo).
 Both branches are fetched by name, so a single-branch clone gets pre-main too;
 a shallow clone is deepened first.
 
@@ -58,6 +58,13 @@ def merged_since(day):
         if len(merged) < limit:
             return merged
         limit *= 2
+
+
+def branch_merges():
+    """The batch's merge commits that bring in a branch; one whose second parent main holds levelled pre-main."""
+    log = sh("git", "log", "--merges", "--format=%H %P", "origin/main..origin/pre-main").stdout
+    merges = [line.split() for line in log.splitlines()]
+    return [m[0] for m in merges if sh("git", "merge-base", "--is-ancestor", m[2], "origin/main", ok=(0, 1)).returncode]
 
 
 def main():
@@ -105,8 +112,8 @@ def main():
         names = ", ".join(f"#{p['number']}" for p in unknown)
         sys.exit(f"Merged into pre-main since {since}, but their merge commit is not in this clone: {names}. "
                  "Fetch it, or check whether pre-main was rewritten, before opening the batch PR.")
-    if not batch and sh("git", "rev-list", "--merges", "origin/main..origin/pre-main").stdout.strip():
-        sys.exit(f"origin/main..origin/pre-main holds merge commits, but no PR merged into pre-main of "
+    if not batch and branch_merges():
+        sys.exit(f"origin/main..origin/pre-main holds merge commits of branches, but no PR merged into pre-main of "
                  f"{repo} since {since} matches one. Check that {repo} "
                  "is where this checkout's PRs are merged.")
     batch.sort(key=lambda p: p["number"])
