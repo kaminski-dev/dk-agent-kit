@@ -3,7 +3,7 @@ name: diagnosing-bugs
 description: Diagnosis loop for a bug or slowdown whose cause is unknown. Use when asked to diagnose or debug, or something breaks, throws, fails or is slow.
 ---
 
-<!-- Adapted from mattpocock/skills@4ae2317 skills/engineering/diagnosing-bugs, MIT (© 2026 Matt Pocock). Changed for dk-agent-kit: model-invoked with a shorter description; loops and the HITL copy live in the issue's scratch folder; artifacts captured through the helper docs/agents/observability.md names; the regression test goes through dk:tdd and the final proof through dk:verify, whose control run carries the Phase 2 scenario; the confirmed cause goes into the PR through dk:pr; a missing seam is handed to the user's /dk:improve-codebase-architecture. -->
+<!-- Adapted from mattpocock/skills@4ae2317 skills/engineering/diagnosing-bugs, MIT (© 2026 Matt Pocock). Changed for dk-agent-kit: model-invoked with a shorter description; loops and the HITL copy live in the issue's scratch folder; artifacts captured through the helper docs/agents/observability.md names; the regression test goes through dk:tdd and the final proof through dk:verify, whose control run carries the Phase 2 scenario, at the branch's last pre-fix commit for a bug born on the branch; the confirmed cause goes into the PR through dk:pr; a missing seam is handed to the user's /dk:improve-codebase-architecture. -->
 
 # Diagnosing Bugs
 
@@ -143,5 +143,5 @@ Required before declaring done:
 - [ ] Regression test passes (or absence of seam is documented)
 - [ ] All `[DEBUG-...]` instrumentation removed (`grep` the prefix)
 - [ ] Throwaway harnesses and scripts sit in `$SCRATCH/<N>/`, and `git status` shows none in the tree
-- [ ] The fix is proven: call the Skill tool with `dk:verify`, with the loop kept in Phase 2 as its control run's scenario
+- [ ] The fix is proven: call the Skill tool with `dk:verify`, with the loop kept in Phase 2 as its control run's scenario, and the branch's last pre-fix commit as the control when the bug came in on this branch (`dk:verify` step 4)
 - [ ] The hypothesis that turned out correct is stated in the commit message, and in the PR body you write after calling the Skill tool with `dk:pr`, so the next debugger learns

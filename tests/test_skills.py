@@ -462,6 +462,11 @@ if not re.search(r"\A---\n.*?\n---\n\n<!-- Adapted from t3dotgg/tstack@[0-9a-f]+
     errors.append("skills/handoff: no `<!-- Adapted from t3dotgg/tstack@<commit> skills/takeover, MIT (© 2026 Theo Browne).` "
                   "marker right after the frontmatter")
 
+# A bug born on the branch passes at the base, so its control is the branch's last pre-fix commit (#112, CodeRabbit on #136).
+control = re.search(r"^1\. \*\*Control\*\*.*$", skills["verify"].read_text(), re.M)
+if not control or "the branch's last pre-fix commit when the bug came in on this branch" not in control.group(0):
+    errors.append("skills/verify: step 4's control must be the branch's last pre-fix commit when the bug came in on this branch")
+
 # A performance claim owes its spread, so "faster" inside the noise reads as inconclusive (#119).
 owe = re.search(r"^## 1\..*?(?=^## 2\.)", skills["verify"].read_text(), re.M | re.S)
 perf = re.search(r"^\| Performance claim .*$", owe.group(0) if owe else "", re.M)
@@ -563,6 +568,7 @@ else:
         ("the observability helper for captured artifacts", r"`docs/agents/observability\.md`"),
         ("the regression test through dk:tdd", r"Skill tool with `dk:tdd`"),
         ("the final proof through dk:verify", r"Skill tool with `dk:verify`"),
+        ("a bug born on the branch, whose control is its last pre-fix commit", r"last pre-fix commit[^.]*`dk:verify` step 4"),
         ("the confirmed cause into the PR through dk:pr", r"Skill tool with `dk:pr`"),
         ("a missing seam routed to the user's /dk:improve-codebase-architecture", r"`/dk:improve-codebase-architecture`"),
     ):
