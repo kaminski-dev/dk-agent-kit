@@ -241,6 +241,30 @@ for what, pattern in (
     if perf and not re.search(pattern, perf):
         errors.append(f"skills/verify: step 1's Performance claim row does not name {what}")
 
+# A stale PR is judged as an idea before its branch is rebased, and only a leased push updates it (#123).
+modernize = skills.get("modernize")
+modernize_text = modernize.read_text() if modernize else ""
+if not modernize:
+    errors.append("skills/modernize: missing; a stale PR has no procedure")
+elif frontmatter(modernize).get("disable-model-invocation") != "true":
+    errors.append("skills/modernize: must be user-invoked (disable-model-invocation: true)")
+for what, pattern in (
+    ("its tstack provenance marker", r"<!-- Adapted from t3dotgg/tstack@1085050 skills/modernize, MIT \(© 2026 Theo Browne\)\. "
+                                     r"Changed for dk-agent-kit: "),
+    ("the three dispositions", r"MODERNIZE.*REWORK.*CLOSE"),
+    ("that age alone is not evidence", r"Age alone is not evidence"),
+    ("the base read from workflow.md", r"base.*`docs/agents/workflow\.md`"),
+    ("the worktree from dk:issue-flow step 2", r"`dk:issue-flow` step 2"),
+    ("the base's new commits checked for conceptual conflicts", r"conceptual conflict"),
+    ("the series compared with git range-diff", r"git range-diff"),
+    ("the push leased to the observed remote head", r"--force-with-lease=<branch>:<observed sha>"),
+):
+    if modernize and not re.search(pattern, modernize_text, re.S):
+        errors.append(f"skills/modernize: does not name {what}")
+if re.search(r"--force-with-lease(?!=)", modernize_text):
+    errors.append("skills/modernize: a bare --force-with-lease leases against whatever the last fetch saw; "
+                  "name the branch and the observed sha")
+
 readme = (ROOT / "README.md").read_text()
 for block in re.findall(r"```mermaid\n(.*?)```", readme, re.S):
     planned = {i for ids in re.findall(r"^\s*class (\S+) planned$", block, re.M) for i in ids.split(",")}
