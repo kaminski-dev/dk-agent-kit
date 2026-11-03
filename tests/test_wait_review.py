@@ -17,6 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(HERE, "..", "plugins", "dk", "skills", "issue-flow", "wait-review.py")
 BOT = {"login": "coderabbitai[bot]"}
 OLD, HEAD, NEW = "0" * 40, "1" * 40, "2" * 40
+NO_FINDINGS = "No actionable comments were generated in the recent review."
 
 STUB = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -62,12 +63,12 @@ def summary(recent="", notice="", updated="2026-11-02T12:05:00Z"):
     return {"user": BOT, "updated_at": updated, "body": body}
 
 
-def status(verdict="No actionable comments were generated in the recent review."):
-    """The status block above the walkthrough, where a clean round now puts its verdict; the SHA stays in the recent-review block."""
+def status(verdict=NO_FINDINGS):
+    """The status block above the walkthrough, where a clean round puts its verdict; the SHA stays in the recent-review block."""
     return f"<!-- recent_review_status_start -->\n\n{verdict}\n\n<!-- recent_review_status_end -->\n<!-- walkthrough_start -->\n"
 
 
-def reviewed(sha, verdict="No actionable comments were generated in the recent review.\n"):
+def reviewed(sha, verdict=NO_FINDINGS + "\n"):
     return verdict + f"Reviewing files that changed from the base of the PR and between {OLD} and {sha}."
 
 

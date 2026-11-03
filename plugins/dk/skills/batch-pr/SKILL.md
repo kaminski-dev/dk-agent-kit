@@ -50,7 +50,8 @@ Done when every finding is fixed on `pre-main` (a pushed SHA, or a merged fix PR
 Call the Skill tool with `dk:pr` and write the body to `batch-pr.md` in the session's scratchpad directory:
 
 - **Summary**: the `## PRs` list as printed. A PR from `## Without a line` gets `(no issue)` after its title.
-- **Evidence**: the batch PR's own checks, which run the CI workflows `docs/agents/workflow.md` names on the batch head: name those workflows here, and step 4 reads their result. When `workflow.md` names a run of that CI against `pre-main` (a nightly), add its latest run: `gh run list --workflow <workflow> --limit 1 --json workflowName,headBranch,headSha,conclusion,url`, one call per workflow, since the latest run across all workflows can be a Dependabot run that tests nothing. Each PR carries its own evidence.
+- **Evidence**: the batch PR's own checks, which run the CI workflows `docs/agents/workflow.md` names on the batch head: name those workflows here; step 4 reads their result. Each PR carries its own evidence.
+  - When `workflow.md` names a workflow that runs that CI against `pre-main` (a nightly), add its latest run: `gh run list --workflow <workflow> --limit 1 --json workflowName,headSha,conclusion,url`, one call per workflow, since the latest run across all workflows can be a Dependabot run that tests nothing. It counts when the commit it tested is `pre-main`'s head (`git rev-parse origin/pre-main`); otherwise say no run has tested that head yet.
 - **Merge Danger**: read each PR's own Merge Danger (`gh pr view N --json body`). The batch is a one-way door when any of them is, and names that PR.
 - **Local review**: each finding from step 2 with its file and line and what became of it: the fix's SHA, the fix PR, the issue it was filed as, or the reason it was skipped. When the review did not run, say why.
 - **Closing lines**: every line under `## Lines`, exactly as printed, as the body's last lines.
