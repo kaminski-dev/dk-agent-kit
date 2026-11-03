@@ -36,9 +36,11 @@ Exit codes
 Events
   - a required check failed (name and link)
   - all checks finished on the head (one summary line)
-  - a new comment, review, thread, or thread reply from anyone but the review
-    bot, the gh user included; one that opens with the attribution note
-    (dk:issue-flow step 6, **Comments.**) is the agent's own and skipped
+  - a new comment, thread, or thread reply from anyone but the review bot, the
+    gh user included, and a new review from anyone but a bot: reviews from any
+    bot are skipped, and only the review bot's verdict is read; one that opens
+    with the attribution note (dk:issue-flow step 6, **Comments.**) is the
+    agent's own and skipped
   - the review bot's verdict on the head: `reviews <id>...` (the REST review
     ids step 6 reads findings by), `clean` (its summary reports no actionable
     comments), or `rate limited` or `paused` (it will not review on its own)
@@ -77,7 +79,8 @@ DEFAULT_BOT = ("coderabbitai[bot]", {"main"})
 # dk:issue-flow step 6's attribution note, which opens every comment the agent posts; tests/test_skills.py keeps
 # this copy equal to the skill's
 ATTRIBUTION = re.compile(r"\A> \[!NOTE\]\r?\n> \*\*.+ responding on behalf of .+\*\*")
-# CodeRabbit's summary comment: each notice names the commit it is about.
+# CodeRabbit's summary comment: the rate-limit and pause notices and the recent-review block name the commit they are
+# about; the status block does not.
 RATE_LIMITED = ("<!-- This is an auto-generated comment: rate limited by coderabbit.ai -->",
                 "<!-- end of auto-generated comment: rate limited by coderabbit.ai -->")
 RECENT = ("<!-- recent_review_start -->", "<!-- recent_review_end -->")
