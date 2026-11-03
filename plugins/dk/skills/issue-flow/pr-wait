@@ -12,7 +12,8 @@ the run go to stderr.
 
 --until
   green       required checks passed on the current head (every CI check when
-              the base branch requires none)
+              the base branch requires none; no checks at all count once the
+              head is 3 minutes old)
   ready       green, the review bot gave its verdict on the current head, no
               review thread is unresolved, and the merge state is known and not
               BEHIND (default)
@@ -94,6 +95,9 @@ STATE_DIR = Path.home() / ".local" / "state" / "pr-wait"
 # A state file older than this describes an old session. Start a fresh baseline
 # instead of replaying hours of comments as new events.
 STALE_STATE_SECONDS = 6 * 3600
+# CI registers its checks a while after a push, so an empty gate counts as done only on a head seen this long ago.
+# The environment variable is the tests' clock seam.
+REGISTER_SECONDS = float(os.environ.get("PR_WAIT_REGISTER_SECONDS", 180))
 MAX_FAILED_POLLS = 10
 GH_TIMEOUT = 60
 TRANSIENT = re.compile(
@@ -327,6 +331,7 @@ class Watcher:
         self.printed: set[str] = set()
         self.events = 0
         self.head: str | None = None
+        self.head_seen = 0.0  # monotonic time this watcher first saw self.head
         self.required: set[str] | None = None
         self.prev_snapshot: list[tuple[str, str]] | None = None
         self.pr_files: dict[str, set[str]] = {}
@@ -458,7 +463,8 @@ class Watcher:
         head = pr["headRefOid"]
         short = head[:7]
         if head != self.head:  # a push restarts the deadline
-            self.head, deadline = head, time.monotonic() + self.minutes * 60
+            self.head, self.head_seen = head, time.monotonic()
+            deadline = self.head_seen + self.minutes * 60
         comments = pr["comments"]["nodes"]
         reviews = pr["reviews"]["nodes"]
         threads = pr["reviewThreads"]["nodes"]
@@ -479,7 +485,8 @@ class Watcher:
                 fail_lines.append(f"{label} failed: {name} {link}")
                 self.emit(f"fail:{head}:{name}:{link}", fail_lines[-1])
         watched = {name: c for name, c in checks.items() if not bot_check(name, self.bot)}
-        gate_done = all(bucket(n) != "pending" for n in gate)  # no checks at all, once stable, count as done
+        gate_done = all(bucket(n) != "pending" for n in gate) and (
+            bool(gate) or time.monotonic() - self.head_seen >= REGISTER_SECONDS)
         all_done = gate_done and all(c["bucket"] != "pending" for c in watched.values())
         # Checks appear a few seconds after a push. Two identical polls in a row
         # guard against calling a half-registered set of checks finished.
