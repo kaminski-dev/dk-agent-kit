@@ -3,7 +3,7 @@ name: diagnosing-bugs
 description: Diagnosis loop for a bug or slowdown whose cause is unknown. Use when asked to diagnose or debug, or something breaks, throws, fails or is slow.
 ---
 
-<!-- Adapted from mattpocock/skills@49dd158 skills/engineering/diagnosing-bugs, MIT (© 2026 Matt Pocock). Changed for dk-agent-kit: model-invoked with a shorter description. -->
+<!-- Adapted from mattpocock/skills@49dd158 skills/engineering/diagnosing-bugs, MIT (© 2026 Matt Pocock). Changed for dk-agent-kit: model-invoked with a shorter description; loops and the HITL copy live in the issue's scratch folder; artifacts captured through the helper docs/agents/observability.md names; the regression test goes through dk:tdd and the final proof through dk:verify, whose control run carries the Phase 2 scenario; the confirmed cause goes into the PR through dk:pr; a missing seam is handed to the user's /dk:improve-codebase-architecture. -->
 
 # Diagnosing Bugs
 
@@ -11,9 +11,13 @@ A discipline for hard bugs. Skip phases only when explicitly justified.
 
 When exploring the codebase, read `GLOSSARY.md` (if it exists) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
 
+Loop scripts, harnesses, fixtures, captured artifacts and your copy of `scripts/hitl-loop.template.sh` (in this skill's base directory) live in `$SCRATCH/<N>/`, the issue's scratch folder from `dk:issue-flow` step 2.
+
 ## Redact
 
 This skill has you show commands, outputs and captured artifacts. **Redact every secret first**: write `<REDACTED>` in its place. Build loops against env vars, so the credential stays in the environment rather than in what you show. Captured artifacts carry auth headers: quote only the lines that carry the signal.
+
+Capture production logs, error events and traces with the access command `docs/agents/observability.md` names, which holds the credential for you, and save them in `$SCRATCH/<N>/`. A repo without that doc gets the artifact from the user (Phase 1, when you cannot build a loop).
 
 If the redacted output is not enough to diagnose the bug, say so and ask the user.
 
@@ -34,7 +38,7 @@ Spend disproportionate effort here. **Be aggressive. Be creative. Refuse to give
 7. **Property / fuzz loop.** If the bug is "sometimes wrong output", run 1000 random inputs and look for the failure mode.
 8. **Bisection harness.** If the bug appeared between two known states (commit, dataset, version), automate "boot at state X, check, repeat" so you can `git bisect run` it.
 9. **Differential loop.** Run the same input through old-version vs new-version (or two configs) and diff outputs.
-10. **HITL bash script.** Last resort. If a human must click, drive _them_ with `scripts/hitl-loop.template.sh` so the loop is still structured. Captured output feeds back to you.
+10. **HITL bash script.** Last resort. If a human must click, drive _them_ with your copy of `scripts/hitl-loop.template.sh` so the loop is still structured. Captured output feeds back to you.
 
 Build the right feedback loop, and the bug is 90% fixed.
 
@@ -87,6 +91,8 @@ Done when **every remaining element is load-bearing**: removing any one of them 
 
 Do not proceed until you have reproduced **and** minimised.
 
+Keep the un-minimised loop and its red output: they are the scenario and the expected control result for `dk:verify` in Phase 6.
+
 ## Phase 3: Hypothesise
 
 Generate **3–5 ranked hypotheses** before testing any of them. Single-hypothesis generation anchors on the first plausible idea.
@@ -119,9 +125,9 @@ Write the regression test **before the fix**, but only if there is a **correct s
 
 A correct seam is one where the test exercises the **real bug pattern** as it occurs at the call site. If the only available seam is too shallow (single-caller test when the bug needs multiple callers, unit test that can't replicate the chain that triggered the bug), a regression test there gives false confidence.
 
-**If no correct seam exists, that itself is the finding.** Note it. The codebase architecture is preventing the bug from being locked down. Flag this for the next phase.
+**If no correct seam exists, that itself is the finding.** The codebase architecture is preventing the bug from being locked down. State it in your report and in the PR, and recommend the user run `/dk:improve-codebase-architecture` to find the seam; it is user-invoked, so starting it is theirs.
 
-If a correct seam exists:
+If a correct seam exists, call the Skill tool with `dk:tdd`, propose that seam under its seam rule, and run its loop through these steps:
 
 1. Turn the minimised repro into a failing test at that seam.
 2. Watch it fail. If you forced the red by mutating code or a fixture, `diff` against a pristine copy to prove the mutation landed before you trust it.
@@ -136,5 +142,6 @@ Required before declaring done:
 - [ ] Original repro no longer reproduces (re-run the Phase 1 loop)
 - [ ] Regression test passes (or absence of seam is documented)
 - [ ] All `[DEBUG-...]` instrumentation removed (`grep` the prefix)
-- [ ] Throwaway prototypes deleted (or moved to a clearly-marked debug location)
-- [ ] The hypothesis that turned out correct is stated in the commit / PR message, so the next debugger learns
+- [ ] Throwaway harnesses and scripts sit in `$SCRATCH/<N>/`, and `git status` shows none in the tree
+- [ ] The fix is proven: call the Skill tool with `dk:verify`, with the loop kept in Phase 2 as its control run's scenario
+- [ ] The hypothesis that turned out correct is stated in the commit message, and in the PR body you write after calling the Skill tool with `dk:pr`, so the next debugger learns

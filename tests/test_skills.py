@@ -281,6 +281,16 @@ else:
     for script in sorted(set(re.findall(r"`(scripts/[\w./-]+)`", text))):
         if not (diagnosing.parent / script).is_file():
             errors.append(f"skills/diagnosing-bugs: names {script}, which it does not ship")
+    for what, pattern in (
+        ("the issue's scratch folder for loops and the HITL copy", r"`\$SCRATCH/<N>/`"),
+        ("the observability helper for captured artifacts", r"`docs/agents/observability\.md`"),
+        ("the regression test through dk:tdd", r"Skill tool with `dk:tdd`"),
+        ("the final proof through dk:verify", r"Skill tool with `dk:verify`"),
+        ("the confirmed cause into the PR through dk:pr", r"Skill tool with `dk:pr`"),
+        ("a missing seam routed to the user's /dk:improve-codebase-architecture", r"`/dk:improve-codebase-architecture`"),
+    ):
+        if not re.search(pattern, text):
+            errors.append(f"skills/diagnosing-bugs: does not name {what}")
 
 # The shape upstream/sync.sh parses (the format note at the top of UPSTREAM.md).
 # sync.sh skips a section whose heading it cannot read and matches no file
