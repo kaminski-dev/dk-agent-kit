@@ -86,6 +86,11 @@ for ref in sorted(set(re.findall(r'subagent_type: "dk:([a-z][a-z-]*)"', review))
 baseline = re.search(r"\*\*smell baseline\*\*.*?(?=^The \*\*comment policy\*\*)", review, re.M | re.S)
 if baseline is None or re.search(r"empty test", baseline.group(0), re.I):
     errors.append("skills/code-review: the Standards smell baseline lists Empty Test; the Correctness brief owns it")
+# pstack principle-fix-root-causes: a guard is right only when the state it handles is legitimate.
+for entry in ("Defensive Interior", "Swallowed Error"):
+    line = re.search(rf"^- \*\*{entry}\*\*:.*$", baseline.group(0) if baseline else "", re.M)
+    if not line or not re.search(r"state it handles is legitimate", line.group(0)):
+        errors.append(f"skills/code-review: the baseline's {entry} entry does not ask whether the state it handles is legitimate")
 standards_brief = re.search(r"^\*\*Standards sub-agent prompt\*\*.*?(?=^\*\*Spec sub-agent prompt\*\*)", review, re.M | re.S)
 if not re.search(r"Whether a test can fail is the Correctness axis's question unless a documented standard rules on it",
                  standards_brief.group(0) if standards_brief else ""):
@@ -106,6 +111,16 @@ for what, pattern in (
 ):
     if not re.search(pattern, test_question):
         errors.append(f"skills/code-review: the Correctness brief's **Test** question does not name {what}")
+# pstack e5136d8: the two imagined edits, and two cases a list of assertion shapes misjudges.
+for what, pattern in (
+    ("the break-the-behaviour edit (does the test still pass?)", r"\*\*[Bb]reak the behaviour\*\*[^*]*still pass"),
+    ("the change-the-internals edit (does it now fail?)", r"\*\*[Cc]hange the internals\*\*[^*]*now fail"),
+    ("an absence assertion counting when paired with a presence case", r"absence assertion[^;]*paired with a presence case"),
+    ("the error type as the contract", r"error type[^.]*\bcontract\b"),
+    ("an exact error message as implementation", r"error message"),
+):
+    if not re.search(pattern, test_question):
+        errors.append(f"skills/code-review: the Correctness brief's **Test** question does not name {what}")
 empty_result = re.search(r"`toEqual\(\[\]\)`[^;]*", test_question)
 empty_result = empty_result.group(0) if empty_result else ""
 if not re.search(r"\bwhen a subject that does nothing\b.*\breturns\b", empty_result) or not re.search(
@@ -113,6 +128,12 @@ if not re.search(r"\bwhen a subject that does nothing\b.*\breturns\b", empty_res
     errors.append("skills/code-review: the Correctness brief's **Test** question must flag an empty-result-only assertion "
                   "(`toEqual([])`) only when a subject that does nothing still returns that result, and say in the same "
                   "clause that a no-op returns `undefined` or `None` (#87: reviewers took a no-op to return [])")
+# The retro's correct step judges a test as the review does (pstack correct, e5136d8).
+retro_test = re.search(r"^   \d\. \*\*Test\*\*.*$", skills["retro"].read_text(), re.M)
+if not retro_test or not re.search(r"still passes when the behaviour it checks breaks.*fails when only the internals change",
+                                   retro_test.group(0)):
+    errors.append("skills/retro: the correct step's **Test** level does not ask for a test that fails when the behaviour "
+                  "breaks and keeps passing when only the internals change")
 
 flow = skills["issue-flow"].read_text()
 bot = re.search(r"^\*\*Review bot\.\*\*.*?(?=^## )", flow, re.M | re.S)
@@ -310,6 +331,30 @@ for what, pattern in (
     if perf and not re.search(pattern, perf):
         errors.append(f"skills/verify: step 1's Performance claim row does not name {what}")
 
+# A stale PR is judged as an idea before its branch is rebased, and only a leased push updates it (#123).
+modernize = skills.get("modernize")
+modernize_text = modernize.read_text() if modernize else ""
+if not modernize:
+    errors.append("skills/modernize: missing; a stale PR has no procedure")
+elif frontmatter(modernize).get("disable-model-invocation") != "true":
+    errors.append("skills/modernize: must be user-invoked (disable-model-invocation: true)")
+for what, pattern in (
+    ("its tstack provenance marker", r"<!-- Adapted from t3dotgg/tstack@1085050 skills/modernize, MIT \(© 2026 Theo Browne\)\. "
+                                     r"Changed for dk-agent-kit: "),
+    ("the three dispositions", r"MODERNIZE.*REWORK.*CLOSE"),
+    ("that age alone is not evidence", r"Age alone is not evidence"),
+    ("the base read from workflow.md", r"base.*`docs/agents/workflow\.md`"),
+    ("the worktree from dk:issue-flow step 2", r"`dk:issue-flow` step 2"),
+    ("the base's new commits checked for conceptual conflicts", r"conceptual conflict"),
+    ("the series compared with git range-diff", r"git range-diff"),
+    ("the push leased to the observed remote head", r"git push --force-with-lease=<branch>:<observed sha>"),
+):
+    if modernize and not re.search(pattern, modernize_text, re.S):
+        errors.append(f"skills/modernize: does not name {what}")
+if re.search(r"--force-with-lease(?!=)", modernize_text):
+    errors.append("skills/modernize: a bare --force-with-lease leases against whatever the last fetch saw; "
+                  "name the branch and the observed sha")
+
 readme = (ROOT / "README.md").read_text()
 for block in re.findall(r"```mermaid\n(.*?)```", readme, re.S):
     planned = {i for ids in re.findall(r"^\s*class (\S+) planned$", block, re.M) for i in ids.split(",")}
@@ -335,15 +380,43 @@ for kind, name, path in marked:
 
 # A vendored script carries its marker as a comment; its row names it in the section at the marker's commit.
 section_by_commit = dict(re.findall(r"^## .*? @ ([0-9a-f]+)\n(.*?)(?=^## |\Z)", upstream, re.M | re.S))
-for path in sorted(DK.glob("skills/*/*")):
+for path in sorted(DK.glob("skills/*/**/*")):
     if not path.is_file() or path.suffix == ".md":
         continue
-    dk_file = f"skills/{path.parent.name}/{path.name}"
+    dk_file = str(path.relative_to(DK))
     for source, commit, upstream_path in re.findall(r"^# Adapted from (\S+(?: \S+)?)@([0-9a-f]+) (\S+?), ",
                                                     path.read_text(errors="replace"), re.M):
         if not re.search(rf"^\| {re.escape(dk_file)} \| {re.escape(upstream_path)} \|", section_by_commit.get(commit, ""), re.M):
             errors.append(f"{dk_file}: adapted from {source}@{commit} {upstream_path}, but upstream/UPSTREAM.md has no "
                           "row for it in the section at that commit")
+
+# dk:diagnosing-bugs must fire on its own, before dk:tdd and dk:verify, so it is model-invoked; its
+# description then sits in the listing every turn (#27), so it stays short (#122).
+diagnosing = skills.get("diagnosing-bugs")
+if diagnosing is None:
+    errors.append("skills/diagnosing-bugs: missing (#122)")
+else:
+    fm, text = frontmatter(diagnosing), diagnosing.read_text()
+    if "disable-model-invocation" in fm:
+        errors.append("skills/diagnosing-bugs: must be model-invoked (no disable-model-invocation)")
+    if len(fm.get("description", "")) > 160:
+        errors.append(f"skills/diagnosing-bugs: description is {len(fm.get('description', ''))} chars (> 160, #27)")
+    if not re.search(r"<!-- Adapted from mattpocock/skills@[0-9a-f]+ skills/engineering/diagnosing-bugs, MIT", text):
+        errors.append("skills/diagnosing-bugs: no `<!-- Adapted from mattpocock/skills@<commit> "
+                      "skills/engineering/diagnosing-bugs, MIT` marker")
+    for script in sorted(set(re.findall(r"`(scripts/[\w./-]+)`", text))):
+        if not (diagnosing.parent / script).is_file():
+            errors.append(f"skills/diagnosing-bugs: names {script}, which it does not ship")
+    for what, pattern in (
+        ("the issue's scratch folder for loops and the HITL copy", r"`\$SCRATCH/<N>/`"),
+        ("the observability helper for captured artifacts", r"`docs/agents/observability\.md`"),
+        ("the regression test through dk:tdd", r"Skill tool with `dk:tdd`"),
+        ("the final proof through dk:verify", r"Skill tool with `dk:verify`"),
+        ("the confirmed cause into the PR through dk:pr", r"Skill tool with `dk:pr`"),
+        ("a missing seam routed to the user's /dk:improve-codebase-architecture", r"`/dk:improve-codebase-architecture`"),
+    ):
+        if not re.search(pattern, text):
+            errors.append(f"skills/diagnosing-bugs: does not name {what}")
 
 # The shape upstream/sync.sh parses (the format note at the top of UPSTREAM.md).
 # sync.sh skips a section whose heading it cannot read and matches no file
