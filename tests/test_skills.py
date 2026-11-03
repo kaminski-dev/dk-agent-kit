@@ -221,6 +221,26 @@ for what, pattern in (
 if not re.search(r"\"Picking up a handoff\" section.*verbatim", handoff[:handoff.find("## Picking up")]):
     errors.append("skills/handoff: the written document must open with the 'Picking up a handoff' section, copied verbatim")
 
+# A performance claim owes its spread, so "faster" inside the noise reads as inconclusive (#119).
+owe = re.search(r"^## 1\..*?(?=^## 2\.)", skills["verify"].read_text(), re.M | re.S)
+perf = re.search(r"^\| Performance claim .*$", owe.group(0) if owe else "", re.M)
+perf = perf.group(0) if perf else ""
+if not perf:
+    errors.append("skills/verify: step 1's proof table has no Performance claim row")
+for what, pattern in (
+    ("the limiter", r"\blimiter\b"),
+    ("the decision rule written before the first run", r"decision rule.*before the first run"),
+    ("both sides run tuned", r"\btuned\b"),
+    ("errors counted", r"errors.*counted"),
+    ("at least 5 alternating runs per side", r"at least 5 runs per side, alternating"),
+    ("the range reported", r"median and range"),
+    ("the work confirmed to have happened", r"work confirmed to have happened"),
+    ("the inconclusive verdict when the spread is larger than the effect",
+     r"spread larger than the effect.*\*\*inconclusive\*\*"),
+):
+    if perf and not re.search(pattern, perf):
+        errors.append(f"skills/verify: step 1's Performance claim row does not name {what}")
+
 readme = (ROOT / "README.md").read_text()
 for block in re.findall(r"```mermaid\n(.*?)```", readme, re.S):
     planned = {i for ids in re.findall(r"^\s*class (\S+) planned$", block, re.M) for i in ids.split(",")}
