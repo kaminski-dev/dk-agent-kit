@@ -192,10 +192,11 @@ python3 -I tests/hooks/test_stop_gate.py
 python3 -I tests/hooks/test_push_gate.py
 python3 -I tests/hooks/test_require_worktree.py
 python3 -I tests/hooks/test_session_baseline.py
+python3 -I tests/hooks/test_fork_guard.py
 python3 -I tests/test_skills.py
 python3 -I tests/test_evals.py
 python3 -I tests/test_retro_extract.py
-python3 -I tests/test_wait_review.py
+python3 -I tests/test_pr_wait.py
 python3 -I tests/test_batch_pr.py
 bash tests/test_bootstrap.sh
 bash tests/test_dk_pg.sh      # skips without a Docker daemon
