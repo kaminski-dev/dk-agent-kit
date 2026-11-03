@@ -159,6 +159,8 @@ CASES = {
     "a check that registers late is not green by omission": (dict(
         polls=[pr()], check_polls=[GREEN, GREEN + [{"name": "e2e", "bucket": "pending", "link": "", "description": ""}]],
         args=["--until", "green", *QUIET]), 1, ["deadline passed"], "#1 green on"),
+    "no checks and none required, stable over two polls, is green": (dict(polls=[pr()], args=["--until", "green"]),
+                                                                       0, ["green on 1111111: no checks reported"], "deadline"),
     "a check failed": (dict(polls=[pr()], required=["test"], checks=FAILED),
                        1, ["required check failed: test https://ci/test"], "#1 ready on"),
     "a human comment from the gh user": (dict(
