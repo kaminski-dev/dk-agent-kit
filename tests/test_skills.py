@@ -519,6 +519,13 @@ for what, pattern in (
     ("the base's new commits checked for conceptual conflicts", r"conceptual conflict"),
     ("the series compared with git range-diff", r"git range-diff"),
     ("the push leased to the observed remote head", r"git push --force-with-lease=<branch>:<observed sha>"),
+    # CodeRabbit on #136 (#112): a wrong base stops first, a fork's head comes from refs/pull, the work stays in the worktree.
+    ("a base mismatch stopping before any change to the branch, until the user's word",
+     r"`baseRefName` differs stops here, before any change to its branch[^.]*only on the user's word"),
+    ("a fork PR's head fetched read-only from refs/pull", r"`git fetch -q origin pull/<PR>/head`"),
+    ("items 2 to 5 run inside the chosen worktree", r"Items 2 to 5 run inside that worktree"),
+    ("the push from the path item 1 chose, -modernize included", r"`~/workspace/<prefix>-<N>-modernize`, written literally"
+                                                                  r".*cd <that path> && git push"),
 ):
     if modernize and not re.search(pattern, modernize_text, re.S):
         errors.append(f"skills/modernize: does not name {what}")

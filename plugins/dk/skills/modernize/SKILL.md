@@ -5,7 +5,7 @@ argument-hint: "PR number"
 disable-model-invocation: true
 ---
 
-<!-- Adapted from t3dotgg/tstack@1085050 skills/modernize, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: user-invoked; the base from docs/agents/workflow.md, the worktree from dk:issue-flow step 2, detached at the observed head; the push is --force-with-lease=<branch>:<observed sha> to HEAD:<branch>, from the worktree's literal path so the gate runs; checks from AGENTS.md; comments open with dk:issue-flow step 6's attribution note; Codex agents/openai.yaml not taken. -->
+<!-- Adapted from t3dotgg/tstack@1085050 skills/modernize, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: user-invoked; the base from docs/agents/workflow.md, the worktree from dk:issue-flow step 2, detached at the observed head; the push is --force-with-lease=<branch>:<observed sha> to HEAD:<branch>, from the worktree's literal path so the gate runs; a base mismatch stops before any change to the branch; a fork PR assessed read-only from refs/pull/<PR>/head; checks from AGENTS.md; comments open with dk:issue-flow step 6's attribution note; Codex agents/openai.yaml not taken. -->
 
 # Modernize
 
@@ -20,9 +20,9 @@ gh pr view <PR> --json url,state,title,body,author,baseRefName,headRefName,headR
 gh pr diff <PR>
 ```
 
-Read its linked issues, its comments and review threads too. The base is the one `docs/agents/workflow.md` names (`pre-main` unless it names another); a PR whose `baseRefName` differs is reported, never retargeted. A PR whose `isCrossRepository` is true lives in a fork, so its branch is not this skill's to push: assess it and report.
+Read its linked issues, its comments and review threads too. The base is the one `docs/agents/workflow.md` names (`pre-main` unless it names another); a PR whose `baseRefName` differs stops here, before any change to its branch: report it, never retarget it, and go on only on the user's word, with the PR's actual base as `<base>`. A PR whose `isCrossRepository` is true lives in a fork, so its branch is not this skill's to push: assess it read-only and report.
 
-Then `git fetch -q origin` and check `git ls-remote origin refs/heads/<branch>` prints `headRefOid`; that SHA is the **observed sha**, the lease the push is held to. Record the merge base: `git merge-base origin/<base> <observed sha>`.
+Then `git fetch -q origin`. For a PR you can push, check `git ls-remote origin refs/heads/<branch>` prints `headRefOid`; for a fork PR, fetch its head with `git fetch -q origin pull/<PR>/head` and check `git rev-parse FETCH_HEAD` prints it. That SHA is the **observed sha**, the lease the push is held to. Record the merge base: `git merge-base origin/<base> <observed sha>`.
 
 Done when you can state, in one sentence, the smallest coherent goal the PR was trying to reach, before judging how it reached it.
 
@@ -53,15 +53,15 @@ Be willing to recommend CLOSE. Age alone is not evidence, and sunk effort is no 
 
 For MODERNIZE only:
 
-1. Make the worktree as `dk:issue-flow` step 2 does, with `<N>` the PR's issue (the PR number when it links none), detached at the observed sha so no local branch is touched: `git worktree add --detach ~/workspace/<prefix>-<N> <observed sha>`. When the PR's old worktree is still at that path, its uncommitted work is the user's: reuse it detached (`git -C <path> checkout --detach <observed sha>`) only when `git -C <path> status --porcelain` prints nothing, and otherwise add `~/workspace/<prefix>-<N>-modernize` beside it. Run the fresh-worktree setup from `workflow.md`.
+1. Make the worktree as `dk:issue-flow` step 2 does, with `<N>` the PR's issue (the PR number when it links none), detached at the observed sha so no local branch is touched: `git worktree add --detach ~/workspace/<prefix>-<N> <observed sha>`. When the PR's old worktree is still at that path, its uncommitted work is the user's: reuse it detached (`git -C <path> checkout --detach <observed sha>`) only when `git -C <path> status --porcelain` prints nothing, and otherwise add `~/workspace/<prefix>-<N>-modernize` beside it. Run the fresh-worktree setup from `workflow.md`. Items 2 to 5 run inside that worktree: `cd <that path>` first, or `git -C <that path>`.
 2. `git rebase origin/<base>`.
 3. Resolve each conflict by the PR's intent and the base's newer invariants. A conflict that exposes a product or architecture disagreement sends you back to step 3, not to a guess.
 4. Compare the commit series before and after: `git range-diff <merge-base>..<observed sha> origin/<base>..HEAD`, then read the final diff (`git diff origin/<base>...HEAD`). Done when no intended behaviour has dropped out and no behaviour the base already landed comes back.
 5. Run the checks `AGENTS.md` lists for the touched area. Tell a real failure from one the base already has (run it on `origin/<base>`) or an infrastructure failure.
-6. Push from the worktree's literal path, so the gate runs (`dk:issue-flow` step 6):
+6. Push from the path item 1 chose, `~/workspace/<prefix>-<N>` or `~/workspace/<prefix>-<N>-modernize`, written literally so the gate runs on the tree you checked (`dk:issue-flow` step 6):
 
    ```sh
-   cd ~/workspace/<prefix>-<N> && git push --force-with-lease=<branch>:<observed sha> origin HEAD:<branch>
+   cd <that path> && git push --force-with-lease=<branch>:<observed sha> origin HEAD:<branch>
    ```
 
    A refused lease means someone pushed since step 1: fetch, go back to step 1, and judge the new head before any second push.
