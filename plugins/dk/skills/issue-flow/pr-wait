@@ -37,13 +37,15 @@ Exit codes
 Events
   - a required check failed (name and link)
   - all checks finished on the head (one summary line)
-  - the required checks could not be read (HTTP 403, as on a private repo on
-    GitHub's free plan), so every CI check gates; printed once per run
+  - a source of the required checks answered 403 (a private repo on GitHub's
+    free plan); every CI check gates only when no source names any; printed
+    once per run
   - a new comment, thread, or thread reply from anyone but the review bot, the
-    gh user included, and a new review from anyone but a bot: reviews from any
-    bot are skipped, and only the review bot's verdict is read; one that opens
-    with the attribution note (dk:issue-flow step 6, **Comments.**) is the
-    agent's own and skipped
+    gh user included, except a top-level comment from a CI or deploy bot
+    (STATUS_BOTS, whose news the checks carry); a new review from anyone but a
+    bot: reviews from any bot are skipped, and only the review bot's verdict is
+    read; one that opens with the attribution note (dk:issue-flow step 6,
+    **Comments.**) is the agent's own and skipped
   - the review bot's verdict on the head: `reviews <id>...` (the REST review
     ids step 6 reads findings by), `clean` (its summary reports no actionable
     comments), or `rate limited` or `paused` (it will not review on its own)
@@ -53,8 +55,7 @@ Events
   - the PR merged or closed
   - the deadline passed
 
-Comment edits are never events, and top-level comments from CI and deploy bots
-(github-actions, Vercel) are skipped, because checks already carry that news.
+Comment edits are never events.
 
 State lives in ~/.local/state/pr-wait/. A lock makes a second watcher for the
 same PR exit at once. A state file lets a restarted watcher report what arrived
