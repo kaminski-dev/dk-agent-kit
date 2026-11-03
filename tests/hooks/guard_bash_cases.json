@@ -473,5 +473,18 @@
   {"why": "#96 review: a backtick span inside ${...} in the body runs too; inside $(...) it is the deliberate substitution's own content", "cmd": "cat <<EOF\nBranch ${BRANCH:-`git branch --show-current`}\nEOF", "expect": "deny"},
   {"cmd": "cat <<EOF\nBuilt $(echo `date +%F`)\nEOF", "expect": "allow"},
   {"cmd": "gh pr edit 5 --body-file - <<-EOF\n\tMerged with `gh pr merge 1`.\n\tEOF\necho 'unterminated", "expect": "deny"},
-  {"cmd": "gh pr edit 5 --body-file - <<\"EOF\"\nMerged with `gh pr merge 1`.\nEOF\necho 'unterminated", "expect": "allow"}
+  {"cmd": "gh pr edit 5 --body-file - <<\"EOF\"\nMerged with `gh pr merge 1`.\nEOF\necho 'unterminated", "expect": "allow"},
+  {"why": "#101: on the raw path a partly quoted or escaped delimiter keeps the body text, and the body ends at the delimiter with its quotes removed", "cmd": "cat <<E\"OF\"\n`id`\nEOF\necho 'x", "expect": "allow"},
+  {"cmd": "cat <<\\EOF\ngit push origin main\nEOF\necho 'x", "expect": "allow"},
+  {"cmd": "cat <<E\\OF\ngit push origin main\nEOF\necho 'x", "expect": "allow"},
+  {"cmd": "cat <<E\"OF\"\nhi\nEOF\ngit push origin main\necho 'x", "expect": "deny"},
+  {"why": "#101: on the raw path a << inside $((...)) or a ((...)) command is a shift, not a here-doc, so the lines after it stay command lines", "cmd": "echo $((1<<SHIFT))\necho `date`\necho 'x", "expect": "allow"},
+  {"cmd": "echo $((1<<SHIFT))\ngit push origin main\necho 'x", "expect": "deny"},
+  {"cmd": "((x=1<<N))\ngit push origin main\necho 'x", "expect": "deny"},
+  {"cmd": "echo $(( (1 << SHIFT) | 1 )) <<EOF\nhi\nEOF\ngit push origin main\necho 'x", "expect": "deny"},
+  {"why": "#101 review: the delimiter word ends at a backtick, a double-quoted delimiter drops the backslash before $ and `, and a ((...)) that does not close on its line hides no here-doc", "cmd": "x=`cat <<EOF`\nfoo\nEOF\ngit push origin main\necho 'x", "expect": "deny"},
+  {"cmd": "cat <<\"E\\$F\"\nhi\nE$F\ngit push origin main\necho 'x", "expect": "deny"},
+  {"cmd": "echo \"((\" ; cat <<EOF\n`id`\nEOF\necho 'x", "expect": "deny"},
+  {"cmd": "cat <<E\\OF\nhi\nEOF\ngit push origin main\necho 'x", "expect": "deny"},
+  {"cmd": "cat <<\"E\"OF\n`id`\nEOF\ngit push origin main\necho 'x", "expect": "deny"}
 ]

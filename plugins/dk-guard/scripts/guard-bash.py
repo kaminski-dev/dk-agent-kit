@@ -53,21 +53,58 @@ PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:(?:sudo|command|exec|nohup|time|
 END = r"[^;&|\n)`]*"
 
 
+# A here-doc operator and its delimiter word: plain characters, backslash escapes and closed quotes, up to a blank,
+# an operator or a backtick. A word starting with a digit is taken as a shift (`1<<2`), though the shell would
+# read `<<2` as a here-doc.
+HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)[ \t]*"
+                     r"""((?=[A-Za-z_'"\\])(?:[^\s;&|<>()`'"\\]|\\.|'[^']*'|"(?:[^"\\]|\\.)*")+)(?![^\s;&|<>()`])""")
+QUOTED_PART = re.compile(r"""'([^']*)'|"((?:[^"\\]|\\.)*)"|\\(.)""")
+
+
+def unquote(part):
+    """A quoted part of a delimiter word as the shell reads it: inside double quotes a backslash escapes only
+    $, `, " and itself."""
+    single, double, escaped = part.groups()
+    if double is not None:
+        return re.sub(r'\\([$`"\\])', r"\1", double)
+    return escaped if single is None else single
+
+
+def without_arithmetic(line):
+    """The line with each $((...)) and ((...)) that closes on it cut out, since a << in one is a shift."""
+    opens, spans = [], []
+    for i, c in enumerate(line):
+        if c == "(":
+            opens.append(i)
+        elif c == ")" and opens:
+            start = opens.pop()
+            if line.startswith("((", start):
+                spans.append((start, i + 1))
+    kept, end = [], 0
+    for start, stop in sorted(spans):
+        if start >= end:  # an outermost span; a nested one lies inside the cut already
+            kept.append(line[end:start] + " ")
+            end = stop
+    return "".join(kept) + line[end:]
+
+
 def heredoc_lines(cmd):
     """Yield (line, None) for each command line and (line, expands) for each line of a heredoc body, `expands`
-    True when its delimiter is unquoted."""
+    True when no part of its delimiter word is quoted or escaped."""
     lines, i = cmd.split("\n"), 0
     while i < len(lines):
         line = lines[i]
         i += 1
         yield line, None
-        for dash, quote, delim in re.findall(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2", line):
+        for dash, word in HEREDOC.findall(without_arithmetic(line)):
+            delim = QUOTED_PART.sub(unquote, word)
+            expands = not QUOTED_PART.search(word)
             while i < len(lines):
                 body = lines[i]
                 i += 1
                 if (body.lstrip("\t") if dash else body) == delim:
                     break
-                yield body, not quote
+                yield body, expands
 
 
 def strip_heredocs(cmd):
