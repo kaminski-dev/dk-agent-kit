@@ -477,5 +477,9 @@
   {"why": "#101: on the raw path a partly quoted or escaped delimiter keeps the body text, and the body ends at the delimiter with its quotes removed", "cmd": "cat <<E\"OF\"\n`id`\nEOF\necho 'x", "expect": "allow"},
   {"cmd": "cat <<\\EOF\ngit push origin main\nEOF\necho 'x", "expect": "allow"},
   {"cmd": "cat <<E\\OF\ngit push origin main\nEOF\necho 'x", "expect": "allow"},
-  {"cmd": "cat <<E\"OF\"\nhi\nEOF\ngit push origin main\necho 'x", "expect": "deny"}
+  {"cmd": "cat <<E\"OF\"\nhi\nEOF\ngit push origin main\necho 'x", "expect": "deny"},
+  {"why": "#101: on the raw path a << inside $((...)) or a ((...)) command is a shift, not a here-doc, so the lines after it stay command lines", "cmd": "echo $((1<<SHIFT))\necho `date`\necho 'x", "expect": "allow"},
+  {"cmd": "echo $((1<<SHIFT))\ngit push origin main\necho 'x", "expect": "deny"},
+  {"cmd": "((x=1<<N))\ngit push origin main\necho 'x", "expect": "deny"},
+  {"cmd": "echo $(( (1 << SHIFT) | 1 )) <<EOF\ngit push origin main\nEOF\necho 'x", "expect": "allow"}
 ]
