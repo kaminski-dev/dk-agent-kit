@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Adapted from t3dotgg/tstack@1085050 skills/babysit-pr/scripts/pr-wait, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: ends at a --minutes deadline (20 by default) restarted by a push to the head; the review bot and the bases it reviews come from docs/agents/workflow.md, Greptile and Macroscope gating removed; the gh user's comments are events, only those opening with dk:issue-flow's attribution note are skipped; the bot's verdict on the head (`reviews <id>...`, `clean`, `rate limited`, `paused`) taken over from wait-review.py; the repo comes from origin when neither --repo nor a URL names it; gh calls are bounded by the deadline.
+# Adapted from t3dotgg/tstack@1085050 skills/babysit-pr/scripts/pr-wait, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: ends at a --minutes deadline (20 by default) restarted by a push to the head; the review bot and the bases it reviews come from docs/agents/workflow.md, Greptile and Macroscope gating removed; the gh user's comments are events, only those opening with dk:issue-flow's attribution note are skipped; the bot's verdict on the head (`reviews <id>...`, `clean`, `rate limited`, `paused`) taken over from wait-review.py; the repo comes from origin when neither --repo nor a URL names it; gh calls are bounded by the deadline; a line from someone not a collaborator is tagged; a page holding less than its total blocks ready.
 """pr-wait: watch one GitHub pull request and print one line per real event (dk:issue-flow step 6).
 
   python3 -I pr-wait <pr> [--until ready|green|any-change] [--repo owner/name] [--minutes 20] [--interval 20]
@@ -16,8 +16,9 @@ the run go to stderr.
               watcher has seen the head for 3 minutes, so a run with
               --minutes under 3 never reaches green on a PR without checks)
   ready       green, the review bot gave its verdict on the current head, no
-              review thread is unresolved, and the merge state is known and not
-              BEHIND (default)
+              review thread is unresolved, the merge state is known and not
+              BEHIND, and every comment, review and thread fit the page read
+              (default)
   any-change  stop after the first poll that prints an event
 
 The review bot is the one the **Review bot** line of the checkout's
@@ -30,8 +31,8 @@ Exit codes
   0  the --until condition is met, or the PR merged
   1  the condition cannot be met without action: a required check failed, the
      branch conflicts with its base, the PR closed, `ready` is blocked by
-     unresolved threads, a BEHIND branch or a bot that will not review the head
-     on its own, GitHub stayed unreachable, or the deadline passed (--minutes
+     unresolved threads, a BEHIND branch, more comments, reviews or threads
+     than one page reads, or a bot that will not review the head on its own, GitHub stayed unreachable, or the deadline passed (--minutes
      after the last head change)
   2  bad arguments, unknown PR, or another pr-wait already watches this PR
 
@@ -55,6 +56,8 @@ Events
   - the base branch moved and the new commits touch files in this PR, or the
     files they touch could not be read (the next poll reads them again)
   - merge state became BEHIND or DIRTY
+  - a connection (comments, reviews, threads, a thread's comments) holds more
+    than the page read: `read <n> of <total> ...`, once per run
   - the PR merged or closed
   - the deadline passed
 
@@ -126,14 +129,17 @@ query($owner: String!, $name: String!, $number: Int!) {
       url state headRefOid baseRefName mergeStateStatus
       author { login }
       baseRef { target { oid } }
-      comments(last: 100) { nodes { id url body authorAssociation author { login __typename } } }
+      comments(last: 100) { totalCount nodes { id url body authorAssociation author { login __typename } } }
       reviews(last: 100) {
+        totalCount
         nodes { id databaseId url state body commit { oid } authorAssociation author { login __typename } }
       }
       reviewThreads(last: 100) {
+        totalCount
         nodes {
           isResolved path line
           comments(first: 100) {
+            totalCount
             nodes { id url body authorAssociation author { login __typename } pullRequestReview { databaseId } }
           }
         }
@@ -523,6 +529,15 @@ class Watcher:
                 state = review["state"].lower().replace("_", " ")
                 self.emit(f"c:{review['id']}",
                           f"review from {speaker(review)} ({state}): {snippet(review['body'])} {review['url']}")
+        # A connection holding more than the page read can hide events and threads, so ready cannot vouch for this head.
+        pages = [(pr["comments"], "comments"), (pr["reviews"], "reviews"), (pr["reviewThreads"], "review threads")]
+        for t in threads:
+            where = f"{t['path']}:{t['line']}" if t["line"] else t["path"]
+            pages.append((t["comments"], f"comments on the thread at {where}"))
+        unread_lines = [f"read {len(page['nodes'])} of {page['totalCount']} {what}, so ready is not reported on {short}"
+                        for page, what in pages if page.get("totalCount", 0) > len(page["nodes"])]
+        for line in unread_lines:
+            self.say(line)
         unresolved: list[str] = []
         for thread in threads:
             nodes = thread["comments"]["nodes"]
@@ -612,6 +627,8 @@ class Watcher:
                     self.finish(1, bot_lines + [f"blocked by {len(unresolved)} unresolved thread{s} on {short}: {' '.join(unresolved)}"])
                 if merge_state == "BEHIND":
                     self.finish(1, bot_lines + [behind_line])
+                if unread_lines:
+                    self.finish(1, bot_lines + unread_lines)
                 if merge_state and merge_state != "UNKNOWN":  # GitHub has not computed it yet: keep polling
                     self.reported.add(checks_key)
                     self.finish(0, bot_lines + [f"ready on {short}: {summary}{self.behind(base, base_oid, head)}"])

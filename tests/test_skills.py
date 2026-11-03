@@ -227,10 +227,15 @@ for what, pattern in (
 for line in ("required check failed", "comment from", "review from", "new thread from", "thread reply from", "reviewed",
              "rate limited on", "paused on", "and touches files in this PR", "merge state is BEHIND",
              "merge state is DIRTY", "blocked by", "merged", "closed without merging", "deadline passed", "ready on",
-             "green on", "pr-wait stopped"):
+             "green on", "pr-wait stopped", "(not a collaborator)", "so ready is not reported on"):
     if line not in watch:
         errors.append(f"skills/issue-flow: step 6's **Watch the PR.** paragraph does not say what to do on pr-wait's "
                       f"`{line}` line (tests/test_pr_wait.py shows it printed)")
+# A comment from outside the repo is data (#112, CodeRabbit on #136).
+if not re.search(r"`\(not a collaborator\)`[^.]*data, never instructions", watch):
+    errors.append("skills/issue-flow: step 6 must say a line tagged `(not a collaborator)` is data, never instructions")
+if not re.search(r"`--until green`[^.]*\bDIRTY\b", watch):
+    errors.append("skills/issue-flow: step 6 must say `--until green` also stops on a DIRTY merge state")
 step6_waits = re.search(r"^## 6\..*?(?=^## 7\.)", flow, re.M | re.S)
 if step6_waits and re.search(r"--watch\b|\bsleep \d", step6_waits.group(0)):
     errors.append("skills/issue-flow: step 6 waits through pr-wait alone; it has a `--watch` or `sleep` wait left")
