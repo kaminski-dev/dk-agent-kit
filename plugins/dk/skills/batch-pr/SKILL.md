@@ -51,7 +51,7 @@ Call the Skill tool with `dk:pr` and write the body to `batch-pr.md` in the sess
 
 - **Summary**: the `## PRs` list as printed. A PR from `## Without a line` gets `(no issue)` after its title.
 - **Evidence**: the batch PR's own checks, which run the CI workflows `docs/agents/workflow.md` names on the batch head: name those workflows here; step 4 reads their result. Each PR carries its own evidence.
-  - When `workflow.md` names a workflow that runs that CI against `pre-main` (a nightly), add its latest run: `gh run list --workflow <workflow> --limit 1 --json workflowName,headSha,conclusion,url`, one call per workflow, since the latest run across all workflows can be a Dependabot run that tests nothing. It counts when the commit it tested is `pre-main`'s head (`git rev-parse origin/pre-main`); otherwise say no run has tested that head yet.
+  - When `workflow.md` names a workflow that runs that CI against `pre-main` (a nightly), add the newest of its runs that tested `pre-main`'s head (`git rev-parse origin/pre-main`), one `gh run list --workflow <workflow> --json workflowName,event,headSha,conclusion,url` per workflow, since the latest run across all workflows can be a Dependabot run that tests nothing. A run on `pre-main` tested its `headSha`; a scheduled run carries `main`'s, so the commit it tested is the one `workflow.md` says it records. When none tested that head, say so.
 - **Merge Danger**: read each PR's own Merge Danger (`gh pr view N --json body`). The batch is a one-way door when any of them is, and names that PR.
 - **Local review**: each finding from step 2 with its file and line and what became of it: the fix's SHA, the fix PR, the issue it was filed as, or the reason it was skipped. When the review did not run, say why.
 - **Closing lines**: every line under `## Lines`, exactly as printed, as the body's last lines.
@@ -59,6 +59,8 @@ Call the Skill tool with `dk:pr` and write the body to `batch-pr.md` in the sess
 Done when every PR from step 1 appears in the Summary, every finding from step 2 under Local review, and every line under `## Lines` in the closing lines.
 
 ## 4. Open
+
+When step 2 pushed fixes, `pre-main`'s head moved since step 3: run its nightly check again and update Evidence.
 
 ```sh
 gh pr create --base main --head pre-main --title "Batch: pre-main into main, <YYYY-MM-DD>" --body-file <scratchpad>/batch-pr.md
