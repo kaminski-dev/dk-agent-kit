@@ -237,6 +237,33 @@ check("unknown merge commit: exits 1 and names the PR",
       r.returncode == 1 and "#52" in r.stderr and "## Lines" not in r.stdout, (r.returncode, r.stdout, r.stderr))
 ws.remove()
 
+# Merge commits on pre-main, but gh lists no merged PR for them (a repo that is not where they were merged):
+# stop and name the repo asked, rather than print an empty batch.
+ws = Workspace()
+ws.git("branch", "pre-main")
+ws.git("checkout", "-q", "-b", "fix/701-merged")
+ws.commit("merged")
+ws.git("checkout", "-q", "pre-main")
+ws.git("merge", "-q", "--no-ff", "-m", "Merge pull request #71 from acme/fix/701-merged", "fix/701-merged")
+ws.push()
+ws.state([])
+r, _ = ws.run()
+check("merge commits but no merged PR: exits 1 and names the repo asked",
+      r.returncode == 1 and "acme/ledger" in r.stderr and "## PRs" not in r.stdout, (r.returncode, r.stdout, r.stderr))
+ws.remove()
+
+# Commits pushed onto pre-main directly, as the push route for batch-review fixes does, have no PR.
+ws = Workspace()
+ws.git("branch", "pre-main")
+ws.git("checkout", "-q", "pre-main")
+ws.commit("pushed")
+ws.push()
+ws.state([])
+r, _ = ws.run()
+check("a direct commit and no merged PR: an empty batch, exit 0", r.returncode == 0 and "## PRs" in r.stdout,
+      (r.returncode, r.stdout, r.stderr))
+ws.remove()
+
 ws = Workspace()
 ws.git("branch", "pre-main")
 ws.git("checkout", "-q", "pre-main")
