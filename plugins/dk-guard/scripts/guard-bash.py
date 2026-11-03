@@ -71,8 +71,9 @@ def heredoc_lines(cmd):
 
 
 def strip_heredocs(cmd):
-    """Drop heredoc bodies; they are data, not commands."""
-    return "\n".join(line for line, body in heredoc_lines(cmd) if body is None)
+    """The command lines without heredoc bodies, for the raw-string command checks; check_heredoc_backticks reads
+    the bodies that expand."""
+    return "\n".join(line for line, expands in heredoc_lines(cmd) if expands is None)
 
 
 def segments(cmd, program):
@@ -141,6 +142,7 @@ class Splitter:
             raise Unsplittable("nested too deep")
         self.s, self.i, self.shell, self.substituted, self.depth = text, 0, shell, substituted, depth
         self.out, self.heredocs, self.modifier_names, self.backticks = [], [], [], []
+        self.command_subs = 0  # how many `$(...)` the cursor is inside
 
     def run(self):
         self.parse(None, self.substituted)
@@ -358,10 +360,7 @@ class Splitter:
                     buf.append(self.peek(1))
                 self.i += 2
             elif self.at_expansion():
-                start = self.i
                 self.expansion(buf, subs)
-                if term is None and c == "`":
-                    self.backticks.append(self.s[start:self.i])
             else:
                 self.note_modifier()
                 buf.append(c)
@@ -408,10 +407,13 @@ class Splitter:
     def nested(self):
         """Split a `$(...)` or `<(...)` body; the cursor is past its opening parenthesis."""
         start = len(self.out)
+        self.command_subs += 1
         self.parse(")", True)
+        self.command_subs -= 1
         return self.out[start:]
 
     def backtick(self):
+        start = self.i
         self.i += 1
         buf = []
         while True:
@@ -427,6 +429,8 @@ class Splitter:
             else:
                 buf.append(c)
                 self.i += 1
+        if not self.command_subs:
+            self.backticks.append(self.s[start:self.i])
         inner = Splitter("".join(buf), self.shell, True, self.depth + 1).run()
         self.out += inner
         return inner
@@ -1438,7 +1442,6 @@ def check_verify_rm(cmd, cwd):
     return []
 
 
-# A Markdown code span in a PR body written through `<<EOF` ran `gh api -X PUT …/merge` twice.
 UNESCAPED_BACKTICK = re.compile(r"(?<!\\)(?:\\\\)*`(?:([^`]*)`)?")
 
 
@@ -1451,9 +1454,9 @@ def heredoc_backtick_findings(span):
 
 
 def check_heredoc_backticks(cmd):
-    spans = (None if m.group(1) is None else f"`{m.group(1)}`" for line, expands in heredoc_lines(cmd) if expands
-             for m in [UNESCAPED_BACKTICK.search(line)] if m)
-    return next((heredoc_backtick_findings(span) for span in spans), [])
+    body = "\n".join(line for line, expands in heredoc_lines(cmd) if expands)
+    m = UNESCAPED_BACKTICK.search(body)
+    return heredoc_backtick_findings(None if m.group(1) is None else f"`{m.group(1)}`") if m else []
 
 
 def heredoc_backtick_words(segs):
