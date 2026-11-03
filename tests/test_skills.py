@@ -289,6 +289,22 @@ for n, line in enumerate(upstream.splitlines(), 1):
         elif i and "/" in paths[0] and "/" not in path:
             errors.append(f"{where}: shorthand upstream path {path!r}; write it from the repo root")
 
+# Each source in UPSTREAM.md keeps its license notice: a THIRD_PARTY row that links the repo and names
+# the section's commit, its license and a license file that exists. A pin that moves takes the row along.
+third_party = (ROOT / "THIRD_PARTY" / "README.md").read_text().splitlines()
+for repo, license_name, commit in re.findall(r"^## (\S+) .*?\(([^()]+)\) @ ([0-9a-f]+)$", upstream, re.M):
+    row = next((r for r in third_party if re.search(rf"\(https://github\.com/{re.escape(repo)}[)/]", r)), None)
+    if row is None:
+        errors.append(f"THIRD_PARTY/README.md: no row links github.com/{repo}, a source in upstream/UPSTREAM.md")
+        continue
+    if f"`{commit}`" not in row:
+        errors.append(f"THIRD_PARTY/README.md: the {repo} row does not name `{commit}`, its commit in upstream/UPSTREAM.md")
+    if license_name not in row:
+        errors.append(f"THIRD_PARTY/README.md: the {repo} row does not name its license, {license_name}")
+    license_files = re.findall(r"\]\(([^()/]+\.LICENSE)\)", row)
+    if not license_files or not all((ROOT / "THIRD_PARTY" / f).is_file() for f in license_files):
+        errors.append(f"THIRD_PARTY/README.md: the {repo} row links no license file that exists")
+
 # issue-flow's worktree, rebase and PR commands name the base (step 2), which a repo's workflow.md can set,
 # so a repo without pre-main gets its own branch and no needless ask to restore pre-main.
 for n, line in enumerate(skills["issue-flow"].read_text().splitlines(), 1):
