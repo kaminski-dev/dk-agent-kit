@@ -473,5 +473,9 @@
   {"why": "#96 review: a backtick span inside ${...} in the body runs too; inside $(...) it is the deliberate substitution's own content", "cmd": "cat <<EOF\nBranch ${BRANCH:-`git branch --show-current`}\nEOF", "expect": "deny"},
   {"cmd": "cat <<EOF\nBuilt $(echo `date +%F`)\nEOF", "expect": "allow"},
   {"cmd": "gh pr edit 5 --body-file - <<-EOF\n\tMerged with `gh pr merge 1`.\n\tEOF\necho 'unterminated", "expect": "deny"},
-  {"cmd": "gh pr edit 5 --body-file - <<\"EOF\"\nMerged with `gh pr merge 1`.\nEOF\necho 'unterminated", "expect": "allow"}
+  {"cmd": "gh pr edit 5 --body-file - <<\"EOF\"\nMerged with `gh pr merge 1`.\nEOF\necho 'unterminated", "expect": "allow"},
+  {"why": "#101: on the raw path a partly quoted or escaped delimiter keeps the body text, and the body ends at the delimiter with its quotes removed", "cmd": "cat <<E\"OF\"\n`id`\nEOF\necho 'x", "expect": "allow"},
+  {"cmd": "cat <<\\EOF\ngit push origin main\nEOF\necho 'x", "expect": "allow"},
+  {"cmd": "cat <<E\\OF\ngit push origin main\nEOF\necho 'x", "expect": "allow"},
+  {"cmd": "cat <<E\"OF\"\nhi\nEOF\ngit push origin main\necho 'x", "expect": "deny"}
 ]
