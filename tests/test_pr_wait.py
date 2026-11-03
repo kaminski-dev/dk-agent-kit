@@ -187,6 +187,9 @@ CASES = {
     "BEHIND": (dict(polls=[pr(), pr(merge="BEHIND")], checks=GREEN, args=["--until", "any-change"]),
                0, ["merge state is BEHIND"], "deadline"),
     "DIRTY": (dict(polls=[pr(merge="DIRTY")], checks=GREEN), 1, ["merge state is DIRTY"], "#1 ready on"),
+    "an UNKNOWN merge state is not ready yet": (dict(
+        polls=[pr(merge="UNKNOWN", reviews=[review(7, "x")])], checks=GREEN, args=QUIET),
+        1, ["deadline passed"], "#1 ready on"),
     "merged": (dict(polls=[pr(state="MERGED")]), 0, ["merged: https://github.com/acme/ledger/pull/1"], "deadline"),
     "closed": (dict(polls=[pr(state="CLOSED")]), 1, ["closed without merging"], "deadline"),
     "a 5xx then success": (dict(polls=[pr()], required=["test"], checks=GREEN, fail={"graphql": 1},
