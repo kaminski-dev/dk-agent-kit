@@ -136,7 +136,7 @@ if not re.search(r"<PR>-<review>-<\w+>", step7) or "one at a time" not in step7:
     errors.append("skills/issue-flow: step 7's push route needs a worktree key unique per finding, "
                   "body findings of one review included, and works findings one at a time")
 
-# #99: the maintainer's own findings on the batch PR take the bot's route, read once with step 6's reads.
+# The maintainer's own findings on the batch PR take the bot's route, read once with step 6's inline query.
 route = re.search(r"^- [^\n]*\*\*Batch-review fixes\*\*.*?(?=^  - `pr`:)", step7, re.M | re.S)
 route = route.group(0) if route else ""
 for what, pattern in (
@@ -144,7 +144,11 @@ for what, pattern in (
     ("the maintainer's own review", r"maintainer's own review"),
     ("its inline comments, review bodies and PR comments", r"inline review comments.*review bodies.*PR comments"),
     ("the filter that keeps other bots out", r'\.user\.type == "User"'),
-    ("the PR-comment endpoint", r"repos/\S+/issues/<PR>/comments"),
+    ("a review read that keeps humans' submitted reviews with a body only",
+     r'pulls/<PR>/reviews" --jq \'[^\']*\.user\.type == "User"[^\']*\.state != "PENDING"[^\']*\.body != ""'),
+    ("a PR-comment read that keeps humans' comments only", r'issues/<PR>/comments" --jq \'[^\']*\.user\.type == "User"'),
+    ("that your own fix and skip records, posted from the same account, are records and not findings (#99)",
+     r"records.*same account.*leave them out"),
 ):
     if not re.search(pattern, route, re.S):
         errors.append(f"skills/issue-flow: step 7's routing bullet does not name {what}")
