@@ -424,6 +424,10 @@ for what, pattern in (
         errors.append(f"skills/handoff: its 'Picking up a handoff' section does not name {what}")
 if not re.search(r"\"Picking up a handoff\" section.*verbatim", handoff[:handoff.find("## Picking up")]):
     errors.append("skills/handoff: the written document must open with the 'Picking up a handoff' section, copied verbatim")
+if not re.search(r"\A---\n.*?\n---\n\n<!-- Adapted from t3dotgg/tstack@[0-9a-f]+ skills/takeover, MIT \(© 2026 Theo Browne\)\. ",
+                 handoff, re.S):
+    errors.append("skills/handoff: no `<!-- Adapted from t3dotgg/tstack@<commit> skills/takeover, MIT (© 2026 Theo Browne).` "
+                  "marker right after the frontmatter")
 
 # A performance claim owes its spread, so "faster" inside the noise reads as inconclusive (#119).
 owe = re.search(r"^## 1\..*?(?=^## 2\.)", skills["verify"].read_text(), re.M | re.S)
