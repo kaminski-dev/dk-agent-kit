@@ -390,6 +390,24 @@ dkgc_pattern_line = re.search(r"^def slug_of\(root\):\n(?:    .*\n)*?(    m = re
 if not dkgc_pattern_line or not all(dkgc_pattern_line.group(1) in copy for copy in copies if copy):
     errors.append("dk-guard: dk-gc's slug_of() reads origin with another pattern than the skills' origin_repo()")
 
+# On an already-closed issue, `gh issue close --comment` drops the comment and exits 0 (#117).
+trackers = [ROOT / "docs/agents/issue-tracker.md", DK / "skills/setup/issue-tracker.md",
+            DK / "evals/_fixture/app/docs/agents/issue-tracker.md", DK / "evals/_fixture/api/docs/agents/issue-tracker.md"]
+for path in trackers:
+    rel, text = path.relative_to(ROOT), path.read_text()
+    close = re.search(r"^- \*\*Close\*\*: .*", text, re.M)
+    close = close.group(0) if close else ""
+    comment_at, close_at = close.find("`gh issue comment N"), close.find("`gh issue close N`")
+    if re.search(r"`gh issue close [^`]*--comment", text) or not 0 <= comment_at < close_at:
+        errors.append(f"{rel}: Close must comment with `gh issue comment N` first, then `gh issue close N`, "
+                      "never `gh issue close --comment`")
+    blocking = re.search(r"^- \*\*Blocking\*\*: .*", text, re.M)
+    if blocking and not all(s in blocking.group(0) for s in (
+            "`gh issue create --blocked-by", "`gh issue edit <child> --add-blocked-by <blocker>`", "2.94",
+            "--method POST")):
+        errors.append(f"{rel}: Blocking must use `gh issue create --blocked-by` and `gh issue edit <child> "
+                      "--add-blocked-by <blocker>` (gh 2.94+), with the API POST as the older-gh fallback")
+
 for e in errors:
     print("FAIL", e)
 print(f"{len(skills)} skills, {len(agents)} agents, {len(errors)} problems")
