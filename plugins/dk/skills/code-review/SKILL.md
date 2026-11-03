@@ -10,7 +10,7 @@ Four-axis review of the diff between `HEAD` and a fixed point the user supplies:
 - **Correctness**: what breaks at runtime: a crash between an effect and its commit, a failure shown as empty, an edge value, a test that cannot fail?
 - **Comments**: does each comment the diff adds earn its place?
 
-The axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
+The axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings and, when you wrote the change, answers them.
 
 Tracker commands are in `docs/agents/issue-tracker.md`. If it is missing, tell the user to run `/dk:setup`.
 
@@ -40,7 +40,7 @@ Read `CODING_STANDARDS.md` first (at the root and nearest to the changed files),
 On top of whatever the repo documents, the Standards axis always carries the **smell baseline** below: a fixed set of Fowler code smells (_Refactoring_, ch.3) that applies even when a repo documents nothing. Two rules bind it:
 
 - **The repo overrides.** A documented repo standard always wins; where it endorses something the baseline would flag, suppress the smell.
-- **Always a judgement call.** Each smell is a labelled heuristic ("possible Feature Envy"), never a hard violation. Like any standard here, skip anything tooling already enforces.
+- **Always a nit.** Each smell is a labelled heuristic ("possible Feature Envy"), never a `should` or a `blocker`. Like any standard here, skip anything tooling already enforces.
 
 Each smell reads *what it is* → *how to fix*; match it against the diff:
 
@@ -68,13 +68,13 @@ The **comment policy** is the part of `AGENTS.md` or `CODING_STANDARDS.md` (root
 
 ### 4. Spawn the sub-agents in parallel
 
-Issue all four sub-agent calls together, in the foreground, and aggregate the reports they return: Standards, Spec and Correctness with `subagent_type: "dk:reviewer"`, Comments with `subagent_type: "dk:comment-reviewer"`. Both types are read-only, so the reviewers can share one worktree.
+Issue all four sub-agent calls together, in the foreground, and aggregate the reports they return: Standards, Spec and Correctness with `subagent_type: "dk:reviewer"`, Comments with `subagent_type: "dk:comment-reviewer"`. Both types are read-only, so the reviewers can share one worktree. They give each finding its id and severity; each prompt hands its axis the id prefix, so ids stay unique across the four reports: `ST` for Standards, `SP` for Spec, `CO` for Correctness, `CM` for Comments.
 
 **Standards sub-agent prompt** should include:
 
 - The full diff command and commit list.
 - The list of standards-source files you found in step 3, **plus the smell baseline from step 3** pasted in full (the sub-agent has no other access to it).
-- The brief: "Report, per file/hunk where relevant, (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. Distinguish hard violations from judgement calls: documented-standard breaches can be hard, but baseline smells are always judgement calls, and a documented repo standard overrides the baseline. Skip anything tooling enforces. Whether a test can fail is the Correctness axis's question unless a documented standard rules on it. Under 400 words."
+- The brief: "Report, per file/hunk where relevant, (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. A clear breach of a documented standard is at least a `should`, one whose rule needs judgement to apply is a `nit`, and a baseline smell is always a `nit`; a documented repo standard overrides the baseline. Skip anything tooling enforces. Whether a test can fail is the Correctness axis's question unless a documented standard rules on it. Under 400 words."
 
 **Spec sub-agent prompt** should include:
 
@@ -99,7 +99,7 @@ Issue all four sub-agent calls together, in the foreground, and aggregate the re
 - The diff command and commit list, plus the untracked files from step 1, which it reads in full.
 - The comment policy from step 3 (file and heading), or "no comment policy: use your default keep list".
 
-Its rules live in the agent, so the prompt carries nothing more.
+Its rules live in the agent, so the prompt carries nothing more than its id prefix.
 
 If the spec is missing, skip the Spec sub-agent and note this in the final report.
 
@@ -107,7 +107,27 @@ If the spec is missing, skip the Spec sub-agent and note this in the final repor
 
 Present the four reports under `## Standards`, `## Spec`, `## Correctness` and `## Comments` headings, verbatim or lightly cleaned. Do **not** merge or rerank findings, because the axes are deliberately separate (see _Why separate axes_).
 
-End with a one-line summary: total findings per axis, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes: that's the reranking the separation exists to prevent.
+End with a one-line summary: findings per axis and severity, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes: that's the reranking the separation exists to prevent.
+
+### 6. Answer findings
+
+When you wrote the change (`dk:implement` sends you here), or the user asks you to fix what the review found, answer every finding; otherwise step 5's report ends the review.
+
+**Budget.** 3 rounds, steps 4 and 5 being round 1. Extend to 5 only when the change touches security, permissions, auth, data loss or concurrency and a blocker or should stays open with evidence, or when the user asks. When a round brings only nits, the loop ends: declined nits and comment-, doc- or format-only fixes need no new round.
+
+1. **Judge** each finding and its severity yourself against the change's intent: another path, a rare case or a small cost is a nit, whatever label it came with.
+2. **Answer** each id in the **ledger**, a table of id, severity and outcome, kept in the scratch directory and carried into the PR body when one follows:
+   - `fixed: <commit>, <the check that shows it>`: the smallest fix. Prefer deleting or narrowing code over a new lock, cache, helper or option; add one focused test that fails without the fix when the intent needs it.
+   - `disagree: <why, with file:line, a test or output>`.
+   - `declined: <one line>`: out of scope, or a nit. One worth doing goes through scope intake (`dk:issue-flow` step 3), and its outcome carries the issue number.
+
+   Agree on the evidence alone, never to end the loop.
+3. **Measure.** Run `git diff --shortstat <fixed-point>` before the first fix and after each round's fixes, once the checks they touch pass and the fixes are committed. When review fixes grew the diff, cut first: undo or narrow what no blocker or should needs, before another round.
+4. **Next round**, only while budget remains and a blocker or should is open, or behaviour code changed since the last round. Run steps 4 and 5 again with the same diff command; each prompt adds the ledger and the change since the last round (`git diff <last round's HEAD>`), and asks for only the open ids and the code changed since. An open id is one no reviewer has marked `resolved` yet.
+
+Done when no blocker or should is open on the current diff. Stuck when an id stays disputed after two replies, or the budget ends with a blocker or should open: show both sides in 2-3 lines each, and the user decides. Budget end is not approval.
+
+Report the rounds run, the ledger, the diff's shortstat before and after, and each declined finding's issue number.
 
 ## Why separate axes
 

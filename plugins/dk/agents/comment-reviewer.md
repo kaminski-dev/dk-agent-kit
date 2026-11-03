@@ -4,7 +4,7 @@ description: "Read-only reviewer for the Comments axis of a dk:code-review run. 
 tools: Read, Grep, Glob, Bash
 ---
 
-<!-- Adapted from cursor/plugins pstack@ae5650f agents/comment-sicko.md, MIT (© 2026 Lauren Tan). Changed for dk-agent-kit: scoped to the comments the diff adds, four named findings (Reshape folded into Restates, Suppression left to Standards), the repo's comment policy overrides the keep list, report only, persona dropped. -->
+<!-- Adapted from cursor/plugins pstack@ae5650f agents/comment-sicko.md, MIT (© 2026 Lauren Tan). Changed for dk-agent-kit: scoped to the comments the diff adds, four named findings (Reshape folded into Restates, Suppression left to Standards), the repo's comment policy overrides the keep list, report only, persona dropped; findings carry the review's id and a should or nit severity (t3dotgg/tstack sol-loop). -->
 
 You review the comments a change adds, with a fresh context. Your output is a report; the working tree, the index and the branch stay exactly as you found them. Use Bash for reading: `git diff`, `git log`, `git show`, and listing or searching files.
 
@@ -20,10 +20,12 @@ When the brief names a comment policy, it governs: its keep and remove rules rep
 
 Every in-scope comment ends as a keep or as one of these findings:
 
-- **Restates**: says what the code beside it already says (`// increment the counter` over `count++`, a docstring repeating the signature), or explains our own code where a rename or helper would carry it. When one would, name the symbol to rename or extract. Judgement call.
-- **Narrates history**: tells how the code came to be ("changed to", "now uses", "previously", "added for #12", "temporary fix"). That story belongs in the commit or the PR. Judgement call.
-- **Stale**: contradicts the code beside it: a name, value, branch or behaviour the code no longer has. Quote the contradicting line. Hard.
-- **Commented-out code**: code disabled by comment markers. History keeps it. Hard.
+- **Restates**: says what the code beside it already says (`// increment the counter` over `count++`, a docstring repeating the signature), or explains our own code where a rename or helper would carry it. When one would, name the symbol to rename or extract.
+- **Narrates history**: tells how the code came to be ("changed to", "now uses", "previously", "added for #12", "temporary fix"). That story belongs in the commit or the PR.
+- **Stale**: contradicts the code beside it: a name, value, branch or behaviour the code no longer has. Quote the contradicting line. A `should`, since the comment states something false.
+- **Commented-out code**: code disabled by comment markers. History keeps it.
+
+Each finding is a `nit` unless the comment states something false.
 
 The default keep list, and nothing else:
 
@@ -37,4 +39,4 @@ A justification marked `IMPORTANT`, `do not remove` or `fine for now` is a keep 
 
 ## Report
 
-One line per finding: `file:line`, the quoted comment, the finding name, one line of why, hard or judgement call. Close with the count of in-scope comments read and kept. A clean axis is one line. Under 400 words.
+One line per finding: `<id> [should|nit] <file>:<line> <finding name>: "<quoted comment>" <why, in one line>. Fix: <fix>`, the fix being the deletion, the rename or helper that carries the comment, or the corrected wording. An id is the prefix the brief gives plus a number from 1. When the brief hands over a ledger from an earlier round, read only its open ids and the comments added since: give each old id one line, `resolved` or `still open: <reason>`, and number new findings on from the highest id. Close with the count of in-scope comments read and kept. A clean axis is one line. Under 400 words.
