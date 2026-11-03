@@ -231,7 +231,7 @@ state() {
   cat "$fx/docker-ps"
   ls "$ws"
 }
-# Substring checks, so an expected text of several lines must appear as one block (grep -F would take each line alone).
+# An expected text of several lines must appear as one block.
 has() { [[ "$1" == *"$2"* ]] || fail "output lacks '$2':"$'\n'"$1"; }
 lacks() { [[ "$1" != *"$2"* ]] || fail "output has '$2':"$'\n'"$1"; }
 
@@ -408,9 +408,8 @@ stop "$pido"
 out=$("$dkgc" --in-use "$ws/notes-9") && fail "--in-use exited 0 on a path that does not exist"
 has "$out" "$ws/notes-9: no such directory"
 
-# Origin URL shapes, in a workspace of their own: github.com in any case or with an ssh port names
-# o/r, a host that only ends in github.com names none. gh has no o/r fixture, so a named repo shows
-# as one whose PRs it cannot list; the lookalike's database shows it has no GitHub origin.
+# Origin URL shapes, in a workspace of their own. gh has no o/r fixture, so a repo that names o/r shows
+# as one whose PRs it cannot list; the lookalike's database shows it names none.
 shapes="$tmp/shapes" sfx="$tmp/shapes-fixture"
 mkdir -p "$shapes" "$sfx"
 for spec in lookalike=https://notgithub.com/o/r.git caps=https://GitHub.com/o/r.git port=ssh://git@github.com:22/o/r.git; do

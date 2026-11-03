@@ -272,10 +272,10 @@ for script in ("batch-pr/batch.py", "issue-flow/wait-review.py", "triage/ready.p
     copies.setdefault(m.group(0) if m else None, []).append(script)
 if len(copies) != 1 or None in copies:
     errors.append("skills: origin_repo() differs between " + " | ".join(", ".join(v) for v in copies.values()))
-# dk-gc reads origin through its own git() helper, so only the pattern line is shared with the copies.
-dkgc_slug = re.search(r"^def slug_of\(root\):\n(?:    .*\n)*?(    m = re\.search\(.*\n)",
+# dk-gc reads origin through its own git() helper, so only the pattern line is shared.
+dkgc_pattern_line = re.search(r"^def slug_of\(root\):\n(?:    .*\n)*?(    m = re\.search\(.*\n)",
                       (ROOT / "plugins" / "dk-guard" / "bin" / "dk-gc").read_text(), re.M)
-if not dkgc_slug or not all(dkgc_slug.group(1) in copy for copy in copies if copy):
+if not dkgc_pattern_line or not all(dkgc_pattern_line.group(1) in copy for copy in copies if copy):
     errors.append("dk-guard: dk-gc's slug_of() reads origin with another pattern than the skills' origin_repo()")
 
 for e in errors:
