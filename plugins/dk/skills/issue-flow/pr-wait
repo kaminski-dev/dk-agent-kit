@@ -464,7 +464,7 @@ class Watcher:
                 fail_lines.append(f"{label} failed: {name} {link}")
                 self.emit(f"fail:{head}:{name}:{link}", fail_lines[-1])
         watched = {name: c for name, c in checks.items() if not bot_check(name, self.bot)}
-        gate_done = bool(gate) and all(bucket(n) != "pending" for n in gate)
+        gate_done = all(bucket(n) != "pending" for n in gate)  # no checks at all, once stable, count as done
         all_done = gate_done and all(c["bucket"] != "pending" for c in watched.values())
         # Checks appear a few seconds after a push. Two identical polls in a row
         # guard against calling a half-registered set of checks finished.
@@ -540,7 +540,7 @@ class Watcher:
         failed_names = sorted(name for name, c in watched.items() if c["bucket"] in FAILED)
         parts = [
             ", ".join(f"{n} {b}" for b, n in sorted(counts.items()))
-            + (f" ({', '.join(failed_names)})" if failed_names else ""),
+            + (f" ({', '.join(failed_names)})" if failed_names else "") or "no checks reported",
             f"required {sum(bucket(n) in ('pass', 'skipping') for n in self.required)}/{len(self.required)} green"
             if self.required
             else "",
