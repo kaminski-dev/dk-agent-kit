@@ -16,7 +16,7 @@ Tracker commands are in `docs/agents/issue-tracker.md` and label strings in `doc
 
 Check with the user that these seams match their expectations.
 
-3. Write the spec using the template below, then publish it to the project issue tracker. Apply the `spec` label and no state role: the spec is an epic, never a task, so triage and implement leave it alone. Its tickets come from `/dk:to-tickets` as sub-issues, and `/dk:implement-spec` builds the whole epic. When a `dk:research-codebase` document exists for this work, link it under Further Notes.
+3. Write the spec using the template below, then publish it to the project issue tracker. Apply the `spec` label and no state role: the spec is an epic, never a task, so triage and implement leave it alone. Its tickets come from `/dk:to-tickets` as sub-issues, and `/dk:implement-spec` builds the whole epic. When a `dk:research-codebase` document exists for this work, link it under Further Notes. A diagram in the spec follows the **Diagram rules** under Summary in the `dk:pr` skill (`../pr/SKILL.md` from this skill's base directory).
 
 <spec-template>
 

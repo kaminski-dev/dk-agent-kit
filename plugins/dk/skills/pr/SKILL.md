@@ -14,6 +14,8 @@ Use this template for writing the PR body:
 ```markdown
 ## Summary
 
+<one plain sentence: the problem, as the person who hit it would say it>
+
 <diagram, diff-sketch, or tree>
 
 ## Evidence
@@ -48,9 +50,15 @@ Drop "Also in this PR" and "Deviations" when empty. The last line is `Closes #N`
 
 Skip all preambles and keep prose brief. Use the user's domain language from `GLOSSARY.md`. The PR is English; customer-facing wording goes in the customer reply on the issue, not here.
 
+### Title
+
+The title says why the change matters: the effect the reader gets, not the mechanism. `cut websocket frame size by 70%+ with gzipping`, rather than `negotiate permessage-deflate on the websocket`. It keeps the repo's title conventions, which recently merged PRs show.
+
 ### Summary
 
-Pick the smallest view that makes the key point clear.
+Open with one plain sentence on the problem, before any visual: what went wrong or was missing, as the person who hit it would say it ("My new-worktree default was ignored on existing worktrees."), then the fix in a sentence. The opener names the problem; the files and functions changed belong in the visual.
+
+Then pick the smallest view that makes the key point clear.
 
 - Show logic or an algorithm as pseudocode:
 
@@ -166,6 +174,17 @@ function expandSkill(command: string): string {
 Place each visual next to the short text it supports. Keep only the calls, files, props, states, and boundaries needed to answer the user's current question or the options to resolve the current discussion point.
 
 You may use one of these, you may use several, it is unlikely you will use all of them. Use your judgement and don't overwhelm the user.
+
+#### Diagram rules
+
+Every diagram drawn for a reader (Mermaid, a state chart, boxes and arrows) follows these, in a PR, a spec or a research document:
+
+- **Labels**: name each state and box by what the reader sees or cares about ("Paying", "Lease held, write pending"), in plain words a person would say. Variable names and tags like "Tests: pass" stay out.
+- **Arrows**: each arrow says what happens, as the reader sees it happen ("you press play", "the connect fails"), never the function or action behind it. Two steps that end the same share one arrow. A condition goes in brackets at the end: `you press play [while the file loads]`.
+- **Size**: a state chart has about 20 arrows at most; any other diagram has at most six boxes, with at most eight words in each. Coarsen first: one label for states that act the same. A fact that needs a sentence goes in the text.
+- **Connected**: every box connects to another. A status list or a list of action items is text, written as text.
+- **Once**: each fact appears once, in the text or in one visual.
+- **Build-up**: use a short build-up series for three or more parts: the first diagram shows two, each next one adds one, and the last shows the whole.
 
 ### Evidence
 
