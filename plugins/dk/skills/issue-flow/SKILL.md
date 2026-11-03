@@ -106,7 +106,7 @@ Start it again after each push, after you handle a line that ended it, and when 
 
 `<model>` is the public model name the harness reports, such as `Claude Opus 5.5`, or the harness's own name when it reports none; `<login>` is `gh api user --jq .login`. This is the note's one definition: a script that skips your own comments matches a body against the Python `re` pattern `\A> \[!NOTE\]\r?\n> \*\*.+ responding on behalf of .+\*\*`. The PR body, commit messages and text the maintainer asks you to post verbatim carry no note. Post the body from a file, and keep the URL GitHub answers with: `gh pr comment <PR> --body-file <file>` and `gh issue comment N --body-file <file>` print it, and a thread reply gives it with `gh api "repos/{owner}/{repo}/pulls/<PR>/comments/<id>/replies" -F body=@<file> --jq .html_url`. Resolve a review thread only once its reply posted and GitHub returned the reply's URL.
 
-**Ready gate.** The PR goes to the maintainer once it passes this gate on the latest commit. Read the live PR with `gh pr view <PR> --json headRefOid,state,isDraft,reviewDecision`: it is open, not a draft, and on its `headRefOid`:
+**Ready gate.** The PR goes to the maintainer once it passes this gate on the latest commit. Read the live PR with `gh pr view <PR> --json headRefOid,state,isDraft,reviewDecision,mergeable,mergeStateStatus`: it is open, not a draft, and on its `headRefOid`:
 
 - your proof (step 5) covers every change in the diff, the review fixes included;
 - required checks are green;
