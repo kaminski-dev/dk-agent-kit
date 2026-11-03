@@ -12,8 +12,9 @@ the run go to stderr.
 
 --until
   green       required checks passed on the current head (every CI check when
-              the base branch requires none; no checks at all count once the
-              head is 3 minutes old)
+              the base branch requires none; no checks at all count once this
+              watcher has seen the head for 3 minutes, so a run with
+              --minutes under 3 never reaches green on a PR without checks)
   ready       green, the review bot gave its verdict on the current head, no
               review thread is unresolved, and the merge state is known and not
               BEHIND (default)
