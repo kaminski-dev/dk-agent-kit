@@ -11,22 +11,23 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 
 | dk skill | Upstream path | Changes |
 |---|---|---|
-| code-review | skills/engineering/code-review | default `origin/pre-main`; uncommitted and untracked work reviewed too; scope amendments count as requested; baseline gains Defensive Interior, Swallowed Error, Dead Code, Deprecated API; reviewers run as `dk:reviewer`; Comments axis run by `dk:comment-reviewer`; fourth axis Correctness (crash windows, failed state shown as empty, boundary values, tests that cannot fail, doc lines the code does not back), whose test question carries the Empty Test checklist; standards sources start at `CODING_STANDARDS.md`; falls back to `origin/main` without `pre-main` |
+| code-review | skills/engineering/code-review | default `origin/pre-main`; uncommitted and untracked work reviewed too; scope amendments count as requested; baseline gains Defensive Interior, Swallowed Error, Dead Code, Deprecated API; reviewers run as `dk:reviewer`; Comments axis run by `dk:comment-reviewer`; fourth axis Correctness (crash windows, failed state shown as empty, boundary values, tests that cannot fail, doc lines the code does not back), whose test question carries the Empty Test checklist; standards sources start at `CODING_STANDARDS.md`; falls back to `origin/main` without `pre-main`; findings carry an id and a blocker, should or nit severity, answered in a ledger over at most 3 rounds (5 for named risk classes), from tstack sol-loop |
 | codebase-design | skills/engineering/codebase-design | as-is |
+| diagnosing-bugs | skills/engineering/diagnosing-bugs | model-invoked, short description; loops and HITL scripts run in the issue's scratch folder; regression test through `dk:tdd`, final proof through `dk:verify`, whose control run fits Phase 2; artifacts captured through the helper `docs/agents/observability.md` names; the confirmed cause goes to `dk:pr`; a missing seam routes to `dk:improve-codebase-architecture`; Codex `agents/openai.yaml` not taken |
 | domain-modeling | skills/engineering/domain-modeling | glossary change rule from `docs/agents/domain.md` |
 | grill-with-docs | skills/engineering/grill-with-docs | `dk:` references |
 | grilling | skills/productivity/grilling | as-is |
-| handoff | skills/productivity/handoff | as-is |
-| implement | skills/engineering/implement | `dk:issue-flow`, commit per green step, `dk:verify` before review, `dk:pr`; several tickets fan out by `dk:issue-flow` step 2 and are dry-merged with `git merge-tree` before the report |
+| handoff | skills/productivity/handoff | receiving section from tstack takeover: a handoff is context, not proof, checked against the code, the current head and uncommitted work; the earlier implementation re-judged, not defended; imported commits keep authorship and trailers |
+| implement | skills/engineering/implement | `dk:issue-flow`, commit per green step, `dk:verify` before review, `dk:pr`; several tickets fan out by `dk:issue-flow` step 2 and are dry-merged with `git merge-tree` before the report; review findings answered through `dk:code-review`'s ledger, not fixed wholesale; report asks only for a closed list of reasons, through AskUserQuestion with the recommendation first, and lists Decisions taken (tstack sol-loop, full-send) |
 | implement-spec | skills/engineering/implement-spec | integration branch off the base from `workflow.md` (`pre-main` by default), implementer worktrees from it launched by `dk:issue-flow` step 2's fan-out rules, scratch per agent, `dk:verify` on the whole spec, one PR into the base |
 | improve-codebase-architecture | skills/engineering/improve-codebase-architecture | `dk:` references; glossary edits by the context and the `domain.md` rule |
-| pr | skills/engineering/pr | Also in this PR, Deviations, `Closes`/`Refs` (repeated on the batch PR), evidence on `verify-assets`, `dk:blast-radius` for one-way doors |
+| pr | skills/engineering/pr | Also in this PR, Deviations, `Closes`/`Refs` (repeated on the batch PR), evidence on `verify-assets`, `dk:blast-radius` for one-way doors; Summary opens with one plain sentence on the problem before any visual, title says why the change matters (tstack file-pr); visuals section holds the kit's diagram rules (pstack statechart and ketchup, teach's build-up series) |
 | prototype | skills/engineering/prototype | tracking issue, tracked paths, pushed `proto/` branch, versioned artifact titles; production never renders a variant |
 | research | skills/engineering/research | narrower trigger; notes in `docs/research/` |
 | retro | skills/engineering/retro | `dk:` references; a window of sessions, extracted by `extract.py`; correct step and rule-to-check table from pstack |
 | tdd | skills/engineering/tdd | `dk:` references |
 | teach | skills/productivity/teach | as-is |
-| to-spec | skills/engineering/to-spec | `spec` label instead of `ready-for-agent` |
+| to-spec | skills/engineering/to-spec | `spec` label instead of `ready-for-agent`; diagrams follow `dk:pr`'s rules |
 | to-tickets | skills/engineering/to-tickets | adapter files, same-place search, shared-module check; Blocked by only when a ticket gates it |
 | triage | skills/engineering/triage | adapter files, same-place and premise checks, yes-only decisions batched, parallel-wave check; brief gains an optional Blocked by line; ready list (`ready.py`) asks about origin's repo whatever GH_REPO says, and leaves out issues with an open blocker, native (every page) or a body line; verify step runs the failing check the issue names and is done when the report quotes each command with its exit status; a bug whose check could not run goes to `needs-info` |
 | writing-for-agents | skills/productivity/writing-for-agents | as-is |
@@ -46,7 +47,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 
 | dk file | Upstream path | Changes |
 |---|---|---|
-| skills/research-codebase | .claude/commands/research_codebase.md | ticket-blind split, single documentarian subagent, `docs/research/` output |
+| skills/research-codebase | .claude/commands/research_codebase.md | ticket-blind split, single documentarian subagent, `docs/research/` output; diagrams follow `dk:pr`'s rules |
 | agents/codebase-locator, codebase-analyzer, codebase-pattern-finder | .claude/agents/codebase-locator.md, .claude/agents/codebase-analyzer.md, .claude/agents/codebase-pattern-finder.md | trimmed, positive phrasing, Bash for reads |
 
 ## t3dotgg/tstack (MIT) @ 1085050
