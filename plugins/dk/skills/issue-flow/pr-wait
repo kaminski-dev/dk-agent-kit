@@ -305,7 +305,7 @@ def required_checks(repo: str, base: str) -> tuple[set[str], list[str]]:
         try:
             names.update(gh_lines(["api", path, "--jq", jq]))
         except GhError as error:
-            if "HTTP 403" in str(error):
+            if "HTTP 403" in str(error) and not error.transient:  # a rate-limit 403 is transient: the poll retries it
                 forbidden.append(path)
             elif "HTTP 404" not in str(error):  # 404 means no protection, which is normal
                 raise  # the poll retries, rather than reading a failed read as none required
