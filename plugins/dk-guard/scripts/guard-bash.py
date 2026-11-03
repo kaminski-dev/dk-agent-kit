@@ -53,25 +53,39 @@ PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:(?:sudo|command|exec|nohup|time|
 END = r"[^;&|\n)`]*"
 
 
-# A here-doc operator and its delimiter word: plain characters, backslash escapes and closed quotes, starting the
-# way a delimiter does (a digit after `<<` is a shift, as in `1<<2`).
+# A here-doc operator and its delimiter word: plain characters, backslash escapes and closed quotes, up to a blank,
+# an operator or a backtick. A word starting with a digit is taken as a shift (`1<<2`), though the shell would
+# read `<<2` as a here-doc.
 HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)[ \t]*"
-                     r"""((?=[A-Za-z_'"\\])(?:[^\s;&|<>()'"\\]|\\.|'[^']*'|"(?:[^"\\]|\\.)*")+)(?!['"])""")
+                     r"""((?=[A-Za-z_'"\\])(?:[^\s;&|<>()`'"\\]|\\.|'[^']*'|"(?:[^"\\]|\\.)*")+)(?![^\s;&|<>()`])""")
+QUOTED_PART = re.compile(r"""'([^']*)'|"((?:[^"\\]|\\.)*)"|\\(.)""")
+
+
+def unquote(part):
+    """A quoted part of a delimiter word as the shell reads it: inside double quotes a backslash escapes only
+    $, `, " and itself."""
+    single, double, escaped = part.groups()
+    if double is not None:
+        return re.sub(r'\\([$`"\\])', r"\1", double)
+    return escaped if single is None else single
 
 
 def without_arithmetic(line):
-    """The line with each $((...)) and ((...)) cut out up to its balancing paren or the line's end, since a << in
-    one is a shift."""
-    kept, i = [], 0
-    while (start := line.find("((", i)) >= 0:
-        kept.append(line[i:start])
-        depth, i = 0, start
-        while i < len(line):
-            depth += {"(": 1, ")": -1}.get(line[i], 0)
-            i += 1
-            if depth == 0:
-                break
-    return " ".join(kept + [line[i:]])
+    """The line with each $((...)) and ((...)) that closes on it cut out, since a << in one is a shift."""
+    opens, spans = [], []
+    for i, c in enumerate(line):
+        if c == "(":
+            opens.append(i)
+        elif c == ")" and opens:
+            start = opens.pop()
+            if line.startswith("((", start):
+                spans.append((start, i + 1))
+    kept, end = [], 0
+    for start, stop in sorted(spans):
+        if start >= end:  # an outermost span; a nested one lies inside the cut already
+            kept.append(line[end:start] + " ")
+            end = stop
+    return "".join(kept) + line[end:]
 
 
 def heredoc_lines(cmd):
@@ -83,7 +97,8 @@ def heredoc_lines(cmd):
         i += 1
         yield line, None
         for dash, word in HEREDOC.findall(without_arithmetic(line)):
-            delim, expands = shlex.split(word)[0], not re.search(r"['\"\\]", word)
+            delim = QUOTED_PART.sub(unquote, word)
+            expands = not QUOTED_PART.search(word)
             while i < len(lines):
                 body = lines[i]
                 i += 1
