@@ -118,8 +118,6 @@ flow = skills["issue-flow"].read_text()
 bot = re.search(r"^\*\*Review bot\.\*\*.*?(?=^## )", flow, re.M | re.S)
 bot = bot.group(0) if bot else ""
 for what, pattern in (
-    ("the background wait", r"run_in_background"),
-    ("the 20-minute give-up", r"20 minutes"),
     ("the head-SHA filter", r"headRefOid.*commit_id|commit_id.*headRefOid"),
     ("the inline-comment endpoint", r"repos/\S+/pulls/\S+/comments"),
     ("the review-body endpoint", r"repos/\S+/pulls/\S+/reviews/\S+"),
@@ -127,9 +125,31 @@ for what, pattern in (
     if not re.search(pattern, bot, re.S):
         errors.append(f"skills/issue-flow: its **Review bot.** paragraph in step 6 does not name {what}")
 if not re.search(r"pulls/\S+/comments\" --jq '[^']*in_reply_to_id == null", bot):
-    errors.append("skills/issue-flow: item 2's inline query must keep the bot's thread starters only (in_reply_to_id == null)")
-if "wait-review.py" not in bot:
-    errors.append("skills/issue-flow: its **Review bot.** paragraph must start wait-review.py, whose cases tests/test_wait_review.py runs")
+    errors.append("skills/issue-flow: item 1's inline query must keep the bot's thread starters only (in_reply_to_id == null)")
+
+# One watcher, pr-wait, reports every PR event in step 6, run with Monitor (#124).
+watch = re.search(r"^\*\*Watch the PR\.\*\*.*?(?=^\*\*Review bot\.\*\*)", flow, re.M | re.S)
+watch = watch.group(0) if watch else ""
+watcher = (DK / "skills" / "issue-flow" / "pr-wait").read_text()
+for what, pattern in (
+    ("the watcher, whose cases tests/test_pr_wait.py runs", r"`python3 -I <base directory>/pr-wait <PR>`"),
+    ("the Monitor tool at its longest timeout", r"Monitor tool \(`timeout_ms: 1800000`\)"),
+    ("the run_in_background fallback", r"[Ww]ithout Monitor, start the same command with `run_in_background`"),
+    ("the 20-minute deadline a push restarts", r"push restarts its 20 minutes"),
+    ("a restart after each push, which replays what arrived in between", r"[Ss]tart it again after each push"),
+):
+    if not re.search(pattern, watch, re.S):
+        errors.append(f"skills/issue-flow: step 6's **Watch the PR.** paragraph does not name {what}")
+for line in ("required check failed", "comment from", "review from", "new thread from", "thread reply from", "reviewed",
+             "rate limited on", "paused on", "and touches files in this PR", "merge state is BEHIND",
+             "merge state is DIRTY", "blocked by", "merged", "closed without merging", "deadline passed", "ready on",
+             "green on", "pr-wait stopped"):
+    if line not in watch:
+        errors.append(f"skills/issue-flow: step 6's **Watch the PR.** paragraph does not say what to do on pr-wait's "
+                      f"`{line}` line (tests/test_pr_wait.py shows it printed)")
+step6_waits = re.search(r"^## 6\..*?(?=^## 7\.)", flow, re.M | re.S)
+if step6_waits and re.search(r"--watch\b|\bsleep \d", step6_waits.group(0)):
+    errors.append("skills/issue-flow: step 6 waits through pr-wait alone; it has a `--watch` or `sleep` wait left")
 step7 = re.search(r"^## 7\..*?(?=^## )", flow, re.M | re.S)
 step7 = step7.group(0) if step7 else ""
 if not re.search(r"<PR>-<review>-<\w+>", step7) or "one at a time" not in step7:
@@ -190,6 +210,10 @@ else:
                       ("Quoting it:\n\n" + ours, False)):
         if bool(pattern.match(body)) != own:
             errors.append(f"skills/issue-flow: step 6's attribution pattern {'misses' if own else 'matches'} {body!r}")
+own = re.search(r'^ATTRIBUTION = re\.compile\(r"([^"\n]+)"\)$', watcher, re.M)
+if not pattern or not own or own.group(1) != pattern.pattern:
+    errors.append("skills/issue-flow/pr-wait: its ATTRIBUTION pattern must equal step 6's **Comments.** pattern, "
+                  "or it reports the agent's own comments or drops the maintainer's")
 for what, rule in (
     ("every comment and thread reply, in steps 6 and 7", r"every comment and thread reply.*step 7"),
     ("the model name the harness reports", r"model name the harness reports"),
@@ -309,6 +333,18 @@ for kind, name, path in marked:
         if not re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", dk_column_by_section_commit.get(commit, "")):
             errors.append(f"{kind}/{name}: adapted from {source}@{commit}, but upstream/UPSTREAM.md has no row for it in the section at that commit")
 
+# A vendored script carries its marker as a comment; its row names it in the section at the marker's commit.
+section_by_commit = dict(re.findall(r"^## .*? @ ([0-9a-f]+)\n(.*?)(?=^## |\Z)", upstream, re.M | re.S))
+for path in sorted(DK.glob("skills/*/*")):
+    if not path.is_file() or path.suffix == ".md":
+        continue
+    dk_file = f"skills/{path.parent.name}/{path.name}"
+    for source, commit, upstream_path in re.findall(r"^# Adapted from (\S+(?: \S+)?)@([0-9a-f]+) (\S+?), ",
+                                                    path.read_text(errors="replace"), re.M):
+        if not re.search(rf"^\| {re.escape(dk_file)} \| {re.escape(upstream_path)} \|", section_by_commit.get(commit, ""), re.M):
+            errors.append(f"{dk_file}: adapted from {source}@{commit} {upstream_path}, but upstream/UPSTREAM.md has no "
+                          "row for it in the section at that commit")
+
 # The shape upstream/sync.sh parses (the format note at the top of UPSTREAM.md).
 # sync.sh skips a section whose heading it cannot read and matches no file
 # against a glob or a shorthand path, so either one hides upstream changes.
@@ -424,7 +460,7 @@ if not re.search(r"^### Title\n\n[^\n]*why the change matters", pr_skill, re.M):
 
 # Each skill ships its own copy, since `python3 -I` keeps a script's folder off sys.path; the copies stay one.
 copies = {}
-for script in ("batch-pr/batch.py", "issue-flow/wait-review.py", "triage/ready.py"):
+for script in ("batch-pr/batch.py", "issue-flow/pr-wait", "triage/ready.py"):
     m = re.search(r"^def origin_repo\(\):\n(?:    .*\n)+", (DK / "skills" / script).read_text(), re.M)
     copies.setdefault(m.group(0) if m else None, []).append(script)
 if len(copies) != 1 or None in copies:

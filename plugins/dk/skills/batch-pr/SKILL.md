@@ -66,4 +66,4 @@ When step 2 pushed fixes, `pre-main`'s head moved since step 3: run its nightly 
 gh pr create --base main --head pre-main --title "Batch: pre-main into main, <YYYY-MM-DD>" --body-file <scratchpad>/batch-pr.md
 ```
 
-Give the user the URL, and name each `(no issue)` PR: an issue it was meant to close stays open after the merge. Read its checks as `dk:issue-flow` step 6 says: they are the batch's evidence. Then wait for the review bot as `dk:issue-flow` step 6's **Review bot** says; what it still finds takes step 7's route.
+Give the user the URL, and name each `(no issue)` PR: an issue it was meant to close stays open after the merge. Watch it as `dk:issue-flow` step 6 says: its checks are the batch's evidence, and what the review bot still finds takes step 7's route.
