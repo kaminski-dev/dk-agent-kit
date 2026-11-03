@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Stand-in for the GitHub CLI inside an eval workspace: nothing leaves the machine.
 
-State lives in <workspace>/.tracker/state.json. Every call is logged to
-.tracker/calls.log; what the graders read is written as plain text:
+State lives in <workspace>/.tracker/state.json. Every call is logged to .tracker/calls.log.
+.tracker/repos.log logs it too, as the repo it was asked for, a tab, the call; that repo is
+--repo or -R, else GH_REPO, else `-` (the checkout's own). What the graders read is written as plain text:
 .tracker/issue-<N>.md (labels, state and every comment), .tracker/pr.md
 (the last PR opened, with the acceptance result for its head branch) and
 .tracker/pulls/<N>.md (the last PR for issue N, read from a <type>/<N>-<slug> head); "last" is
@@ -392,6 +393,9 @@ def main(argv):
     fcntl.flock(LOCK, fcntl.LOCK_EX)
     with open(TRACKER / "calls.log", "a") as log:
         log.write(" ".join(argv) + "\n")
+    asked = next((argv[i + 1] for i in range(len(argv) - 1) if argv[i] in ("--repo", "-R")), None)
+    with open(TRACKER / "repos.log", "a") as log:
+        log.write(f"{asked or os.environ.get('GH_REPO') or '-'}\t{' '.join(argv)}\n")
     if not argv:
         fail("usage: gh <command>")
     state = load()

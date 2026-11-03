@@ -406,6 +406,13 @@ got = ready_py()
 check("ready.py: leaves out the native-blocked #371 and the body-blocked #375",
       got == ([370, 372, 373, 376], {371: [372], 375: [372]}), got)
 
+repos_log = ws / ".tracker" / "repos.log"
+repos_log.write_text("")
+r = run(ws, f"GH_REPO=kaminski-dev/dk-agent-kit python3 -I '{READY_PY}'", cwd=ws / "app")
+asked = [line.split("\t", 1)[0] for line in repos_log.read_text().splitlines()]
+check("ready.py: with an inherited GH_REPO, every gh call asks for origin's acme/ledger",
+      r.returncode == 0 and asked and set(asked) == {"acme/ledger"}, (r.returncode, r.stderr, asked))
+
 state_file = ws / ".tracker" / "state.json"
 state = json.loads(state_file.read_text())
 state_file.write_text(json.dumps({**state, "search_qualifiers": False}))

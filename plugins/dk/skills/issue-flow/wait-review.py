@@ -3,18 +3,21 @@
 
     python3 -I wait-review.py <PR> [--bot LOGIN] [--minutes 20] [--interval 30] [--gh-timeout 60]
 
-Run it in the repo's checkout (or with GH_REPO set). It polls every --interval
+Run it in the repo's checkout: gh is asked about origin's github.com repo,
+whatever GH_REPO says. It polls every --interval
 seconds and reads the head on every poll; a new head restarts the --minutes
 deadline. Each gh call gets the smaller of --gh-timeout and the time left.
 
 Exit codes, with the verdict on stdout:
   0  `reviews <id>...`: the bot's reviews of the head, or `clean`: a round with no findings
   1  no verdict before the deadline, --minutes after the last head change (20 by default)
-  2  a gh call failed or ran past --gh-timeout seconds; its error is on stderr
+  2  a gh call failed or ran past --gh-timeout seconds, or origin is no github.com repo; the error is on stderr
   3  `rate limited` or `paused`: the bot will not review this head on its own
 """
 import argparse
 import json
+import os
+import re
 import subprocess
 import sys
 import time
@@ -62,6 +65,13 @@ def gh_list(path):
         page, i = decoder.raw_decode(out, i)
         items.extend(page)
     return items
+
+
+def origin_repo():
+    """None when origin is no github.com repo. Read from the configured URL, before any insteadOf rewrites it."""
+    url = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True).stdout.strip()
+    m = re.search(r"(?:^|[@/])github\.com(?::\d+)?[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", url, re.I)
+    return m.group(1) if m else None
 
 
 def section(body, markers):
@@ -136,6 +146,11 @@ def main():
     ap.add_argument("--gh-timeout", type=float, default=GH_TIMEOUT)
     args = ap.parse_args()
     GH_TIMEOUT = args.gh_timeout
+    repo = origin_repo()
+    if not repo:
+        print("origin names no github.com repo: run it in the PR's checkout", file=sys.stderr)
+        sys.exit(2)
+    os.environ["GH_REPO"] = repo  # an inherited GH_REPO would point gh at another repo
     try:
         code, line = wait(args.pr, args.bot, args.minutes, args.interval)
     except GhFailed as e:

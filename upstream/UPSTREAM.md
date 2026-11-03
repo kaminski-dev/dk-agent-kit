@@ -28,7 +28,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 | teach | skills/productivity/teach | as-is |
 | to-spec | skills/engineering/to-spec | `spec` label instead of `ready-for-agent` |
 | to-tickets | skills/engineering/to-tickets | adapter files, same-place search, shared-module check; Blocked by only when a ticket gates it |
-| triage | skills/engineering/triage | adapter files, same-place and premise checks, yes-only decisions batched, parallel-wave check; brief gains an optional Blocked by line; ready list (`ready.py`) leaves out issues with an open blocker, native (every page) or a body line; verify step runs the failing check the issue names and is done when the report quotes each command with its exit status; a bug whose check could not run goes to `needs-info` |
+| triage | skills/engineering/triage | adapter files, same-place and premise checks, yes-only decisions batched, parallel-wave check; brief gains an optional Blocked by line; ready list (`ready.py`) asks about origin's repo whatever GH_REPO says, and leaves out issues with an open blocker, native (every page) or a body line; verify step runs the failing check the issue names and is done when the report quotes each command with its exit status; a bug whose check could not run goes to `needs-info` |
 | writing-for-agents | skills/productivity/writing-for-agents | as-is |
 | setup | skills/engineering/setup-matt-pocock-skills | rewritten; templates adapted; `docs/agents/verify.md` row and Verify step for `dk:verify`; Batch-review fixes and Review bot workflow parameters; Worktree parameter is the full backticked `git worktree add` command the `require-worktree` hook reads; tracker template gains the Ready list and the blocker read, every page |
 

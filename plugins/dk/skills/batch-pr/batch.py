@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Collect what the batch PR from pre-main into main carries. Opens nothing.
 
-Run from inside the repo. It fetches origin's main and pre-main, then prints:
+Run from inside the repo. Every gh call asks about origin's github.com repo, whatever
+GH_REPO says. It fetches origin's main and pre-main, then prints:
 
   ## PRs              each PR merged into pre-main that main does not hold yet
   ## Lines            their Closes #N / Refs #N lines, one per issue
@@ -9,8 +10,10 @@ Run from inside the repo. It fetches origin's main and pre-main, then prints:
 
 Exit 0: collected. Exit 3: a PR from pre-main into main is already open; its
 URL is printed. Exit 4: nothing to batch (no pre-main on origin, or pre-main
-holds no commit that main lacks). Exit 1: git or gh failed, or a PR merged
-into pre-main has a merge commit this clone does not hold; it names them.
+holds no commit that main lacks). Exit 1: git or gh failed, origin is no
+github.com repo, a PR merged into pre-main has a merge commit this clone does
+not hold (it names them), or no merged PR of origin's repo matches pre-main
+although it holds merge commits of branches (it names the repo).
 Both branches are fetched by name, so a single-branch clone gets pre-main too;
 a shallow clone is deepened first.
 
@@ -18,6 +21,7 @@ An issue named by both a Closes and a Refs line gets Refs: a post-deploy
 check outranks closing on merge.
 """
 import json
+import os
 import re
 import subprocess
 import sys
@@ -32,6 +36,13 @@ def sh(*cmd, ok=(0,)):
     if r.returncode not in ok:
         sys.exit(f"{' '.join(cmd)}: {r.stderr.strip() or r.returncode}")
     return r
+
+
+def origin_repo():
+    """None when origin is no github.com repo. Read from the configured URL, before any insteadOf rewrites it."""
+    url = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True).stdout.strip()
+    m = re.search(r"(?:^|[@/])github\.com(?::\d+)?[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", url, re.I)
+    return m.group(1) if m else None
 
 
 def gh_json(*args):
@@ -49,11 +60,22 @@ def merged_since(day):
         limit *= 2
 
 
+def branch_merges():
+    """The batch's merge commits that bring in a branch; one whose second parent main holds levelled pre-main."""
+    log = sh("git", "log", "--merges", "--format=%H %P", "origin/main..origin/pre-main").stdout
+    merges = [line.split() for line in log.splitlines()]
+    return [m[0] for m in merges if sh("git", "merge-base", "--is-ancestor", m[2], "origin/main", ok=(0, 1)).returncode]
+
+
 def main():
     if len(sys.argv) > 1:
         print(__doc__.strip())
         return 0 if sys.argv[1] in ("-h", "--help") else 1
 
+    repo = origin_repo()
+    if not repo:
+        sys.exit("origin names no github.com repo, so there is no repo to ask gh about.")
+    os.environ["GH_REPO"] = repo  # an inherited GH_REPO would point gh at another repo
     open_batch = gh_json("pr", "list", "--base", "main", "--head", "pre-main", "--state", "open", "--json", "url")
     if open_batch:
         print(f"A batch PR is already open: {open_batch[0]['url']}")
@@ -90,6 +112,10 @@ def main():
         names = ", ".join(f"#{p['number']}" for p in unknown)
         sys.exit(f"Merged into pre-main since {since}, but their merge commit is not in this clone: {names}. "
                  "Fetch it, or check whether pre-main was rewritten, before opening the batch PR.")
+    if not batch and branch_merges():
+        sys.exit(f"origin/main..origin/pre-main holds merge commits of branches, but no PR merged into pre-main of "
+                 f"{repo} since {since} matches one. Check that {repo} "
+                 "is where this checkout's PRs are merged.")
     batch.sort(key=lambda p: p["number"])
 
     kind_of, without = {}, []

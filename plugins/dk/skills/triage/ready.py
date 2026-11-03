@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """List the open ready-for-agent issues no open issue blocks. Changes nothing.
 
-Run from inside the repo. Prints, oldest first:
+Run from inside the repo: gh is asked about origin's github.com repo, whatever
+GH_REPO says. Prints, oldest first:
 
   ## Ready     issues with no open blocker
   ## Blocked   the other ready-for-agent issues, each with its open blockers
@@ -11,9 +12,11 @@ A blocker is a native dependency or a `Blocked by: #n` line in the issue body;
 The first cut is the search `-is:blocked`, which counts only open native
 blockers. GitHub does not document that qualifier; it was checked by hand on
 2026-11-02. Where search rejects it, every issue's native blockers are read
-through the API instead, every page of them. Exit 1: gh failed.
+through the API instead, every page of them. Exit 1: gh failed, or origin is
+no github.com repo.
 """
 import json
+import os
 import re
 import subprocess
 import sys
@@ -32,15 +35,25 @@ def gh(*args, check=True):
     return r
 
 
+def origin_repo():
+    """None when origin is no github.com repo. Read from the configured URL, before any insteadOf rewrites it."""
+    url = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True).stdout.strip()
+    m = re.search(r"(?:^|[@/])github\.com(?::\d+)?[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", url, re.I)
+    return m.group(1) if m else None
+
+
 def main():
     if len(sys.argv) > 1:
         print(__doc__.strip())
         return 0 if sys.argv[1] in ("-h", "--help") else 1
 
+    repo = origin_repo()
+    if not repo:
+        sys.exit("origin names no github.com repo, so there is no repo to ask gh about.")
+    os.environ["GH_REPO"] = repo  # an inherited GH_REPO would point gh at another repo
     issues = json.loads(gh(*LIST[1:]).stdout)
     first_cut = gh(*LIST[1:], "--search", "-is:blocked", check=False)
     natively_free = {i["number"] for i in json.loads(first_cut.stdout)} if first_cut.returncode == 0 else set()
-    repo = gh("repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner").stdout.strip()
 
     states = {}
 

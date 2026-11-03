@@ -2,7 +2,8 @@
 # Builds an eval workspace in the current directory, which `claude plugin eval --scaffold`
 # makes $HOME/cwd. usage: build.sh <repo dir under _fixture> <issues state file> [branch slug [wip slug]]
 #
-# The workspace gets the repo (main and pre-main, origin a bare repo beside it), the
+# The workspace gets the repo (main and pre-main, origin the tracker's repo on github.com,
+# rewritten by insteadOf to a bare repo beside it), the
 # tracker stand-in's state in .tracker/ (with each of its issues' acceptance checks), and .bin/ first on PATH through the temp HOME's
 # shell rc: .bin/gh and .bin/govulncheck are stand-ins, so no call reaches GitHub or the
 # vulnerability database; .bin/dk-pg, docker and the Postgres binaries only log the attempt
@@ -42,6 +43,7 @@ for n in $(python3 -c 'import json, sys; print(*json.load(open(sys.argv[1]))["is
   if [ -f "$F/acceptance-$n.py" ]; then cp "$F/acceptance-$n.py" .tracker/; fi
 done
 
+gh_repo=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["repo"])' .tracker/state.json)
 git init -q --bare origin.git
 cp -R "$F/$repo" "$repo"
 cd "$repo"
@@ -51,7 +53,8 @@ git config user.email eval@example.com
 git add -A
 git commit -qm "Initial import"
 git branch pre-main
-git remote add origin ../origin.git
+git remote add origin "https://github.com/$gh_repo.git"
+git config url."../origin.git".insteadOf "https://github.com/$gh_repo.git"
 git push -q origin main pre-main
 git fetch -q origin
 if [ -n "$slug" ]; then
