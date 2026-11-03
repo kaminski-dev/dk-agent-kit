@@ -59,6 +59,21 @@ HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)[ \t]*"
                      r"""((?=[A-Za-z_'"\\])(?:[^\s;&|<>()'"\\]|\\.|'[^']*'|"(?:[^"\\]|\\.)*")+)(?!['"])""")
 
 
+def without_arithmetic(line):
+    """The line with each $((...)) and ((...)) cut out up to its balancing paren or the line's end, since a << in
+    one is a shift."""
+    kept, i = [], 0
+    while (start := line.find("((", i)) >= 0:
+        kept.append(line[i:start])
+        depth, i = 0, start
+        while i < len(line):
+            depth += {"(": 1, ")": -1}.get(line[i], 0)
+            i += 1
+            if depth == 0:
+                break
+    return " ".join(kept + [line[i:]])
+
+
 def heredoc_lines(cmd):
     """Yield (line, None) for each command line and (line, expands) for each line of a heredoc body, `expands`
     True when no part of its delimiter word is quoted or escaped."""
@@ -67,7 +82,7 @@ def heredoc_lines(cmd):
         line = lines[i]
         i += 1
         yield line, None
-        for dash, word in HEREDOC.findall(line):
+        for dash, word in HEREDOC.findall(without_arithmetic(line)):
             delim, expands = shlex.split(word)[0], not re.search(r"['\"\\]", word)
             while i < len(lines):
                 body = lines[i]
