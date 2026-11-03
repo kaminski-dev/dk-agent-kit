@@ -25,6 +25,7 @@ import time
 RATE_LIMITED = ("<!-- This is an auto-generated comment: rate limited by coderabbit.ai -->",
                 "<!-- end of auto-generated comment: rate limited by coderabbit.ai -->")
 RECENT = ("<!-- recent_review_start -->", "<!-- recent_review_end -->")
+STATUS = ("<!-- recent_review_status_start -->", "<!-- recent_review_status_end -->")
 NO_FINDINGS = "No actionable comments were generated in the recent review."
 
 
@@ -106,8 +107,8 @@ def summary_verdict(pr, bot, sha):
             return 3, "paused"
         if "review in progress" in body:
             return None
-        recent = section(body, RECENT)
-        if f"and {sha}" in recent and NO_FINDINGS in recent:
+        recent = section(body, RECENT)  # names the reviewed range; the verdict sits here or in the status block
+        if f"and {sha}" in recent and (NO_FINDINGS in recent or NO_FINDINGS in section(body, STATUS)):
             return 0, "clean"
     return None
 
