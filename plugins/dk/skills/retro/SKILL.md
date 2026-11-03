@@ -4,7 +4,7 @@ description: "Run a retrospective on a session or a month of sessions, and turn 
 disable-model-invocation: true
 ---
 
-<!-- Adapted from cursor/plugins pstack@1dcc2ba skills/correct, MIT (© 2026 Lauren Tan). Changed for dk-agent-kit: folded into the retro as its correct step, proposes fixes instead of making them, rule-to-check table in the retro report. -->
+<!-- Adapted from cursor/plugins pstack@ae5650f skills/correct, MIT (© 2026 Lauren Tan). Changed for dk-agent-kit: folded into the retro as its correct step, proposes fixes instead of making them, rule-to-check table in the retro report. -->
 
 The user has asked for a **retrospective**. You are suggesting improvements to the coding agent's **environment** to improve future runs.
 
@@ -35,7 +35,7 @@ The user has asked for a **retrospective**. You are suggesting improvements to t
    1. **Architecture** makes the mistake impossible: one owner per piece of state, one supported way per task, internals hidden so the wrong import fails, one source of truth in place of hand-synced lists, old ways and dead code an agent would copy deleted.
    2. **Types** make the bad state unwritable.
    3. **Lint**: a lint rule, hook or CI job whose error names the file, type or function to use instead, built in the repo's own linter or guardrail. When the pattern is already common, it fails only on a change that adds more.
-   4. **Test** of the behaviour, one that fails if every function it calls returned nothing.
+   4. **Test** of the behaviour. A test that still passes when the behaviour it checks breaks, or fails when only the internals change, is fixed or deleted.
    5. **Docs** or an agent rule, only for a judgement call: nothing fails when an agent skips it.
 
    Each proposed check names the past mistake from step 2 it would have failed on. Each proposed rule names its check, or says why only prose fits.

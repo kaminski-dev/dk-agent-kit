@@ -86,6 +86,11 @@ for ref in sorted(set(re.findall(r'subagent_type: "dk:([a-z][a-z-]*)"', review))
 baseline = re.search(r"\*\*smell baseline\*\*.*?(?=^The \*\*comment policy\*\*)", review, re.M | re.S)
 if baseline is None or re.search(r"empty test", baseline.group(0), re.I):
     errors.append("skills/code-review: the Standards smell baseline lists Empty Test; the Correctness brief owns it")
+# pstack principle-fix-root-causes: a guard is right only when the state it handles is legitimate.
+for entry in ("Defensive Interior", "Swallowed Error"):
+    line = re.search(rf"^- \*\*{entry}\*\*:.*$", baseline.group(0) if baseline else "", re.M)
+    if not line or not re.search(r"state it handles is legitimate", line.group(0)):
+        errors.append(f"skills/code-review: the baseline's {entry} entry does not ask whether the state it handles is legitimate")
 standards_brief = re.search(r"^\*\*Standards sub-agent prompt\*\*.*?(?=^\*\*Spec sub-agent prompt\*\*)", review, re.M | re.S)
 if not re.search(r"Whether a test can fail is the Correctness axis's question unless a documented standard rules on it",
                  standards_brief.group(0) if standards_brief else ""):
@@ -106,6 +111,16 @@ for what, pattern in (
 ):
     if not re.search(pattern, test_question):
         errors.append(f"skills/code-review: the Correctness brief's **Test** question does not name {what}")
+# pstack e5136d8: the two imagined edits, and two cases a list of assertion shapes misjudges.
+for what, pattern in (
+    ("the break-the-behaviour edit (does the test still pass?)", r"\*\*[Bb]reak the behaviour\*\*[^*]*still pass"),
+    ("the change-the-internals edit (does it now fail?)", r"\*\*[Cc]hange the internals\*\*[^*]*now fail"),
+    ("an absence assertion counting when paired with a presence case", r"absence assertion[^;]*paired with a presence case"),
+    ("the error type as the contract", r"error type[^.]*\bcontract\b"),
+    ("an exact error message as implementation", r"error message"),
+):
+    if not re.search(pattern, test_question):
+        errors.append(f"skills/code-review: the Correctness brief's **Test** question does not name {what}")
 empty_result = re.search(r"`toEqual\(\[\]\)`[^;]*", test_question)
 empty_result = empty_result.group(0) if empty_result else ""
 if not re.search(r"\bwhen a subject that does nothing\b.*\breturns\b", empty_result) or not re.search(
@@ -113,6 +128,12 @@ if not re.search(r"\bwhen a subject that does nothing\b.*\breturns\b", empty_res
     errors.append("skills/code-review: the Correctness brief's **Test** question must flag an empty-result-only assertion "
                   "(`toEqual([])`) only when a subject that does nothing still returns that result, and say in the same "
                   "clause that a no-op returns `undefined` or `None` (#87: reviewers took a no-op to return [])")
+# The retro's correct step judges a test as the review does (pstack correct, e5136d8).
+retro_test = re.search(r"^   \d\. \*\*Test\*\*.*$", skills["retro"].read_text(), re.M)
+if not retro_test or not re.search(r"still passes when the behaviour it checks breaks.*fails when only the internals change",
+                                   retro_test.group(0)):
+    errors.append("skills/retro: the correct step's **Test** level does not ask for a test that fails when the behaviour "
+                  "breaks and keeps passing when only the internals change")
 
 flow = skills["issue-flow"].read_text()
 bot = re.search(r"^\*\*Review bot\.\*\*.*?(?=^## )", flow, re.M | re.S)
