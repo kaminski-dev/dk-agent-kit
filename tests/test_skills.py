@@ -676,6 +676,23 @@ for path in trackers:
         errors.append(f"{rel}: Blocking must use `gh issue create --blocked-by` and `gh issue edit <child> "
                       "--add-blocked-by <blocker>` (gh 2.94+), with the API POST as the older-gh fallback")
 
+# The AGENTS.md checks line, the README Test block and CI run the same test files, and every one exists (#127).
+test_cmd = r"(?:python3 -I|bash) (tests/[\w/]+\.(?:py|sh))"
+checks_line = re.search(r"^## Checks\n\n(.*)", (ROOT / "AGENTS.md").read_text(), re.M)
+test_block = re.search(r"^## Test\n\n```sh\n(.*?)```", readme, re.M | re.S)
+lists = {
+    "AGENTS.md checks line": set(re.findall(test_cmd, checks_line.group(1) if checks_line else "")),
+    "README.md Test block": set(re.findall(test_cmd, test_block.group(1) if test_block else "")),
+    ".github/workflows/test.yml": set(re.findall(rf"^\s*run: {test_cmd}$",
+                                                 (ROOT / ".github/workflows/test.yml").read_text(), re.M)),
+}
+on_disk = {str(p.relative_to(ROOT)) for p in (ROOT / "tests").glob("**/test_*") if p.suffix in (".py", ".sh")}
+for where, listed in lists.items():
+    for path in sorted(listed - on_disk):
+        errors.append(f"{where}: runs {path}, which does not exist")
+    for path in sorted(on_disk - listed):
+        errors.append(f"{where}: does not run {path}")
+
 for e in errors:
     print("FAIL", e)
 print(f"{len(skills)} skills, {len(agents)} agents, {len(errors)} problems")
