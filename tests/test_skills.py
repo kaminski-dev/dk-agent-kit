@@ -106,6 +106,16 @@ for what, pattern in (
 ):
     if not re.search(pattern, test_question):
         errors.append(f"skills/code-review: the Correctness brief's **Test** question does not name {what}")
+# pstack e5136d8: the two imagined edits, and two cases a list of assertion shapes misjudges.
+for what, pattern in (
+    ("the break-the-behaviour edit (does the test still pass?)", r"\*\*[Bb]reak the behaviour\*\*[^*]*still pass"),
+    ("the change-the-internals edit (does it now fail?)", r"\*\*[Cc]hange the internals\*\*[^*]*now fail"),
+    ("an absence assertion counting when paired with a presence case", r"absence assertion[^;]*paired with a presence case"),
+    ("the error type as the contract", r"error type[^.]*\bcontract\b"),
+    ("an exact error message as implementation", r"error message"),
+):
+    if not re.search(pattern, test_question):
+        errors.append(f"skills/code-review: the Correctness brief's **Test** question does not name {what}")
 empty_result = re.search(r"`toEqual\(\[\]\)`[^;]*", test_question)
 empty_result = empty_result.group(0) if empty_result else ""
 if not re.search(r"\bwhen a subject that does nothing\b.*\breturns\b", empty_result) or not re.search(
