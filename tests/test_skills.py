@@ -185,6 +185,23 @@ if not re.search(r"skipped inline finding.*thread", skipped) or not re.search(
     errors.append("skills/issue-flow: step 7 must send a skipped inline finding's reason to its thread, "
                   "and a skipped review-body finding's to a PR comment naming its file and lines")
 
+# The agent picking up a handoff never loads the skill, so the written document carries the pickup rules (#118).
+handoff = skills["handoff"].read_text()
+pickup = re.search(r"^## Picking up a handoff\n.*?(?=^## |\Z)", handoff, re.M | re.S)
+pickup = pickup.group(0) if pickup else ""
+for what, pattern in (
+    ("the handoff as context, not proof", r"context, not proof"),
+    ("a check against the current head", r"current head"),
+    ("a check for uncommitted work", r"uncommitted work.*git status"),
+    ("a check against the code", r"the code each claim"),
+    ("re-judging the earlier implementation", r"[Rr]e-judge the earlier implementation"),
+    ("imported commits keeping their authorship and trailers", r"cherry-pick.*author.*trailers"),
+):
+    if not re.search(pattern, pickup, re.S):
+        errors.append(f"skills/handoff: its 'Picking up a handoff' section does not name {what}")
+if not re.search(r"\"Picking up a handoff\" section.*verbatim", handoff[:handoff.find("## Picking up")]):
+    errors.append("skills/handoff: the written document must open with the 'Picking up a handoff' section, copied verbatim")
+
 readme = (ROOT / "README.md").read_text()
 for block in re.findall(r"```mermaid\n(.*?)```", readme, re.S):
     planned = {i for ids in re.findall(r"^\s*class (\S+) planned$", block, re.M) for i in ids.split(",")}
