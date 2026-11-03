@@ -141,6 +141,7 @@ reviewer = agents["reviewer"].read_text()
 for what, pattern in (
     ("the finding line", r"`<id> \[blocker\|should\|nit\] <file>:<line> <claim>\. Fix: <fix>`"),
     ("the severity judged against the change's intent", r"against the change's intent"),
+    ("a floor the brief sets overriding that scale", r"unless the brief sets a floor"),
     ("blocker as the intended case wrong", r"\*\*blocker\*\*[^\n]*intended case is wrong"),
     ("should as a real bug callers will hit", r"\*\*should\*\*[^\n]*real bug callers will hit"),
     ("nit as everything else", r"\*\*nit\*\*[^\n]*everything else"),
@@ -335,11 +336,15 @@ for what, pattern in (
     ("the Ready to merge verdict", r"\*\*Ready to merge\*\*"),
     ("the Waiting for required approval verdict", r"\*\*Waiting for required approval\*\*"),
     ("the Blocked verdict", r"\*\*Blocked\*\*"),
+    ("the mergeable fields in its gh pr view read", r"`gh pr view <PR> --json [^`]*\bmergeable,mergeStateStatus\b"),
     ("a condition that cannot be read as not passed, so Blocked",
      r"condition you cannot read[^.]*has not passed[^.]*\*\*Blocked\*\*"),
 ):
     if gate and not re.search(pattern, gate, re.S):
         errors.append(f"skills/issue-flow: step 6's **Ready gate.** paragraph does not name {what}")
+if not re.search(r"6 hours[^.]*fresh baseline", step6):
+    errors.append("skills/issue-flow: step 6 must say the watcher keeps its state 6 hours, past which a restart "
+                  "starts a fresh baseline")
 if re.search(r"gh pr merge|--admin|--auto\b|merge queue", gate) or "Merging is the maintainer's" not in step6:
     errors.append("skills/issue-flow: step 6 keeps merging the maintainer's; its gate grants no merge")
 
@@ -392,6 +397,15 @@ for step in ("4", "7"):
     text = re.search(rf"^{step}\. .*$", spec_steps, re.M)
     if not text or "fresh implementer subagent" not in text.group(0):
         errors.append(f"skills/implement-spec: step {step} must use a fresh implementer subagent")
+for step, what, pattern in (
+    ("7", "answering the findings by dk:code-review's Answer findings step", r"`dk:code-review`'s Answer findings step"),
+    ("8", "the hand-over through dk:issue-flow step 6's Ready gate", r"`dk:issue-flow` step 6's Ready gate"),
+):
+    text = re.search(rf"^{step}\. .*$", spec_steps, re.M)
+    if not text or not re.search(pattern, text.group(0)):
+        errors.append(f"skills/implement-spec: step {step} must name {what}")
+if "never as a fork" not in (DK / "skills" / "research" / "SKILL.md").read_text():
+    errors.append("skills/research: its background agent starts with a fresh context window, never as a fork")
 
 manual = re.search(r"A worktree with no merged PR.*$", step7, re.M)
 if not manual or not re.search(r"dk-gc --in-use <worktree>.*git worktree remove", manual.group(0)):
