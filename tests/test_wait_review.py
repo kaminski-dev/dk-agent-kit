@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Runs dk:issue-flow's wait-review.py against a stubbed gh.
 
-Each case is one PR state, served by a fake `gh` on PATH. The comment bodies
-copy the shapes CodeRabbit writes: its summary comment with the recent-review
-block, the rate-limit notice and the pause notice.
+Each case is one PR state, served by a fake `gh` on PATH, which logs the GH_REPO
+each call carried. The script runs in a checkout whose origin is acme/ledger on
+github.com. The comment bodies copy the shapes CodeRabbit writes: its summary
+comment with the recent-review block, the rate-limit notice and the pause notice.
 """
 import json
 import os
@@ -21,6 +22,8 @@ STUB = r'''#!/usr/bin/env python3
 import json, os, sys
 fix = json.load(open(os.environ["FIX"]))
 args = sys.argv[1:]
+with open(os.path.join(os.environ["STATE"], "repos"), "a") as f:
+    f.write(os.environ.get("GH_REPO", "-") + "\n")
 if args[:2] == ["pr", "view"]:
     name = "pr"
 else:
@@ -116,6 +119,9 @@ CASES = {
     "push during the last sleep restarts the wait": (dict(
         heads=[[HEAD, "2026-11-02T12:00:00Z"], [NEW, "2026-11-02T12:10:00Z"]], args=["--minutes", str(1 / 60), "--interval", "5"],
         reviews=[{"id": 11, "user": BOT, "commit_id": NEW, "body": "x"}], within=4), 0, "reviews 11"),
+    "an inherited GH_REPO: every gh call asks for origin's repo": (dict(
+        heads=AT_NOON, reviews=[{"id": 12, "user": BOT, "commit_id": HEAD, "body": "x"}],
+        env={"GH_REPO": "kaminski-dev/dk-agent-kit"}, repo="acme/ledger"), 0, "reviews 12"),
 }
 
 
@@ -128,11 +134,14 @@ def case_env(root, name, fix):
 
 
 def run(root, name, fix):
-    _, env = case_env(root, name, fix)
+    case, env = case_env(root, name, fix)
     start = time.monotonic()
     proc = subprocess.run([sys.executable, "-I", SCRIPT, "1", "--minutes", "0.01", "--interval", "0", *fix.get("args", [])],
-                          capture_output=True, text=True, env=env, timeout=30)
-    return proc, time.monotonic() - start
+                          capture_output=True, text=True, env={**env, **fix.get("env", {})}, cwd=f"{root}/checkout",
+                          timeout=30)
+    log = os.path.join(case, "repos")
+    repos = set(open(log).read().split()) if os.path.exists(log) else set()
+    return proc, time.monotonic() - start, repos
 
 
 def concurrent_pr_views(root, calls):
@@ -158,6 +167,9 @@ def main():
         with open(f"{root}/bin/gh", "w") as f:
             f.write(STUB)
         os.chmod(f"{root}/bin/gh", 0o755)
+        subprocess.run(["git", "init", "-q", f"{root}/checkout"], check=True)
+        subprocess.run(["git", "-C", f"{root}/checkout", "remote", "add", "origin", "https://github.com/acme/ledger.git"],
+                       check=True)
         calls = 40
         errors, views = concurrent_pr_views(root, calls)
         if errors or views != str(calls):
@@ -166,14 +178,16 @@ def main():
         else:
             print("ok   concurrent pr views")
         for name, (fix, code, out) in CASES.items():
-            proc, took = run(root, name, fix)
+            proc, took, repos = run(root, name, fix)
             within = fix.get("within", 25)
-            if proc.returncode == code and out in proc.stdout and fix.get("err", "") in proc.stderr and took <= within:
+            if proc.returncode == code and out in proc.stdout and fix.get("err", "") in proc.stderr and took <= within \
+                    and ("repo" not in fix or repos == {fix["repo"]}):
                 print(f"ok   {name}")
             else:
                 failed += 1
                 print(f"FAIL {name}: exit {proc.returncode} (want {code}), stdout {proc.stdout.strip()!r} "
-                      f"(want {out!r}), stderr {proc.stderr.strip()[-200:]!r}, {took:.1f} s (want <= {within} s)")
+                      f"(want {out!r}), stderr {proc.stderr.strip()[-200:]!r}, {took:.1f} s (want <= {within} s), "
+                      f"GH_REPO {sorted(repos)} (want {fix.get('repo', 'any')!r})")
     print(f"\n{total - failed}/{total} passed")
     sys.exit(1 if failed else 0)
 
