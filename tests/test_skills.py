@@ -165,6 +165,51 @@ if not re.search(r"review-body finding post a PR comment with its key", step7) o
         r"skipped review-body finding gets it in a PR comment naming its key", step7):
     errors.append("skills/issue-flow: step 7's review-body fix and skip records must name the finding's key")
 
+# The agent posts under the maintainer's gh account, so each comment it posts says who wrote it, in one
+# format a script can match to drop the agent's own comments (#121).
+step6 = re.search(r"^## 6\..*?(?=^## 7\.)", flow, re.M | re.S)
+step6 = step6.group(0) if step6 else ""
+note = re.search(r"^\*\*Comments\.\*\*.*?(?=^\*\*[A-Z]|\Z)", step6, re.M | re.S)
+note = note.group(0) if note else ""
+template = re.search(r"```md\n(.*?)```", note, re.S)
+template = template.group(1) if template else ""
+pattern = re.search(r"Python `re` pattern `([^`]+)`", note)
+try:
+    pattern = re.compile(pattern.group(1)) if pattern else None
+except re.error:
+    pattern = None
+if not template.startswith("> [!NOTE]\n") or "<model>" not in template or "<login>" not in template:
+    errors.append("skills/issue-flow: step 6 needs a **Comments.** paragraph whose ```md template opens with a "
+                  "`> [!NOTE]` line and names the model (`<model>`) acting for the maintainer (`<login>`)")
+elif not pattern:
+    errors.append("skills/issue-flow: step 6's **Comments.** paragraph must give the note as a Python `re` pattern")
+else:
+    ours = template.replace("<model>", "Claude Opus 5.5").replace("<login>", "kaminski-dev")
+    for body, own in ((ours, True), (ours.replace("\n", "\r\n"), True),
+                      ("> [!NOTE]\n> The deploy window is 48 h.\n\nPlease check.", False),
+                      ("Quoting it:\n\n" + ours, False)):
+        if bool(pattern.match(body)) != own:
+            errors.append(f"skills/issue-flow: step 6's attribution pattern {'misses' if own else 'matches'} {body!r}")
+for what, rule in (
+    ("every comment and thread reply, in steps 6 and 7", r"every comment and thread reply.*step 7"),
+    ("the model name the harness reports", r"model name the harness reports"),
+    ("resolving a review thread only once its reply posted and GitHub returned the reply's URL",
+     r"[Rr]esolve a review thread only once its reply posted and GitHub returned (?:its|the reply's) URL"),
+):
+    if not re.search(rule, note, re.S):
+        errors.append(f"skills/issue-flow: step 6's **Comments.** paragraph does not name {what}")
+if not re.search(r"own fix and skip records.*attribution note", step7, re.S):
+    errors.append("skills/issue-flow: step 7 must tell your own records apart by the attribution note")
+# Before `gh pr create`: the branch's open PR, and the REST create when GraphQL is rate-limited.
+opening = re.search(r"^Rebase onto .*$", step6, re.M)
+opening = opening.group(0) if opening else ""
+if not 0 <= opening.find("gh pr list --head") < opening.find("gh pr create"):
+    errors.append("skills/issue-flow: step 6 must look for the branch's open PR (`gh pr list --head`) before `gh pr create`")
+rest = re.search(r"GraphQL.*rate limit.*`gh api \"repos/\{owner\}/\{repo\}/pulls\"[^`]*`", opening)
+if not rest or "-f base=<base>" not in rest.group(0) or "pre-main" in rest.group(0):
+    errors.append("skills/issue-flow: step 6 must open the PR through REST (`gh api \"repos/{owner}/{repo}/pulls\"`, "
+                  "`-f base=<base>`, never pre-main) when `gh pr create` hits GraphQL's rate limit")
+
 fan_out = re.search(r"^\*\*Fan-out\.\*\*.*?(?=^## )", flow, re.M | re.S)
 waits = re.search(r"^- \*\*Waits\*\*:.*$", fan_out.group(0) if fan_out else "", re.M)
 if not waits or not re.search(r"every background wait", waits.group(0)) or not re.search(
@@ -287,6 +332,34 @@ for kind, name, path in marked:
     for source, commit in re.findall(r"<!-- Adapted from (\S+(?: \S+)?)@([0-9a-f]+) ", path.read_text()):
         if not re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", dk_column_by_section_commit.get(commit, "")):
             errors.append(f"{kind}/{name}: adapted from {source}@{commit}, but upstream/UPSTREAM.md has no row for it in the section at that commit")
+
+# dk:diagnosing-bugs must fire on its own, before dk:tdd and dk:verify, so it is model-invoked; its
+# description then sits in the listing every turn (#27), so it stays short (#122).
+diagnosing = skills.get("diagnosing-bugs")
+if diagnosing is None:
+    errors.append("skills/diagnosing-bugs: missing (#122)")
+else:
+    fm, text = frontmatter(diagnosing), diagnosing.read_text()
+    if "disable-model-invocation" in fm:
+        errors.append("skills/diagnosing-bugs: must be model-invoked (no disable-model-invocation)")
+    if len(fm.get("description", "")) > 160:
+        errors.append(f"skills/diagnosing-bugs: description is {len(fm.get('description', ''))} chars (> 160, #27)")
+    if not re.search(r"<!-- Adapted from mattpocock/skills@[0-9a-f]+ skills/engineering/diagnosing-bugs, MIT", text):
+        errors.append("skills/diagnosing-bugs: no `<!-- Adapted from mattpocock/skills@<commit> "
+                      "skills/engineering/diagnosing-bugs, MIT` marker")
+    for script in sorted(set(re.findall(r"`(scripts/[\w./-]+)`", text))):
+        if not (diagnosing.parent / script).is_file():
+            errors.append(f"skills/diagnosing-bugs: names {script}, which it does not ship")
+    for what, pattern in (
+        ("the issue's scratch folder for loops and the HITL copy", r"`\$SCRATCH/<N>/`"),
+        ("the observability helper for captured artifacts", r"`docs/agents/observability\.md`"),
+        ("the regression test through dk:tdd", r"Skill tool with `dk:tdd`"),
+        ("the final proof through dk:verify", r"Skill tool with `dk:verify`"),
+        ("the confirmed cause into the PR through dk:pr", r"Skill tool with `dk:pr`"),
+        ("a missing seam routed to the user's /dk:improve-codebase-architecture", r"`/dk:improve-codebase-architecture`"),
+    ):
+        if not re.search(pattern, text):
+            errors.append(f"skills/diagnosing-bugs: does not name {what}")
 
 # The shape upstream/sync.sh parses (the format note at the top of UPSTREAM.md).
 # sync.sh skips a section whose heading it cannot read and matches no file
