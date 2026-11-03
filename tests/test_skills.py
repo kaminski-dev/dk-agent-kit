@@ -86,6 +86,11 @@ for ref in sorted(set(re.findall(r'subagent_type: "dk:([a-z][a-z-]*)"', review))
 baseline = re.search(r"\*\*smell baseline\*\*.*?(?=^The \*\*comment policy\*\*)", review, re.M | re.S)
 if baseline is None or re.search(r"empty test", baseline.group(0), re.I):
     errors.append("skills/code-review: the Standards smell baseline lists Empty Test; the Correctness brief owns it")
+# pstack principle-fix-root-causes: a guard is right only when the state it handles is legitimate.
+for entry in ("Defensive Interior", "Swallowed Error"):
+    line = re.search(rf"^- \*\*{entry}\*\*:.*$", baseline.group(0) if baseline else "", re.M)
+    if not line or not re.search(r"state it handles is legitimate", line.group(0)):
+        errors.append(f"skills/code-review: the baseline's {entry} entry does not ask whether the state it handles is legitimate")
 standards_brief = re.search(r"^\*\*Standards sub-agent prompt\*\*.*?(?=^\*\*Spec sub-agent prompt\*\*)", review, re.M | re.S)
 if not re.search(r"Whether a test can fail is the Correctness axis's question unless a documented standard rules on it",
                  standards_brief.group(0) if standards_brief else ""):

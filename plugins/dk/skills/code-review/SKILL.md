@@ -59,8 +59,8 @@ Each smell reads *what it is* → *how to fix*; match it against the diff:
 
 The baseline also covers what agents add that Fowler's list misses. Same two rules apply:
 
-- **Defensive Interior**: `try/catch`, nil checks or re-validation deep inside internal code whose inputs a boundary (handler, CLI, config, external API) already validated. → handle errors at the boundary; let internal code trust its types.
-- **Swallowed Error**: a catch or error branch that logs-and-continues, returns a default, or drops the error without a reason the caller can see. → propagate it, or name why it is safe to drop.
+- **Defensive Interior**: `try/catch`, nil checks, retries or re-validation deep inside internal code whose inputs a boundary (handler, CLI, config, external API) already validated. A guard is right only when the state it handles is legitimate, one the system may really be in; a guard against a state that should never exist hides the bug where it surfaced. → find what produced the state and fix it there; handle errors at the boundary; let internal code trust its types.
+- **Swallowed Error**: a catch or error branch that logs-and-continues, returns a default, clamps a value, or drops the error without a reason the caller can see. → when the state it handles is legitimate, handle it there and name why; otherwise propagate it and fix what produced it.
 - **Dead Code**: unused functions, exports, parameters or branches the change leaves behind (commented-out code is the Comments axis's). → delete it; history keeps it.
 - **Deprecated API**: a call the library or this repo marks deprecated, where the replacement is available. → use the replacement.
 
