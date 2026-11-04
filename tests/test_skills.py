@@ -498,10 +498,10 @@ if not re.search(r"\A---\n.*?\n---\n\n<!-- Adapted from t3dotgg/tstack@[0-9a-f]+
 control = re.search(r"^1\. \*\*Control\*\*.*$", skills["verify"].read_text(), re.M)
 if not control or "the branch's last pre-fix commit when the bug came in on this branch" not in control.group(0):
     errors.append("skills/verify: step 4's control must be the branch's last pre-fix commit when the bug came in on this branch")
-# CodeRabbit on #136, round 2 (#112): that commit is found, not guessed.
-if control and not re.search(r"parent \(`<sha>\^`\) of the commit that brought the bug in.*`git log`.*`git bisect`", control.group(0)):
-    errors.append("skills/verify: step 4's control does not say how to find the last pre-fix commit "
-                  "(the parent of the commit that brought the bug in, by git log or git bisect)")
+# CodeRabbit on #136, round 4 (#112): the parent of the commit that brought the bug in has no bug yet, so it would pass.
+if control and not re.search(r"parent \(`<fix sha>\^`\) of the fix's first commit[^.]*still has the bug", control.group(0)):
+    errors.append("skills/verify: step 4's control for a bug born on the branch must be the parent of the fix's "
+                  "first commit, which still has the bug")
 
 # A performance claim owes its spread, so "faster" inside the noise reads as inconclusive (#119).
 owe = re.search(r"^## 1\..*?(?=^## 2\.)", skills["verify"].read_text(), re.M | re.S)
@@ -543,7 +543,7 @@ for what, pattern in (
      r'git push --force-with-lease="refs/heads/<branch>:<observed sha>" origin "HEAD:refs/heads/<branch>"'),
     # CodeRabbit on #136, round 2 (#112): headRefName reaches the shell only once Git accepts it as a branch name.
     ("the branch checked before any shell use, stopping when it fails",
-     r'`git check-ref-format --branch "<branch>"`[^.]*stop[^`]*`git ls-remote origin "refs/heads/<branch>"`'),
+     r'`git check-ref-format --branch "<branch>"`[^.]*stop.*?`git ls-remote origin "refs/heads/<branch>"`'),
     # Git accepts `$`, backticks and `"` in a branch name, which double quotes still expand.
     ("the branch limited to letters, digits, '.', '_', '-' and '/' before any shell use",
      r"only letters, digits, `\.`, `_`, `-` and `/`"),
@@ -552,11 +552,18 @@ for what, pattern in (
      r"`baseRefName` differs stops here, before any change to its branch[^.]*only on the user's word"),
     ("a fork PR's head fetched read-only from refs/pull", r"`git fetch -q origin pull/<PR>/head`"),
     ("items 2 to 5 run inside the chosen worktree", r"Items 2 to 5 run inside that worktree"),
+    # CodeRabbit on #136, round 4 (#112): a fork's branch is never pushed, and the base gets the branch's checks.
+    ("a fork PR stopping before step 4", r"`isCrossRepository` is true[^.]*stop before step 4"),
+    ("the base checked like the branch before any shell use", r"`<base>` passes the same two checks"),
     ("the push from the path item 1 chose, -modernize included", r"`~/workspace/<prefix>-<N>-modernize`, written literally"
                                                                   r".*cd <that path> && git push"),
 ):
     if modernize and not re.search(pattern, modernize_text, re.S):
         errors.append(f"skills/modernize: does not name {what}")
+for span in re.findall(r"`(git [^`]*)`", modernize_text):
+    for token in span.split():
+        if "<base>" in token and not token.startswith('"'):
+            errors.append(f"skills/modernize: `{span}` leaves `<base>` unquoted")
 if re.search(r"--force-with-lease(?!=)", modernize_text):
     errors.append("skills/modernize: a bare --force-with-lease leases against whatever the last fetch saw; "
                   "name the branch and the observed sha")

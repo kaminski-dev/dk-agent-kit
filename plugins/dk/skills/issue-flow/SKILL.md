@@ -88,9 +88,9 @@ When the change is one the customer sees, write the customer reply on the issue 
 - `blocked by <n> unresolved threads`: answer each thread (**Comments.**), then resolve it.
 - `read <n> of <total> <items>, so ready is not reported on <sha>`: the PR holds more comments, reviews or threads than the watcher reads, so it cannot vouch for the rest. Tell the user; the **Ready gate** verdict is **Blocked**, naming what went unread.
 - `merged` or `closed without merging`: the PR is done; stop working on it.
-- `deadline passed`: no outcome 20 minutes after the last push. Tell the user what is still pending: a check, or the bot, which skips drafts.
+- `deadline passed`: no outcome 20 minutes after the last push. Tell the user every condition still unmet, read from the PR: a pending check, an unresolved thread, a merge state that is not `CLEAN`, or a missing bot verdict (the bot skips drafts).
 - `ready on <sha>` or `green on <sha>`: the wait is over.
-- `pr-wait stopped: …`, or a line starting `pr-wait:`: a `gh` call failed, or the input is wrong. Tell the user its error. When it names another pid that already watches the PR, that watcher's lines reach you instead.
+- `pr-wait stopped: …`, or a line starting `pr-wait:`: a `gh` call failed, or the input is wrong. Tell the user its error. When it names another pid that already watches the PR, that watcher's lines reach you only when it runs under your own Monitor or background task; otherwise tell the user which pid holds the watch.
 
 Start it again after each push, after an action of yours that changes what blocked it (a thread answered and resolved), and when its monitor expired while the watch is still wanted: it keeps what it already reported, so what arrived in between comes on the next run. A `deadline passed` or `pr-wait stopped` line, with none of those since, goes to the user. That state lasts 6 hours; past it, a restart starts a fresh baseline and reports only what comes after. When a line needs no action, end your turn without a message.
 

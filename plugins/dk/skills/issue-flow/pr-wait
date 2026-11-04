@@ -242,9 +242,9 @@ def speaker(node: Json) -> str:
     return who(node)[0] + ("" if trusted else " (not a collaborator)")
 
 
-def ours(node: Json) -> bool:
-    """A comment the agent posted, which opens with the attribution note."""
-    return bool(ATTRIBUTION.match(node.get("body") or ""))
+def ours(node: Json, viewer: str) -> bool:
+    """A comment the agent posted: from the gh user, and opening with the attribution note."""
+    return same_login(who(node)[0], viewer) and bool(ATTRIBUTION.match(node.get("body") or ""))
 
 
 def plain(body: str) -> str:
@@ -518,12 +518,12 @@ class Watcher:
         # agent's own comments are told apart by their attribution note, and the review bot speaks through its verdict.
         for comment in comments:
             login, is_bot = who(comment)
-            if ours(comment) or same_login(login, self.bot) or (is_bot and any(b in login for b in STATUS_BOTS)):
+            if ours(comment, pr["viewer"]) or same_login(login, self.bot) or (is_bot and any(b in login for b in STATUS_BOTS)):
                 continue
             self.emit(f"c:{comment['id']}", f"comment from {speaker(comment)}: {snippet(comment['body'])} {comment['url']}")
         for review in reviews:
             _, is_bot = who(review)
-            if ours(review) or is_bot:
+            if ours(review, pr["viewer"]) or is_bot:
                 continue
             if review["state"] in ("APPROVED", "CHANGES_REQUESTED") or review["body"].strip():
                 state = review["state"].lower().replace("_", " ")
@@ -537,7 +537,7 @@ class Watcher:
         unread_lines = [f"read {len(page['nodes'])} of {page['totalCount']} {what}, so ready is not reported on {short}"
                         for page, what in pages if page.get("totalCount", 0) > len(page["nodes"])]
         for line in unread_lines:
-            self.events += line not in self.printed
+            self.events += not self.baseline and line not in self.printed
             self.say(line)
         unresolved: list[str] = []
         for thread in threads:
@@ -547,7 +547,7 @@ class Watcher:
             where = f"{thread['path']}:{thread['line']}" if thread["line"] else thread["path"]
             for index, comment in enumerate(nodes):
                 login, _ = who(comment)
-                if ours(comment) or same_login(login, self.bot):
+                if ours(comment, pr["viewer"]) or same_login(login, self.bot):
                     continue
                 kind = "new thread" if index == 0 else "thread reply"
                 self.emit(f"c:{comment['id']}",
