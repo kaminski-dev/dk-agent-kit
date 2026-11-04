@@ -3,7 +3,7 @@ name: diagnosing-bugs
 description: Diagnosis loop for a bug or slowdown whose cause is unknown. Use when asked to diagnose or debug, or something breaks, throws, fails or is slow.
 ---
 
-<!-- Adapted from mattpocock/skills@4ae2317 skills/engineering/diagnosing-bugs, MIT (© 2026 Matt Pocock). Changed for dk-agent-kit: model-invoked with a shorter description; loops and the HITL copy live in the issue's scratch folder, and the user runs that copy in their own terminal; artifacts captured through the helper docs/agents/observability.md names; the regression test goes through dk:tdd and the final proof through dk:verify, whose control run carries the Phase 2 scenario, at the branch's last pre-fix commit for a bug born on the branch; the confirmed cause goes into the PR through dk:pr; a missing seam is handed to the user's /dk:improve-codebase-architecture. -->
+<!-- Adapted from mattpocock/skills@4ae2317 skills/engineering/diagnosing-bugs, MIT (© 2026 Matt Pocock). Changed for dk-agent-kit: model-invoked with a shorter description; loops and the HITL copy live in the issue's scratch folder, and the user runs that copy in their own terminal, pasting its output back redacted as Phase 1's run; artifacts captured through the helper docs/agents/observability.md names; the regression test goes through dk:tdd and the final proof through dk:verify, whose control run carries the Phase 2 scenario, at the branch's last pre-fix commit for a bug born on the branch; the confirmed cause goes into the PR through dk:pr; a missing seam is handed to the user's /dk:improve-codebase-architecture. -->
 
 # Diagnosing Bugs
 
@@ -62,12 +62,12 @@ Stop and say so explicitly. List what you tried. Ask the user for: (a) access to
 
 ### Completion criterion: a tight loop that goes red
 
-Phase 1 is done when the loop is **tight** and **red-capable**: you can name **one command** (a script path, a test invocation, a curl) that you have **already run at least once** (show the invocation and its output, redacted), and that is:
+Phase 1 is done when the loop is **tight** and **red-capable**: you can name **one command** (a script path, a test invocation, a curl) that you have **already run at least once** (show the invocation and its output, redacted); for the HITL script, the user's run counts, shown as the `KEY=VALUE` lines they pasted back. It is:
 
 - [ ] **Red-capable**: it drives the actual bug code path and asserts the **user's exact symptom**, so it can go red on this bug and green once fixed. Not "runs without erroring"; it must be able to _catch this specific bug_.
 - [ ] **Deterministic**: same verdict every run (flaky bugs: a pinned, high reproduction rate, per above).
 - [ ] **Fast**: seconds, not minutes.
-- [ ] **Agent-runnable**: you can run it unattended; a human in the loop only via `scripts/hitl-loop.template.sh`.
+- [ ] **Agent-runnable**: you can run it unattended; a human in the loop only via `scripts/hitl-loop.template.sh`, which the user runs.
 
 If you catch yourself reading code to build a theory before this command exists, **stop: jumping straight to a hypothesis is the exact failure this skill prevents.** No red-capable command, no Phase 2.
 

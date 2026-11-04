@@ -14,8 +14,9 @@
 # At the end, captured values are printed as KEY=VALUE; the user pastes those
 # lines back to the agent.
 #
-# Every captured value reaches the agent, so capture observations, and leave
-# signing in to the user as a `step`.
+# Every captured value reaches the agent, so capture observations, leave
+# signing in to the user as a `step`, and have the user replace any secret
+# with <REDACTED> before pasting.
 
 set -euo pipefail
 
@@ -46,6 +47,6 @@ capture ERROR_MSG "Paste the error message (or 'none'):"
 
 # --- edit above ---------------------------------------------------------
 
-printf '\n--- Captured ---\n'
+printf '\n--- Captured: replace any secret below with <REDACTED> before pasting ---\n'
 printf 'ERRORED=%s\n' "$ERRORED"
 printf 'ERROR_MSG=%s\n' "$ERROR_MSG"

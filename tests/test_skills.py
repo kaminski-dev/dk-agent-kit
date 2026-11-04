@@ -484,6 +484,9 @@ for what, pattern in (
     ("a check against the code", r"the code each claim"),
     ("re-judging the earlier implementation", r"[Rr]e-judge the earlier implementation"),
     ("imported commits keeping their authorship and trailers", r"cherry-pick.*author.*trailers"),
+    # CodeRabbit local review on #136 (#112): staged work hides from `git diff`, and a cherry-pick carries commits only.
+    ("staged work in the check", r"`git diff --cached`"),
+    ("uncommitted work carried over as a patch before the first edit", r"[Uu]ncommitted work[^.]*patch[^.]*`git apply`"),
 ):
     if not re.search(pattern, pickup, re.S):
         errors.append(f"skills/handoff: its 'Picking up a handoff' section does not name {what}")
@@ -554,6 +557,10 @@ for what, pattern in (
     ("items 2 to 5 run inside the chosen worktree", r"Items 2 to 5 run inside that worktree"),
     # CodeRabbit on #136, round 4 (#112): a fork's branch is never pushed, and the base gets the branch's checks.
     ("a fork PR stopping before step 4", r"`isCrossRepository` is true[^.]*stop before step 4"),
+    # CodeRabbit local review on #136 (#112): only an open PR is changed, and <PR> and <term> reach the shell checked.
+    ("a PR that is not open stopping before any change", r"`state` is not `OPEN` stops here"),
+    ("the PR number checked as digits before the first command", r"`<PR>` is the PR's number, digits only"),
+    ("the search term kept free of shell syntax", r"`<term>`[^.]*none of"),
     ("the base checked like the branch before any shell use", r"`<base>` passes the same two checks"),
     ("the push from the path item 1 chose, -modernize included", r"`~/workspace/<prefix>-<N>-modernize`, written literally"
                                                                   r".*cd <that path> && git push"),
@@ -628,9 +635,14 @@ else:
         ("a bug born on the branch, whose control is its last pre-fix commit", r"last pre-fix commit[^.]*`dk:verify` step 4"),
         ("the confirmed cause into the PR through dk:pr", r"Skill tool with `dk:pr`"),
         ("a missing seam routed to the user's /dk:improve-codebase-architecture", r"`/dk:improve-codebase-architecture`"),
+        # CodeRabbit local review on #136 (#112): the user runs the HITL copy, so their pasted run is the one Phase 1 needs.
+        ("the user's pasted HITL run counting as Phase 1's run", r"HITL[^.]*the user's run counts"),
     ):
         if not re.search(pattern, text):
             errors.append(f"skills/diagnosing-bugs: does not name {what}")
+    hitl = diagnosing.parent / "scripts/hitl-loop.template.sh"
+    if hitl.is_file() and "<REDACTED>" not in hitl.read_text():
+        errors.append("skills/diagnosing-bugs: the HITL template does not ask the user to replace secrets with <REDACTED> before pasting")
 
 # The shape upstream/sync.sh parses (the format note at the top of UPSTREAM.md).
 # sync.sh skips a section whose heading it cannot read and matches no file

@@ -5,7 +5,7 @@ argument-hint: "PR number"
 disable-model-invocation: true
 ---
 
-<!-- Adapted from t3dotgg/tstack@1085050 skills/modernize, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: user-invoked; the base from docs/agents/workflow.md, the worktree from dk:issue-flow step 2, detached at the observed head, an old worktree reused only when clean and its checkout keeping ignored files; the branch name and the base limited to letters, digits, ., _, - and / and checked with git check-ref-format before any shell use, then quoted; the push is --force-with-lease="refs/heads/<branch>:<observed sha>" to "HEAD:refs/heads/<branch>", from the worktree's literal path so the gate runs; a base mismatch stops before any change to the branch; a fork PR assessed read-only from refs/pull/<PR>/head, stopping before the rebase; checks from AGENTS.md; comments open with dk:issue-flow step 6's attribution note; Codex agents/openai.yaml not taken. -->
+<!-- Adapted from t3dotgg/tstack@1085050 skills/modernize, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: user-invoked; the base from docs/agents/workflow.md, the worktree from dk:issue-flow step 2, detached at the observed head, an old worktree reused only when clean and its checkout keeping ignored files; an open PR only, its number digits only; the branch name and the base limited to letters, digits, ., _, - and / and checked with git check-ref-format before any shell use, then quoted; the push is --force-with-lease="refs/heads/<branch>:<observed sha>" to "HEAD:refs/heads/<branch>", from the worktree's literal path so the gate runs; a base mismatch stops before any change to the branch; a fork PR assessed read-only from refs/pull/<PR>/head, stopping before the rebase; checks from AGENTS.md; comments open with dk:issue-flow step 6's attribution note; Codex agents/openai.yaml not taken. -->
 
 # Modernize
 
@@ -15,12 +15,14 @@ The grant covers rebasing the PR's commits and updating its branch. Merging, clo
 
 ## 1. Record the PR
 
+`<PR>` is the PR's number, digits only; anything else, stop and ask for the number.
+
 ```sh
 gh pr view <PR> --json url,state,title,body,author,baseRefName,headRefName,headRefOid,isCrossRepository,reviewDecision,statusCheckRollup,closingIssuesReferences,commits
 gh pr diff <PR>
 ```
 
-Read its linked issues, its comments and review threads too. The base is the one `docs/agents/workflow.md` names (`pre-main` unless it names another); a PR whose `baseRefName` differs stops here, before any change to its branch: report it, never retarget it, and go on only on the user's word, with the PR's actual base as `<base>`. A PR whose `isCrossRepository` is true lives in a fork, so its branch is not this skill's to push: assess it read-only, report, and stop before step 4 whatever the disposition.
+A PR whose `state` is not `OPEN` stops here: report the state and change nothing. Read its linked issues, its comments and review threads too. The base is the one `docs/agents/workflow.md` names (`pre-main` unless it names another); a PR whose `baseRefName` differs stops here, before any change to its branch: report it, never retarget it, and go on only on the user's word, with the PR's actual base as `<base>`. A PR whose `isCrossRepository` is true lives in a fork, so its branch is not this skill's to push: assess it read-only, report, and stop before step 4 whatever the disposition.
 
 Then `git fetch -q origin`. For a PR you can push, `<branch>` is `headRefName`, and it reaches the shell only when it holds only letters, digits, `.`, `_`, `-` and `/` (Git also accepts `$`, backticks and `"`, which double quotes still expand) and `git check-ref-format --branch "<branch>"` exits 0; when either check fails, stop and report the name. `<base>` passes the same two checks before its first shell use. Quote both in every command, and check `git ls-remote origin "refs/heads/<branch>"` prints `headRefOid`; for a fork PR, fetch its head with `git fetch -q origin pull/<PR>/head` and check `git rev-parse FETCH_HEAD` prints it. That SHA is the **observed sha**, the lease the push is held to. Record the merge base: `git merge-base "origin/<base>" <observed sha>`.
 
@@ -28,7 +30,7 @@ Done when you can state, in one sentence, the smallest coherent goal the PR was 
 
 ## 2. Check what changed around it
 
-Read the base's commits since the merge base (`git log --stat "<merge-base>..origin/<base>"`), first those touching the PR's files, then the rest for moved boundaries. Search merged and open PRs (`gh pr list --state all --search "<term>"`) where titles, paths or behaviour suggest a replacement or a competing implementation.
+Read the base's commits since the merge base (`git log --stat "<merge-base>..origin/<base>"`), first those touching the PR's files, then the rest for moved boundaries. Search merged and open PRs (`gh pr list --state all --search "<term>"`, with each `<term>` a word or path holding none of `"`, `$`, `\` or a backtick) where titles, paths or behaviour suggest a replacement or a competing implementation.
 
 A **conceptual conflict** is one Git cannot see. Look for each:
 

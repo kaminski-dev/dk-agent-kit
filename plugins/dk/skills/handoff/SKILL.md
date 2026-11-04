@@ -5,7 +5,7 @@ argument-hint: "What will the next session be used for? Or the path of a handoff
 disable-model-invocation: true
 ---
 
-<!-- Adapted from t3dotgg/tstack@1085050 skills/takeover, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: pickup rules copied into each handoff document; imported commits come over by cherry-pick; replacement-PR, modernize and merge steps not taken. -->
+<!-- Adapted from t3dotgg/tstack@1085050 skills/takeover, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: pickup rules copied into each handoff document; imported commits come over by cherry-pick, uncommitted work as a patch; replacement-PR, modernize and merge steps not taken. -->
 
 Write a handoff document summarising the current conversation so a fresh agent can continue the work. Save to the temporary directory of the user's OS (`$TMPDIR`, else `/tmp`; `%TEMP%` on Windows) - not the current workspace.
 
@@ -24,11 +24,11 @@ If the user passed arguments, treat them as a description of what the next sessi
 This handoff is context, not proof: it records what the last agent believed when it stopped, and the work may have moved since. Before your first edit, check each of its claims against the repo as it is now and mark it holds, stale or wrong:
 
 - the current head of the branch it names, with that branch's issue and PR, their latest comments and review findings;
-- uncommitted work in its worktree (`git status`, `git diff`), which no commit records;
+- uncommitted work in its worktree (`git status`, `git diff`, and `git diff --cached` for what is staged), which no commit records;
 - the code each claim points at, read at that head.
 
 Re-judge the earlier implementation as you would review someone else's: keep what holds against the issue and rework what does not, whoever built it.
 
-To continue on a new branch, bring the earlier commits over with `git cherry-pick`, which keeps each commit's author and its `Co-Authored-By` trailers, and put your fixes in commits of your own on top.
+To continue on a new branch, bring the earlier commits over with `git cherry-pick`, which keeps each commit's author and its `Co-Authored-By` trailers, and put your fixes in commits of your own on top. Uncommitted work never rides a cherry-pick: before your first edit, carry it as a patch (`git -C <old worktree> diff HEAD > <patch file outside both trees>`, then `git apply` it in yours) and copy the untracked files `git status` lists.
 
 Your report names what you inherited, which claims were stale or wrong, and what you changed.
