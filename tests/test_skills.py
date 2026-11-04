@@ -354,11 +354,13 @@ rest = re.search(r"GraphQL.*rate limit.*`gh api \"repos/\{owner\}/\{repo\}/pulls
 if not rest or "-f base=<base>" not in rest.group(0) or "pre-main" in rest.group(0):
     errors.append("skills/issue-flow: step 6 must open the PR through REST (`gh api \"repos/{owner}/{repo}/pulls\"`, "
                   "`-f base=<base>`, never pre-main) when `gh pr create` hits GraphQL's rate limit")
-# CodeRabbit on #136 (#112): a title or file path holds spaces, so the commands quote what is substituted there.
-if re.search(r'(?<![-"])(?:title=|body=@)<|--body-file <', step6) or '-f "title=<title>"' not in opening \
-        or '-F "body=@<body file>"' not in opening:
-    errors.append("skills/issue-flow: step 6 must quote a substituted title and body file "
-                  "(`-f \"title=<title>\"`, `-F \"body=@<file>\"`, `--body-file \"<file>\"`)")
+# CodeRabbit on #136 (#112): a file path holds spaces, so it is quoted; a title can hold `$(...)` or backticks,
+# which expand even inside double quotes, so the title reaches gh from a file, like the body.
+if re.search(r'(?<![-"])body=@<|--body-file <|title=<', step6) or '-F "title=@<title file>"' not in opening \
+        or '-F "body=@<body file>"' not in opening or "no trailing newline" not in opening:
+    errors.append("skills/issue-flow: step 6 must pass the title from a file written with no trailing newline "
+                  "(`-F \"title=@<title file>\"`) and quote each file path "
+                  "(`-F \"body=@<file>\"`, `--body-file \"<file>\"`)")
 
 # A PR reaches the maintainer through one gate, checked on the latest commit, and one verdict (#126, tstack
 # full-send's merge gate and full-stop's handoff). Merging stays the maintainer's: no merge grant is taken.
