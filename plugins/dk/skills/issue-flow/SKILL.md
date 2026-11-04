@@ -65,7 +65,7 @@ What it pushes and when it refuses is in its header (`head -12 "$(command -v dk-
 
 ## 6. Open the PR
 
-Rebase onto the current `origin/<base>` and push the branch. When `gh pr list --head <branch> --state open --json number,url` prints a PR, the push updated it and it is this issue's PR; otherwise open the PR against the base (`gh pr create --base <base> --body-file …`), body written with the `dk:pr` skill. When `gh pr create` fails because GraphQL's rate limit is used up, open it through REST, whose limit is separate: `gh api "repos/{owner}/{repo}/pulls" -f title=<title> -f head=<branch> -f base=<base> -F body=@<body file> --jq .html_url`.
+Rebase onto the current `origin/<base>` and push the branch. When `gh pr list --head <branch> --base <base> --state open --json number,url` prints a PR, the push updated it and it is this issue's PR; otherwise open the PR against the base (`gh pr create --base <base> --body-file …`), body written with the `dk:pr` skill. When `gh pr create` fails because GraphQL's rate limit is used up, open it through REST, whose limit is separate: `gh api "repos/{owner}/{repo}/pulls" -f title=<title> -f head=<branch> -f base=<base> -F body=@<body file> --jq .html_url`.
 
 The push is where the gate runs: dk-guard runs `.claude/gate.sh` in the checkout being pushed, the `cd` or `git -C` target, and denies the push when the gate fails. Write that path literally (`cd ~/workspace/<prefix>-<N> && git push`); a path held in a variable leaves the gate unrun.
 

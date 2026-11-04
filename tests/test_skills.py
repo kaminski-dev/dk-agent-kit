@@ -326,6 +326,9 @@ if not re.search(r"own fix and skip records.*attribution note", step7, re.S):
 # Before `gh pr create`: the branch's open PR, and the REST create when GraphQL is rate-limited.
 opening = re.search(r"^Rebase onto .*$", step6, re.M)
 opening = opening.group(0) if opening else ""
+# CodeRabbit on #136, round 2 (#112): an open PR from the branch into another base is not this issue's PR.
+if "`gh pr list --head <branch> --base <base> --state open --json number,url`" not in opening:
+    errors.append("skills/issue-flow: step 6's existing-PR check must filter on the base too (`--base <base>`)")
 if not 0 <= opening.find("gh pr list --head") < opening.find("gh pr create"):
     errors.append("skills/issue-flow: step 6 must look for the branch's open PR (`gh pr list --head`) before `gh pr create`")
 rest = re.search(r"GraphQL.*rate limit.*`gh api \"repos/\{owner\}/\{repo\}/pulls\"[^`]*`", opening)
