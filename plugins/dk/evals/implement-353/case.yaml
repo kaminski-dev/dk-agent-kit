@@ -56,5 +56,7 @@ graders:
     criteria: >
       dk:issue-flow step 6's ready gate ends the handoff of a PR with exactly one of three verdicts:
       Ready to merge, Waiting for required approval, or Blocked. PASS when the final message ends with
-      exactly one of them for the PR of #353, as its last line or the last short paragraph; FAIL when
-      it gives none, gives more than one, or gives one with further report text after it.
+      exactly one of them for the PR of #353, as its last line or the last paragraph. A Blocked verdict
+      may name, in that same paragraph, what could not be read or what blocks it, since the gate asks
+      for that. FAIL when it gives none, gives more than one, or gives one with further report
+      sections after it.
