@@ -323,6 +323,12 @@ for what, rule in (
         errors.append(f"skills/issue-flow: step 6's **Comments.** paragraph does not name {what}")
 if not re.search(r"own fix and skip records.*attribution note", step7, re.S):
     errors.append("skills/issue-flow: step 7 must tell your own records apart by the attribution note")
+# CodeRabbit on #136, round 2 (#112): a watcher that ended on its own deadline or error is reported, not rerun.
+if not re.search(r"[Ss]tart it again after each push, after an action of yours that changes what blocked it[^:]*"
+                 r"monitor expired while the watch is still wanted", watch) or not re.search(
+        r"`deadline passed` or `pr-wait stopped` line[^.]*goes to the user", watch):
+    errors.append("skills/issue-flow: step 6 restarts the watcher after a push, an action that changes what blocked "
+                  "it, or an expired monitor, and reports a `deadline passed` or `pr-wait stopped` line to the user")
 # Before `gh pr create`: the branch's open PR, and the REST create when GraphQL is rate-limited.
 opening = re.search(r"^Rebase onto .*$", step6, re.M)
 opening = opening.group(0) if opening else ""
