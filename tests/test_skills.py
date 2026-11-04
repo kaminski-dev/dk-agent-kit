@@ -275,7 +275,7 @@ if "pull_request_review_id ==" in step7:
     errors.append("skills/issue-flow: step 7 repeats step 6's inline query; point at it instead")
 if "`<PR>-<comment>`" not in step7:
     errors.append("skills/issue-flow: step 7's push route needs a worktree key for a PR-comment finding")
-if not re.search(r"done.*inline record is a reply whose `in_reply_to_id`", route):
+if not re.search(r"done.*inline record is such a reply whose `in_reply_to_id`", route):
     errors.append("skills/issue-flow: step 7's done check must find an inline finding's record among its thread's replies")
 pr_fix = re.search(r"^  - `pr`: .*$", step7, re.M)
 if not pr_fix or "record" not in pr_fix.group(0):
@@ -323,6 +323,11 @@ for what, rule in (
         errors.append(f"skills/issue-flow: step 6's **Comments.** paragraph does not name {what}")
 if not re.search(r"own fix and skip records.*attribution note", step7, re.S):
     errors.append("skills/issue-flow: step 7 must tell your own records apart by the attribution note")
+# CodeRabbit on #136, round 2 (#112): a record is the agent's only when it is the gh user's and carries the note.
+if not re.search(r'is a record only when its author is the gh user.*attribution note.*'
+                 r'inline record is such a reply[^)]*\.user\.login == "<login>"', route, re.S):
+    errors.append("skills/issue-flow: step 7 must count a reply as your fix or skip record only when it is the gh "
+                  "user's and opens with the attribution note, its inline query filtered on `.user.login`")
 # CodeRabbit on #136, round 2 (#112): a watcher that ended on its own deadline or error is reported, not rerun.
 if not re.search(r"[Ss]tart it again after each push, after an action of yours that changes what blocked it[^:]*"
                  r"monitor expired while the watch is still wanted", watch) or not re.search(
