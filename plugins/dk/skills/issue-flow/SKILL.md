@@ -88,7 +88,7 @@ When the change is one the customer sees, write the customer reply on the issue 
 - `blocked by <n> unresolved threads`: answer each thread (**Comments.**), then resolve it.
 - `read <n> of <total> <items>, so ready is not reported on <sha>`: the PR holds more comments, reviews or threads than the watcher reads, so it cannot vouch for the rest. Tell the user; the **Ready gate** verdict is **Blocked**, naming what went unread.
 - `merged` or `closed without merging`: the PR is done; stop working on it.
-- `deadline passed`: no outcome 20 minutes after the last push. Tell the user every condition still unmet, read from the PR: a pending check, an unresolved thread, a merge state that is not `CLEAN`, or a missing bot verdict (the bot skips drafts).
+- `deadline passed`: no outcome 20 minutes after the last push. Tell the user every condition still unmet, read from the PR: a pending check, an unresolved thread, a `BEHIND` or `DIRTY` merge state or one still `UNKNOWN` or unreadable, or a missing bot verdict (the bot skips drafts).
 - `ready on <sha>` or `green on <sha>`: the wait is over.
 - `pr-wait stopped: …`, or a line starting `pr-wait:`: a `gh` call failed, or the input is wrong. Tell the user its error. When it names another pid that already watches the PR, that watcher's lines reach you only when it runs under your own Monitor or background task; otherwise tell the user which pid holds the watch.
 

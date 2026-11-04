@@ -337,6 +337,11 @@ if not re.search(r"[Ss]tart it again after each push, after an action of yours t
         r"`deadline passed` or `pr-wait stopped` line[^.]*goes to the user", watch):
     errors.append("skills/issue-flow: step 6 restarts the watcher after a push, an action that changes what blocked "
                   "it, or an expired monitor, and reports a `deadline passed` or `pr-wait stopped` line to the user")
+# CodeRabbit on #136 (#112): the deadline report names the merge states pr-wait gates on, never "not CLEAN".
+deadline = re.search(r"^- `deadline passed`:.*$", watch, re.M)
+if not deadline or "`BEHIND`" not in deadline.group(0) or "`DIRTY`" not in deadline.group(0) or "CLEAN" in deadline.group(0):
+    errors.append("skills/issue-flow: step 6's `deadline passed` report must name a `BEHIND`, `DIRTY` or unreadable "
+                  "merge state, the ones pr-wait gates on")
 # Before `gh pr create`: the branch's open PR, and the REST create when GraphQL is rate-limited.
 opening = re.search(r"^Rebase onto .*$", step6, re.M)
 opening = opening.group(0) if opening else ""
@@ -486,7 +491,8 @@ for what, pattern in (
     ("imported commits keeping their authorship and trailers", r"cherry-pick.*author.*trailers"),
     # CodeRabbit local review on #136 (#112): staged work hides from `git diff`, and a cherry-pick carries commits only.
     ("staged work in the check", r"`git diff --cached`"),
-    ("uncommitted work carried over as a patch before the first edit", r"[Uu]ncommitted work[^.]*patch[^.]*`git apply`"),
+    ("uncommitted work carried over as a patch before the first edit", r"[Uu]ncommitted work[^.]*patch[^.]*`git apply"),
+    ("the pickup's paths quoted", r'`git -C "<old worktree>" diff HEAD > "<patch file>"`'),
 ):
     if not re.search(pattern, pickup, re.S):
         errors.append(f"skills/handoff: its 'Picking up a handoff' section does not name {what}")
@@ -517,6 +523,8 @@ for what, pattern in (
     ("the decision rule written before the first run", r"decision rule.*before the first run"),
     ("both sides run tuned", r"\btuned\b"),
     ("errors counted", r"errors.*counted"),
+    # CodeRabbit on #136 (#112): a faster run with wrong outputs must still fail the claim.
+    ("an error threshold in the decision rule that rejects the claim", r"error threshold[^.]*rejects the claim"),
     ("at least 5 alternating runs per side", r"at least 5 runs per side, alternating"),
     ("the range reported", r"median and range"),
     ("the work confirmed to have happened", r"work confirmed to have happened"),
