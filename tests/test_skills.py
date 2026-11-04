@@ -518,7 +518,11 @@ for what, pattern in (
     ("the worktree from dk:issue-flow step 2", r"`dk:issue-flow` step 2"),
     ("the base's new commits checked for conceptual conflicts", r"conceptual conflict"),
     ("the series compared with git range-diff", r"git range-diff"),
-    ("the push leased to the observed remote head", r"git push --force-with-lease=<branch>:<observed sha>"),
+    ("the push leased to the observed remote head, every ref quoted",
+     r'git push --force-with-lease="refs/heads/<branch>:<observed sha>" origin "HEAD:refs/heads/<branch>"'),
+    # CodeRabbit on #136, round 2 (#112): headRefName reaches the shell only once Git accepts it as a branch name.
+    ("the branch checked before any shell use, stopping when it fails",
+     r'`git check-ref-format --branch "<branch>"`[^.]*stop[^`]*`git ls-remote origin "refs/heads/<branch>"`'),
     # CodeRabbit on #136 (#112): a wrong base stops first, a fork's head comes from refs/pull, the work stays in the worktree.
     ("a base mismatch stopping before any change to the branch, until the user's word",
      r"`baseRefName` differs stops here, before any change to its branch[^.]*only on the user's word"),
