@@ -1,21 +1,28 @@
 #!/usr/bin/env bash
 # Human-in-the-loop reproduction loop.
-# Copy this file, edit the steps below, and run it.
-# The agent runs the script; the user follows prompts in their terminal.
+# Copy this file and edit the steps below. The user runs the copy in their
+# own terminal: the agent's shell has no terminal on stdin, so the script
+# stops at once there.
 #
 # Usage:
-#   bash hitl-loop.template.sh
+#   bash <copy of hitl-loop.template.sh>
 #
 # Two helpers:
 #   step "<instruction>"          → show instruction, wait for Enter
 #   capture VAR "<question>"      → show question, read response into VAR
 #
-# At the end, captured values are printed as KEY=VALUE for the agent to parse.
+# At the end, captured values are printed as KEY=VALUE; the user pastes those
+# lines back to the agent.
 #
-# `capture` prints its value back to the terminal, where the agent reads it,
-# so capture observations, and leave signing in to the user as a `step`.
+# Every captured value reaches the agent, so capture observations, and leave
+# signing in to the user as a `step`.
 
 set -euo pipefail
+
+if [ ! -t 0 ]; then
+  echo 'hitl-loop: stdin is not a terminal; run this in your own terminal.' >&2
+  exit 2
+fi
 
 step() {
   printf '\n>>> %s\n' "$1"

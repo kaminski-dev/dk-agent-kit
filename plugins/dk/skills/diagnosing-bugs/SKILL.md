@@ -3,7 +3,7 @@ name: diagnosing-bugs
 description: Diagnosis loop for a bug or slowdown whose cause is unknown. Use when asked to diagnose or debug, or something breaks, throws, fails or is slow.
 ---
 
-<!-- Adapted from mattpocock/skills@4ae2317 skills/engineering/diagnosing-bugs, MIT (© 2026 Matt Pocock). Changed for dk-agent-kit: model-invoked with a shorter description; loops and the HITL copy live in the issue's scratch folder; artifacts captured through the helper docs/agents/observability.md names; the regression test goes through dk:tdd and the final proof through dk:verify, whose control run carries the Phase 2 scenario, at the branch's last pre-fix commit for a bug born on the branch; the confirmed cause goes into the PR through dk:pr; a missing seam is handed to the user's /dk:improve-codebase-architecture. -->
+<!-- Adapted from mattpocock/skills@4ae2317 skills/engineering/diagnosing-bugs, MIT (© 2026 Matt Pocock). Changed for dk-agent-kit: model-invoked with a shorter description; loops and the HITL copy live in the issue's scratch folder, and the user runs that copy in their own terminal; artifacts captured through the helper docs/agents/observability.md names; the regression test goes through dk:tdd and the final proof through dk:verify, whose control run carries the Phase 2 scenario, at the branch's last pre-fix commit for a bug born on the branch; the confirmed cause goes into the PR through dk:pr; a missing seam is handed to the user's /dk:improve-codebase-architecture. -->
 
 # Diagnosing Bugs
 
@@ -38,7 +38,7 @@ Spend disproportionate effort here. **Be aggressive. Be creative. Refuse to give
 7. **Property / fuzz loop.** If the bug is "sometimes wrong output", run 1000 random inputs and look for the failure mode.
 8. **Bisection harness.** If the bug appeared between two known states (commit, dataset, version), automate "boot at state X, check, repeat" so you can `git bisect run` it.
 9. **Differential loop.** Run the same input through old-version vs new-version (or two configs) and diff outputs.
-10. **HITL bash script.** Last resort. If a human must click, drive _them_ with your copy of `scripts/hitl-loop.template.sh` so the loop is still structured. Captured output feeds back to you.
+10. **HITL bash script.** Last resort. If a human must click, drive _them_ with your copy of `scripts/hitl-loop.template.sh` so the loop is still structured. The user runs it in their own terminal, since your shell has none on stdin, and pastes back the `KEY=VALUE` lines it prints.
 
 Build the right feedback loop, and the bug is 90% fixed.
 
