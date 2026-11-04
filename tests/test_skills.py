@@ -544,6 +544,9 @@ for what, pattern in (
     # CodeRabbit on #136, round 2 (#112): headRefName reaches the shell only once Git accepts it as a branch name.
     ("the branch checked before any shell use, stopping when it fails",
      r'`git check-ref-format --branch "<branch>"`[^.]*stop[^`]*`git ls-remote origin "refs/heads/<branch>"`'),
+    # Git accepts `$`, backticks and `"` in a branch name, which double quotes still expand.
+    ("the branch limited to letters, digits, '.', '_', '-' and '/' before any shell use",
+     r"only letters, digits, `\.`, `_`, `-` and `/`"),
     # CodeRabbit on #136 (#112): a wrong base stops first, a fork's head comes from refs/pull, the work stays in the worktree.
     ("a base mismatch stopping before any change to the branch, until the user's word",
      r"`baseRefName` differs stops here, before any change to its branch[^.]*only on the user's word"),
