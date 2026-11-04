@@ -80,11 +80,13 @@ flowchart LR
 ```
 
 `dk:issue-flow` step 6 runs `pr-wait` under Monitor, so each event on the
-PR wakes the agent: a check that passes or fails, a human comment, an
-unresolved thread, a base that moved over the PR's files, the review bot's
-verdict. The ready gate hands the PR to the maintainer with one verdict, and a
-condition the agent cannot read counts as Blocked. A PR that went stale while
-others merged gets `/dk:modernize`: it is modernised, reworked or closed.
+PR wakes the agent: a check that fails, one summary line once every check has
+finished, a human comment, an unresolved thread, a base that moved over the
+PR's files, the review bot's verdict. A comment edit wakes nothing, nor does
+each check that passes, so a change asked for goes in a new comment. The ready
+gate hands the PR to the maintainer with one verdict, and a condition the agent
+cannot read counts as Blocked. A PR that went stale while others merged gets
+`/dk:modernize`: it is modernised, reworked or closed.
 
 ```mermaid
 flowchart LR
