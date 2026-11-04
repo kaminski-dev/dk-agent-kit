@@ -86,7 +86,8 @@ PR's files, the review bot's verdict. A comment edit wakes nothing, nor does
 each check that passes, so a change asked for goes in a new comment. The ready
 gate hands the PR to the maintainer with one verdict, and a condition the agent
 cannot read counts as Blocked. A PR that went stale while others merged gets
-`/dk:modernize`: it is modernised, reworked or closed.
+`/dk:modernize`: it rebases the PR, or describes a rework or recommends
+closing it; doing the rework and closing the PR stay the user's call.
 
 ```mermaid
 flowchart LR
