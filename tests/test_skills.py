@@ -195,6 +195,9 @@ for what, pattern in (
     ("a rare path or small cost kept a nit only when its impact is small", IMPACT),
     ("each next-round prompt carrying its own axis's ledger rows", r"its own axis's ledger rows"),
     ("the nits-only stop only when no nit's fix changed behaviour code", r"round brings only nits[^.]*no behaviour code"),
+    # CodeRabbit on #136, round 2 (#112): a declined nit has no issue, so the report names one only when filed.
+    ("an issue number reported only for a declined finding scope intake filed",
+     r"issue number of each declined finding that scope intake filed"),
 ):
     if not re.search(pattern, answer, re.S):
         errors.append(f"skills/code-review: its Answer findings step does not name {what}")
