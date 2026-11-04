@@ -355,7 +355,7 @@ if not rest or "-f base=<base>" not in rest.group(0) or "pre-main" in rest.group
     errors.append("skills/issue-flow: step 6 must open the PR through REST (`gh api \"repos/{owner}/{repo}/pulls\"`, "
                   "`-f base=<base>`, never pre-main) when `gh pr create` hits GraphQL's rate limit")
 # CodeRabbit on #136 (#112): a title or file path holds spaces, so the commands quote what is substituted there.
-if re.search(r"title=<|body=@<|--body-file <", step6) or '-f "title=<title>"' not in opening \
+if re.search(r'(?<![-"])(?:title=|body=@)<|--body-file <', step6) or '-f "title=<title>"' not in opening \
         or '-F "body=@<body file>"' not in opening:
     errors.append("skills/issue-flow: step 6 must quote a substituted title and body file "
                   "(`-f \"title=<title>\"`, `-F \"body=@<file>\"`, `--body-file \"<file>\"`)")

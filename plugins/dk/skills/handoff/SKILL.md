@@ -29,6 +29,6 @@ This handoff is context, not proof: it records what the last agent believed when
 
 Re-judge the earlier implementation as you would review someone else's: keep what holds against the issue and rework what does not, whoever built it.
 
-To continue on a new branch, bring the earlier commits over with `git cherry-pick`, which keeps each commit's author and its `Co-Authored-By` trailers, and put your fixes in commits of your own on top. Uncommitted work never rides a cherry-pick: before your first edit, carry it as a patch (`git -C "<old worktree>" diff HEAD > "<patch file>"`, with the patch file outside both trees, then `git apply "<patch file>"` in yours) and copy the untracked files `git status` lists.
+To continue on a new branch, bring the earlier commits over with `git cherry-pick`, which keeps each commit's author and its `Co-Authored-By` trailers, and put your fixes in commits of your own on top. Uncommitted work never rides a cherry-pick: before your first edit, carry it as a patch (`git -C "<old worktree>" diff --binary HEAD > "<patch file>"`, with the patch file outside both trees, then `git apply "<patch file>"` in yours) and copy the untracked files `git status` lists.
 
 Your report names what you inherited, which claims were stale or wrong, and what you changed.
