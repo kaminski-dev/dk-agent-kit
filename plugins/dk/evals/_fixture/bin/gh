@@ -11,7 +11,8 @@ the highest PR number, in whatever order their checks finish.
 Calls hold a lock on the state, so parallel agents do not lose each other's writes; `pr create` lets
 go of it while the acceptance check runs (at most CHECK_TIMEOUT seconds per run).
 An issue's "blocked_by" lists its native blockers, read by `is:blocked` in a
-search and by `gh api .../dependencies/blocked_by`, and added by a POST there.
+search and by `gh api .../dependencies/blocked_by`, and added by a POST there, by
+`gh issue create --blocked-by` or by `gh issue edit --add-blocked-by`.
 That read pages at 30 as GitHub does: --paginate prints every page as its own JSON array
 (--jq runs on each), or one array of pages with --slurp.
 "search_qualifiers": false makes a search with is:blocked fail, as on a GitHub without it.
@@ -133,6 +134,20 @@ def open_blockers(state, num):
     return [b for b in state["issues"][num].get("blocked_by", []) if state["issues"][str(b)]["state"] == "open"]
 
 
+def blockers_from(values, state):
+    """The issue numbers or URLs of every --blocked-by / --add-blocked-by, each an issue of this repo."""
+    nums = [v.strip().lstrip("#").rsplit("/", 1)[-1] for value in values or [] for v in value.split(",") if v.strip()]
+    for n in nums:
+        if n not in state["issues"]:
+            fail(f"GraphQL: Could not resolve to an issue or pull request with the number of {n}.")
+    return [int(n) for n in nums]
+
+
+def add_blockers(issue, blockers):
+    blocked_by = issue.setdefault("blocked_by", [])
+    blocked_by += [b for b in blockers if b not in blocked_by]
+
+
 def blocked_filter(search):
     """is:blocked (an open blocker) or -is:blocked in a --search; other search terms are ignored."""
     words = (search or "").split()
@@ -162,9 +177,10 @@ def issue_number(pos, state):
 VALUE_FLAGS = {"--json", "--jq", "-q", "--body", "-b", "--body-file", "-F", "--add-label", "--remove-label",
                "--label", "-l", "--state", "-s", "--search", "-S", "--limit", "-L", "--title", "-t", "--base", "-B",
                "--head", "-H", "--repo", "-R", "--comment", "-c", "--reason", "-r", "--assignee", "-a", "--parent",
-               "--add-sub-issue", "--method", "-X", "--field", "-f", "--raw-field", "--milestone", "-m",
+               "--add-sub-issue", "--blocked-by", "--add-blocked-by", "--method", "-X", "--field", "-f", "--raw-field", "--milestone", "-m",
                "--template", "-T", "--color", "--description", "-d"}
-MULTI = {"--add-label", "--remove-label", "--label", "-l", "--field", "-f", "--raw-field"}
+MULTI = {"--add-label", "--remove-label", "--label", "-l", "--field", "-f", "--raw-field", "--blocked-by",
+         "--add-blocked-by"}
 
 
 def labels_from(values):
@@ -230,6 +246,7 @@ def cmd_issue(sub, args, state):
                 fail(f"could not add label: '{l}' not found")
             if l not in i["labels"]:
                 i["labels"].append(l)
+        add_blockers(i, blockers_from(o.get("--add-blocked-by"), state))
         if "--title" in o:
             i["title"] = o["--title"]
         if "--body" in o or "--body-file" in o:
@@ -244,10 +261,12 @@ def cmd_issue(sub, args, state):
         i["state"] = "closed" if sub == "close" else "open"
         save(state)
     elif sub == "create":
+        blockers = blockers_from(o.get("--blocked-by"), state)
         num = str(max(int(n) for n in state["issues"]) + 1)
         state["issues"][num] = {"title": o.get("--title") or o.get("-t") or "", "body": body_of(o), "state": "open",
                                 "labels": labels_from(o.get("--label") or o.get("-l")), "comments": [],
                                 "author": "agent"}
+        add_blockers(state["issues"][num], blockers)
         save(state)
         print(f"https://github.com/{state['repo']}/issues/{num}")
     else:

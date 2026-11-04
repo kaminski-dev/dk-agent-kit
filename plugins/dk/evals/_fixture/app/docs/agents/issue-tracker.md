@@ -10,8 +10,8 @@ Issues and PRs live on GitHub (`acme/ledger`). Use `gh`, always with `--json` fo
 - **Create**: `gh issue create --title "…" --body-file <file> --label <label>`.
 - **Comment**: `gh issue comment N --body-file <file>`.
 - **Labels**: `gh issue edit N --add-label <a> --remove-label <b>`.
-- **Close**: `gh issue close N --comment "…"`.
-- **Blocking**: native dependencies. `gh api --method POST repos/acme/ledger/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where the database id is `gh api repos/acme/ledger/issues/<n> --jq .id`. Read an issue's blockers with `gh api --paginate repos/acme/ledger/issues/<n>/dependencies/blocked_by --jq '.[] | "#\(.number) \(.state)"'`.
+- **Close**: comment with `gh issue comment N --body-file <file>`, then `gh issue close N`, since on an already-closed issue `gh issue close` drops its `--comment` and still exits 0.
+- **Blocking**: native dependencies. With `gh` 2.94+, `gh issue create --blocked-by <n>,<n> …` or `gh issue edit <child> --add-blocked-by <blocker>`. Older `gh`: `gh api --method POST repos/acme/ledger/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where the database id is `gh api repos/acme/ledger/issues/<n> --jq .id`. Read an issue's blockers with `gh api --paginate repos/acme/ledger/issues/<n>/dependencies/blocked_by --jq '.[] | "#\(.number) \(.state)"'`.
 - **Scope amendment**: a comment starting `Scope amendment:` records work folded into the current PR.
 
 ## Pull requests

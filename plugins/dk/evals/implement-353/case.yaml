@@ -2,7 +2,8 @@ schema_version: "1.1"
 name: implement-353
 description: >
   clientdata #353 (Customer History order), replayed on a stand-in repo: dk:implement takes the
-  triaged ticket to a PR into pre-main with evidence. The tracker is the workspace's gh stand-in,
+  triaged ticket to a PR into pre-main with evidence, and its report ends with one ready-gate
+  verdict. The tracker is the workspace's gh stand-in,
   so the PR is a file, never a real one.
 tags: [implement]
 runs: 1
@@ -50,3 +51,12 @@ graders:
     type: tool_used
     tool: Skill
     input_match: '"skill"\s*:\s*"dk:code-review"'
+  - name: ends-with-one-verdict
+    type: llm
+    criteria: >
+      dk:issue-flow step 6's ready gate ends the handoff of a PR with exactly one of three verdicts:
+      Ready to merge, Waiting for required approval, or Blocked. PASS when the final message ends with
+      exactly one of them for the PR of #353, as its last line or the last paragraph. A Blocked verdict
+      may name, in that same paragraph, what could not be read or what blocks it, since the gate asks
+      for that. FAIL when it gives none, gives more than one, or gives one with further report
+      sections after it.

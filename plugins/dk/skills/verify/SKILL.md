@@ -24,6 +24,7 @@ List what the diff changes and take the matching rows; each row touched is owed 
 | UI | a browser at desktop and phone width (step 5), the flow the issue describes driven beyond the page load, console clean |
 | External service (mail, storage, push, payments) | unit tests at the service boundary, plus the handler's behaviour observed with the service absent or stubbed as the repo doc says |
 | Bug fix | a regression test seen **red** on the pre-fix state, or by mutating the fix, before its green run counts |
+| Performance claim (a speedup, a regression, a throughput or latency) | the limiter named from a profile or system counters taken in a run you do not report (why is it not twice as fast?), and the decision rule written before the first run: the result that changes the decision, the noise floor, and an error threshold (normally zero wrong outputs) past which the change rejects the claim whatever its speed. Both sides run tuned as production runs them, with errors counted (failed requests, wrong outputs); at least 5 runs per side, alternating the control (step 4) and the change, reported as median and range, with each side's error count beside the threshold; the work confirmed to have happened inside the timed region (requests served, rows written, results used). A spread larger than the effect makes the verdict **inconclusive**, whatever the medians say |
 
 A change no row covers (docs, CI, tooling) owes what the Evidence section of the repo's `workflow.md` asks. Done when every changed area has its proof named.
 
@@ -44,7 +45,7 @@ The repo doc says whether the API needs a login; an API without one is called wi
 
 Drive one scenario twice, with the same input and the same steps:
 
-1. **Control**: the pre-fix state, built in a throwaway worktree (`git worktree add --detach "$RUN/base" <base>`, with `<base>` the branch's base from `workflow.md`). It shows the bug, or the feature's absence.
+1. **Control**: the pre-fix state, built in a throwaway worktree (`git worktree add --detach "$RUN/base" <base>`), with `<base>` the branch's base from `workflow.md` by default, or the branch's last pre-fix commit when the bug came in on this branch: the parent (`<fix sha>^`) of the fix's first commit, which still has the bug. It shows the bug, or the feature's absence.
 2. **Change**: your branch, which shows the fix.
 
 For a fix, a control that already behaves correctly means the scenario misses the bug: rework the scenario until the control fails, then run the change. Keep the output of both runs; they are the before and after of the PR's evidence.

@@ -3,7 +3,7 @@ name: research
 description: Research a question that needs several primary sources (API or library behaviour, version differences, vendor docs, standards) in a background agent, and capture the findings as a Markdown file in docs/research/. Use when the user wants a topic researched or reading legwork delegated; a single fact is a plain web search instead.
 ---
 
-Spin up a **background agent** to do the research, so you keep working while it reads.
+Spin up a **background agent** to do the research, so you keep working while it reads. Start it with a fresh context window, never as a fork.
 
 Its job:
 
