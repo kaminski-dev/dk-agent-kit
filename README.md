@@ -56,12 +56,35 @@ solution.
 flowchart LR
   ready(["ready-for-agent"]) --> implement["dk:implement<br/>worktree off pre-main"]
   implement --> verify["dk:verify<br/>control run, teardown"]
-  verify --> review["dk:code-review<br/>Standards, Spec, Correctness, Comments"]
+  verify --> review["dk:code-review<br/>four axes, findings answered"]
+  review -- "blocker or should open, up to 3 rounds" --> review
   review --> pr["dk:pr<br/>PR into pre-main"]
   implement -. "side finding" .-> intake{"scope<br/>intake"}
   intake -- "small, same place" --> implement
   intake -- "otherwise" --> new(["new issue"])
 ```
+
+A bug whose cause is not known yet goes through `dk:diagnosing-bugs` before
+the fix: a command that reproduces it, ranked hypotheses, then the
+regression test through `dk:tdd`. Each review finding carries an id and a
+severity (blocker, should or nit) and gets an outcome in a ledger, kept in
+the PR body: fixed, disagree or declined.
+
+```mermaid
+flowchart LR
+  open(["PR open"]) --> watch["pr-wait watches<br/>checks, people, threads, base, bot"]
+  watch -- "a finding or a comment" --> fix["fix and push<br/>reply on its thread"]
+  fix --> watch
+  watch -- "nothing left on the head" --> gate{"ready gate"}
+  gate --> verdict(["one verdict<br/>ready, waiting or blocked"])
+```
+
+`dk:issue-flow` step 6 runs `pr-wait` under Monitor, so each event on the
+PR wakes the agent: a check that passes or fails, a human comment, an
+unresolved thread, a base that moved over the PR's files, the review bot's
+verdict. The ready gate hands the PR to the maintainer with one verdict, and a
+condition the agent cannot read counts as Blocked. A PR that went stale while
+others merged gets `/dk:modernize`: it is modernised, reworked or closed.
 
 ```mermaid
 flowchart LR
