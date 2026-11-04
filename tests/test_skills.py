@@ -481,6 +481,10 @@ if not re.search(r"\A---\n.*?\n---\n\n<!-- Adapted from t3dotgg/tstack@[0-9a-f]+
 control = re.search(r"^1\. \*\*Control\*\*.*$", skills["verify"].read_text(), re.M)
 if not control or "the branch's last pre-fix commit when the bug came in on this branch" not in control.group(0):
     errors.append("skills/verify: step 4's control must be the branch's last pre-fix commit when the bug came in on this branch")
+# CodeRabbit on #136, round 2 (#112): that commit is found, not guessed.
+if control and not re.search(r"parent \(`<sha>\^`\) of the commit that brought the bug in.*`git log`.*`git bisect`", control.group(0)):
+    errors.append("skills/verify: step 4's control does not say how to find the last pre-fix commit "
+                  "(the parent of the commit that brought the bug in, by git log or git bisect)")
 
 # A performance claim owes its spread, so "faster" inside the noise reads as inconclusive (#119).
 owe = re.search(r"^## 1\..*?(?=^## 2\.)", skills["verify"].read_text(), re.M | re.S)

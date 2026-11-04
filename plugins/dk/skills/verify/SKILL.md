@@ -45,7 +45,7 @@ The repo doc says whether the API needs a login; an API without one is called wi
 
 Drive one scenario twice, with the same input and the same steps:
 
-1. **Control**: the pre-fix state, built in a throwaway worktree (`git worktree add --detach "$RUN/base" <base>`), with `<base>` the branch's base from `workflow.md`, or the branch's last pre-fix commit when the bug came in on this branch. It shows the bug, or the feature's absence.
+1. **Control**: the pre-fix state, built in a throwaway worktree (`git worktree add --detach "$RUN/base" <base>`), with `<base>` the branch's base from `workflow.md` by default, or the branch's last pre-fix commit when the bug came in on this branch: the parent (`<sha>^`) of the commit that brought the bug in, found with `git log` or `git bisect` over `origin/<base>..HEAD`. It shows the bug, or the feature's absence.
 2. **Change**: your branch, which shows the fix.
 
 For a fix, a control that already behaves correctly means the scenario misses the bug: rework the scenario until the control fails, then run the change. Keep the output of both runs; they are the before and after of the PR's evidence.
