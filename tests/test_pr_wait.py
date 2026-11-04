@@ -242,6 +242,10 @@ CASES = {
     "more reviews or threads than the page read is never ready": (dict(
         polls=[pr(reviews=[review(7, "x")], totals={"reviews": 140, "reviewThreads": 120})], checks=GREEN),
         1, ["read 1 of 140 reviews", "read 0 of 120 review threads"], "#1 ready on"),
+    "a page outgrowing its read wakes an any-change wait": (dict(
+        polls=[pr(threads=[thread(inline(7), resolved=True)]), pr(threads=[thread(inline(7), resolved=True, total=101)])],
+        checks=GREEN, args=["--until", "any-change", *QUIET]),
+        0, ["read 1 of 101 comments on the thread at src/app.py:12"], "deadline"),
     "an UNKNOWN merge state is not ready yet": (dict(
         polls=[pr(merge="UNKNOWN", reviews=[review(7, "x")])], checks=GREEN, args=QUIET),
         1, ["deadline passed"], "#1 ready on"),
