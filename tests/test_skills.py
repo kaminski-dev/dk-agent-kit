@@ -354,6 +354,11 @@ rest = re.search(r"GraphQL.*rate limit.*`gh api \"repos/\{owner\}/\{repo\}/pulls
 if not rest or "-f base=<base>" not in rest.group(0) or "pre-main" in rest.group(0):
     errors.append("skills/issue-flow: step 6 must open the PR through REST (`gh api \"repos/{owner}/{repo}/pulls\"`, "
                   "`-f base=<base>`, never pre-main) when `gh pr create` hits GraphQL's rate limit")
+# CodeRabbit on #136 (#112): a title or file path holds spaces, so the commands quote what is substituted there.
+if re.search(r"title=<|body=@<|--body-file <", step6) or '-f "title=<title>"' not in opening \
+        or '-F "body=@<body file>"' not in opening:
+    errors.append("skills/issue-flow: step 6 must quote a substituted title and body file "
+                  "(`-f \"title=<title>\"`, `-F \"body=@<file>\"`, `--body-file \"<file>\"`)")
 
 # A PR reaches the maintainer through one gate, checked on the latest commit, and one verdict (#126, tstack
 # full-send's merge gate and full-stop's handoff). Merging stays the maintainer's: no merge grant is taken.
@@ -492,7 +497,8 @@ for what, pattern in (
     # CodeRabbit local review on #136 (#112): staged work hides from `git diff`, and a cherry-pick carries commits only.
     ("staged work in the check", r"`git diff --cached`"),
     ("uncommitted work carried over as a patch before the first edit", r"[Uu]ncommitted work[^.]*patch[^.]*`git apply"),
-    ("the pickup's paths quoted", r'`git -C "<old worktree>" diff HEAD > "<patch file>"`'),
+    # CodeRabbit on #136 (#112): without --binary a tracked binary change is "Binary files differ", which git apply rejects.
+    ("the pickup's paths quoted and binary changes carried", r'`git -C "<old worktree>" diff --binary HEAD > "<patch file>"`'),
 ):
     if not re.search(pattern, pickup, re.S):
         errors.append(f"skills/handoff: its 'Picking up a handoff' section does not name {what}")
@@ -527,6 +533,8 @@ for what, pattern in (
     ("an error threshold in the decision rule that rejects the claim", r"error threshold[^.]*rejects the claim"),
     ("at least 5 alternating runs per side", r"at least 5 runs per side, alternating"),
     ("the range reported", r"median and range"),
+    # CodeRabbit on #136 (#112): the threshold is judged on errors both sides report.
+    ("each side's error count reported beside the threshold", r"median and range, with each side's error count"),
     ("the work confirmed to have happened", r"work confirmed to have happened"),
     ("the inconclusive verdict when the spread is larger than the effect",
      r"spread larger than the effect.*\*\*inconclusive\*\*"),
