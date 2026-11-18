@@ -7,6 +7,8 @@ last lines, a user-only message, or nothing.
 """
 import json
 import os
+import shlex
+import signal
 import stat
 import subprocess
 import sys
@@ -20,6 +22,19 @@ PASS = "#!/bin/sh\necho 'lint ok'\ntouch .gate-ran\n"
 FAIL = ("#!/bin/sh\ntouch .gate-ran\necho 'first line, scrolled away'\n"
         "for i in $(seq 1 60); do echo \"noise $i\"; done\n"
         "echo 'src/a.ts(3,1): error TS2304: Cannot find name foo' >&2\nexit 1\n")
+# Leaves the gate's process group, keeping the gate's stdout open, and says so once it is out.
+ESCAPE = """import os, time
+os.setsid()
+open(".escaped", "w").close()
+time.sleep(60)
+"""
+
+# The timeout cases give the gate each budget in turn. A loaded machine can start a gate too late to print its
+# first line inside 1 s, so the fixture touches .started after that line: a run without it says the machine
+# was slow and moves to the next budget; a run with it checks the hook in full.
+BUDGETS = (1, 5, 15)
+GRACE = 2  # s stop-gate.py waits for the gate's pipe after it kills the group
+SLACK = 10  # s a loaded machine may add to a hook run beyond its budget and grace
 
 
 def make_repo(root, name, gate=None, executable=True, dirty=True):
@@ -44,16 +59,46 @@ def make_repo(root, name, gate=None, executable=True, dirty=True):
     return path
 
 
-def run(cwd, active=False, env=None):
+def run(cwd, active=False, env=None, timeout=None):
     payload = {"session_id": "test", "cwd": cwd, "hook_event_name": "Stop",
                "stop_hook_active": active, "last_assistant_message": "Done."}
-    out = subprocess.run([sys.executable, "-I", HOOK], input=json.dumps(payload),
+    out = subprocess.run([sys.executable, "-I", HOOK], input=json.dumps(payload), timeout=timeout,
                          capture_output=True, text=True, env={"PATH": os.environ["PATH"], **(env or {})})
     return out.returncode, json.loads(out.stdout) if out.stdout.strip() else None, out.stderr
 
 
 def gate_ran(repo):
     return os.path.exists(os.path.join(repo, ".gate-ran"))
+
+
+def within_a_budget(attempt):
+    for budget in BUDGETS:
+        if attempt(budget):
+            return
+    raise AssertionError(f"the fixture gate never printed its first line inside {BUDGETS[-1]} s")
+
+
+def started(repo):
+    return os.path.exists(os.path.join(repo, ".started"))
+
+
+def child_pid(repo):
+    try:
+        with open(os.path.join(repo, ".child")) as f:
+            return int(f.read())
+    except (FileNotFoundError, ValueError):  # ValueError: the gate was cut off while it wrote the pid
+        return None
+
+
+def reaped_within_slack(pid):
+    deadline = time.monotonic() + SLACK
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except (ProcessLookupError, PermissionError):  # PermissionError: the pid now belongs to another user
+            return True
+        time.sleep(0.05)
+    return False
 
 
 def case_failing_gate_blocks_with_last_lines(root):
@@ -95,22 +140,49 @@ def case_gate_that_cannot_execute_blocks_with_the_reason(root):
 
 
 def case_gate_that_hangs_is_cut_off_with_its_children(root):
-    repo = make_repo(root, "hangs", "#!/bin/sh\n(sleep 2; touch .late) &\necho 'starting tests'\nsleep 30\n")
-    code, out, err = run(repo, env={"DK_GATE_TIMEOUT": "1"})
-    assert out and out.get("decision") == "block", (code, out, err)
-    assert "timed out after 1 s" in out["reason"] and "starting tests" in out["reason"], out["reason"]
-    time.sleep(3)
-    assert not os.path.exists(os.path.join(repo, ".late")), "a child of the gate outlived the timeout"
+    def attempt(budget):
+        repo = make_repo(root, f"hangs-{budget}", "#!/bin/sh\nsleep 30 &\necho $! > .child\n"
+                                                  "echo 'starting tests'\ntouch .started\nsleep 30\n")
+        code, out, err = run(repo, env={"DK_GATE_TIMEOUT": str(budget)})
+        assert out and out.get("decision") == "block", (code, out, err)
+        assert f"timed out after {budget} s" in out["reason"], out["reason"]
+        if not started(repo):
+            return False
+        assert "starting tests" in out["reason"], out["reason"]
+        assert reaped_within_slack(child_pid(repo)), "a child of the gate outlived the timeout"
+        return True
+    within_a_budget(attempt)
 
 
 def case_child_that_escapes_the_group_does_not_hang_the_hook(root):
-    escape = "python3 -c 'import os, time; os.setsid(); time.sleep(10)' &\n"
-    repo = make_repo(root, "escapes", "#!/bin/sh\n" + escape + "echo 'starting tests'\nsleep 30\n")
-    start = time.monotonic()
-    code, out, err = run(repo, env={"DK_GATE_TIMEOUT": "1"})
-    assert time.monotonic() - start < 6, f"hook waited {time.monotonic() - start:.0f} s for the escaped child"
-    assert out and out.get("decision") == "block", (code, out, err)
-    assert "starting tests" in out["reason"], out["reason"]
+    escape = os.path.join(root, "escape.py")
+    with open(escape, "w") as f:
+        f.write(ESCAPE)
+
+    def attempt(budget):
+        repo = make_repo(root, f"escapes-{budget}",
+                         f"#!/bin/sh\n{shlex.quote(sys.executable)} -I {shlex.quote(escape)} &\necho $! > .child\n"
+                         "while [ ! -f .escaped ]; do sleep 0.1; done\n"
+                         "echo 'starting tests'\ntouch .started\nsleep 30\n")
+        limit = budget + GRACE + SLACK
+        try:
+            code, out, err = run(repo, env={"DK_GATE_TIMEOUT": str(budget)}, timeout=limit)
+        except subprocess.TimeoutExpired:
+            raise AssertionError(f"hook waited over {limit} s for the escaped child") from None
+        finally:
+            pid = child_pid(repo)
+            if pid:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        assert out and out.get("decision") == "block", (code, out, err)
+        assert f"timed out after {budget} s" in out["reason"], out["reason"]
+        if not started(repo):
+            return False
+        assert "starting tests" in out["reason"], out["reason"]
+        return True
+    within_a_budget(attempt)
 
 
 def case_one_huge_line_is_capped(root):

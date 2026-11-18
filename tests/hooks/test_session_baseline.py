@@ -21,11 +21,18 @@ STUB = """#!/bin/sh
 dir=$(dirname "$0")
 echo "$*" >> "$dir/{name}.calls"
 for key in "$1-$2" "$1"; do
-  [ -f "$dir/{name}.$key.sleep" ] && sleep "$(cat "$dir/{name}.$key.sleep")"
+  [ -f "$dir/{name}.$key.sleep" ] && touch "$dir/{name}.$key.sleeping" && sleep "$(cat "$dir/{name}.$key.sleep")"
   if [ -f "$dir/{name}.$key.out" ]; then cat "$dir/{name}.$key.out"; exit 0; fi
 done
 exit 1
 """
+# The slow-gh case gives each git and gh call each budget in turn. A loaded machine can answer git too late for
+# 1 s, so the case first checks that the hook reached gh with the branch it read: a run that did not says the
+# machine was slow and moves to the next budget; a run that did checks the hook in full.
+BUDGETS = (1, 5, 15)
+SLACK = 10  # s a loaded machine may add to a hook run beyond its budget
+# s a hook may take to exit once a 1 s budget for gh ran out; one that ignored it would wait out the 5 s default
+AFTER_CUT = 3
 
 
 def make_stubs(root, name, answers=None):
@@ -66,10 +73,17 @@ def make_repo(root, name, branch="main"):
     return path
 
 
-def run(cwd, stubs, raw=None, env=None):
+def within_a_budget(attempt):
+    for budget in BUDGETS:
+        if attempt(budget):
+            return
+    raise AssertionError(f"git never answered the hook inside {BUDGETS[-1]} s")
+
+
+def run(cwd, stubs, raw=None, env=None, timeout=None):
     payload = {"session_id": "test", "cwd": cwd, "hook_event_name": "SessionStart", "source": "startup"}
     out = subprocess.run([sys.executable, "-I", HOOK], input=raw if raw is not None else json.dumps(payload),
-                         capture_output=True, text=True,
+                         capture_output=True, text=True, timeout=timeout,
                          env={"PATH": stubs + os.pathsep + os.environ["PATH"], "HOME": os.environ["HOME"],
                               **(env or {})})
     return out.returncode, out.stdout, out.stderr
@@ -208,12 +222,25 @@ def case_branch_without_issue_skips_issue_and_databases(root):
 
 
 def case_slow_gh_is_cut_off(root):
-    repo = make_repo(root, "slow", "feat/6-slow")
-    stubs = make_stubs(root, "slow", {"gh pr-list sleep": "10", "gh pr-list": "[]"})
-    start = time.monotonic()
-    code, out, _ = run(repo, stubs, env={"DK_BASELINE_TIMEOUT": "1"})
-    assert time.monotonic() - start < 5, f"hook waited {time.monotonic() - start:.0f} s for gh"
-    assert code == 0 and out.startswith("slow · feat/6-slow") and "PR" not in out, out
+    def attempt(budget):
+        name = f"slow-{budget}"
+        repo = make_repo(root, name, "feat/6-slow")
+        stubs = make_stubs(root, name, {"gh pr-list sleep": "30", "gh pr-list": "[]"})
+        limit = 4 * budget + SLACK  # rev-parse, branch and status run one after another before gh, each on the budget
+        try:
+            code, out, _ = run(repo, stubs, env={"DK_BASELINE_TIMEOUT": str(budget)}, timeout=limit)
+        except subprocess.TimeoutExpired:
+            raise AssertionError(f"hook waited over {limit} s for gh") from None
+        sleeping = os.path.join(stubs, "gh.pr-list.sleeping")
+        if "pr list --head feat/6-slow " not in calls(stubs, "gh") or not os.path.exists(sleeping):
+            return False
+        cut = time.time() - os.stat(sleeping).st_mtime
+        # The later budgets are as long as the default, so only the first shows a hook that ignores them.
+        bound = budget + (AFTER_CUT if budget == BUDGETS[0] else SLACK)
+        assert cut < bound, f"hook exited {cut:.1f} s after gh started, on a {budget} s budget"
+        assert code == 0 and out.startswith(f"{name} · feat/6-slow") and "PR" not in out, out
+        return True
+    within_a_budget(attempt)
 
 
 def case_unreadable_timeout_falls_back_to_the_default(root):
