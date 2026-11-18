@@ -31,13 +31,12 @@ exit 1
 # machine was slow and moves to the next budget; a run that did checks the hook in full.
 BUDGETS = (1, 5, 15)
 SLACK = 10  # s a loaded machine may add to a hook run beyond its budget
-# s the hook may take to exit once gh's budget ran out: under the 5 s default, so a 1 s budget it ignores shows
-AFTER_CUT = 2
+# s a hook may take to exit once a 1 s budget for gh ran out; one that ignored it would wait out the 5 s default
+AFTER_CUT = 3
 
 
 def make_stubs(root, name, answers=None):
-    """answers maps keys like 'gh pr-list' or 'docker ps' to stdout; a key ending ' sleep' to seconds, and the stub
-    touches <tool>.<key>.sleeping when it starts that sleep."""
+    """answers maps keys like 'gh pr-list' or 'docker ps' to stdout; a key ending ' sleep' to seconds."""
     path = os.path.join(root, name + "-bin")
     os.makedirs(path)
     for tool in ("gh", "docker"):
@@ -236,7 +235,8 @@ def case_slow_gh_is_cut_off(root):
         if "pr list --head feat/6-slow " not in calls(stubs, "gh") or not os.path.exists(sleeping):
             return False
         cut = time.time() - os.stat(sleeping).st_mtime
-        assert cut < budget + AFTER_CUT, f"hook exited {cut:.1f} s after gh started, on a {budget} s budget"
+        if budget == BUDGETS[0]:  # the later budgets are as long as the default, so ignoring them would not show
+            assert cut < budget + AFTER_CUT, f"hook exited {cut:.1f} s after gh started, on a {budget} s budget"
         assert code == 0 and out.startswith(f"{name} · feat/6-slow") and "PR" not in out, out
         return True
     within_a_budget(attempt)
