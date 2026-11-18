@@ -155,6 +155,8 @@ def paused(last, latest):
 
 GREEN = [{"name": "test", "bucket": "pass", "link": "https://ci/test", "description": ""}]
 FAILED = [{"name": "test", "bucket": "fail", "link": "https://ci/test", "description": ""}]
+PENDING = [{"name": "test", "bucket": "pending", "link": "", "description": ""}]
+THREAD_UNREAD = "read 1 of 101 comments on the thread at src/app.py:12, so ready is not reported on 1111111"
 QUIET = ["--minutes", str(1.5 / 60)]  # a case whose event must not come ends at its deadline
 HUMAN = "Please rename the flag"
 STRANGER = {"login": "drive-by", "__typename": "User"}
@@ -254,6 +256,11 @@ CASES = {
         polls=[pr(threads=[thread(inline(7), resolved=True)]), pr(threads=[thread(inline(7), resolved=True, total=101)])],
         checks=GREEN, args=["--until", "any-change", *QUIET]),
         0, ["read 1 of 101 comments on the thread at src/app.py:12"], "deadline"),
+    "a page outgrown again in one run wakes an any-change wait and is printed again": (dict(
+        polls=[pr(threads=[thread(inline(7), resolved=True, total=101)]), pr(threads=[thread(inline(7), resolved=True)]),
+               pr(threads=[thread(inline(7), resolved=True, total=101)])],
+        checks=GREEN, args=["--until", "any-change", *QUIET]),
+        0, [f"{THREAD_UNREAD}\n#1 {THREAD_UNREAD}"], "deadline"),
     "a page already outgrown at the baseline does not wake an any-change wait": (dict(
         polls=[pr(threads=[thread(inline(7), resolved=True, total=101)])],
         checks=GREEN, args=["--until", "any-change", *QUIET]),
@@ -388,21 +395,56 @@ def second_watcher(root):
     return result
 
 
-def restart_replays(root):
-    """An event that arrived while no watcher ran is reported by the next one."""
-    name = "a restart replays a missed event"
-    fix = dict(polls=[pr()], checks=GREEN, args=["--until", "any-change", *QUIET])
+def restart(root, name, before, after, code, want, unwanted):
+    """Two watchers in turn on one PR, both waiting for any change: the first sees the `before` polls and records its
+    baseline, the second sees the `after` polls. The second run's exit and stdout are checked. A dict as `before` is
+    written as the state file in place of the first run. The check stays pending, so a new head's checks never finish."""
+    fix = dict(polls=before, checks=PENDING, args=["--until", "any-change", *QUIET])
     case, env = case_env(root, name, fix)
-    out, err = start(root, case, env, fix).communicate(timeout=30)
-    if "comment from" in out:
-        return f"FAIL {name}: the first run reported {out!r}"
+    if isinstance(before, dict):
+        state = os.path.join(case, ".local", "state", "pr-wait")
+        os.makedirs(state)
+        with open(os.path.join(state, "acme__ledger__1.json"), "w") as f:
+            json.dump(before, f)
+    else:
+        out, err = start(root, case, env, fix).communicate(timeout=30)
+        if "deadline passed" not in out:
+            return f"FAIL {name}: the first run ended without its deadline: {out!r}"
+    fix = dict(fix, polls=after)
     with open(os.path.join(case, "fix.json"), "w") as f:
-        json.dump(dict(fix, polls=[pr(comments=[comment(HUMAN)])]), f)
+        json.dump(fix, f)
     if os.path.exists(os.path.join(case, "graphql.count")):
         os.remove(os.path.join(case, "graphql.count"))
     proc = start(root, case, env, fix)
     out, err = proc.communicate(timeout=30)
-    return check(name, proc, out, err, 0, [f"comment from kaminski-dev: {HUMAN}"], "deadline")
+    return check(name, proc, out, err, code, want, unwanted)
+
+
+OUTGROWN = [pr(threads=[thread(inline(7), resolved=True, total=101)])]
+# name: (polls before the restart or the state file in place of a first run, polls after it, exit code, lines stdout
+# must hold, text stdout must not hold)
+RESTARTS = {
+    "a restart replays a missed event": ([pr()], [pr(comments=[comment(HUMAN)])],
+                                         0, [f"comment from kaminski-dev: {HUMAN}"], "deadline"),
+    "a restart on an unchanged outgrown page waits for its deadline": (
+        OUTGROWN, OUTGROWN, 1,
+        ["read 1 of 101 comments on the thread at src/app.py:12, so ready is not reported on 1111111", "deadline passed"],
+        "#1 ready on"),
+    "a restart after a push, on an unchanged outgrown page, waits for its deadline": (
+        OUTGROWN, [pr(head=NEW, threads=[thread(inline(7), resolved=True, total=101)])], 1,
+        ["read 1 of 101 comments on the thread at src/app.py:12, so ready is not reported on 2222222", "deadline passed"],
+        "#1 ready on"),
+    "a restart wakes an any-change wait on a second thread at the same line that outgrew its page": (
+        OUTGROWN, [pr(threads=[thread(inline(7), resolved=True, total=101),
+                                    thread(inline(8, id="RC_2"), resolved=True, total=101)])], 0,
+        [f"{THREAD_UNREAD}\n#1 {THREAD_UNREAD}"], "deadline"),
+    "a restart on an outgrown page that grew wakes an any-change wait": (
+        OUTGROWN, [pr(threads=[thread(inline(7), resolved=True, total=102)])], 0,
+        ["read 1 of 102 comments on the thread at src/app.py:12"], "deadline"),
+    "a state file from before unread warnings were kept loads": (
+        {"reported": [], "base_oid": BASE, "merge_state": "CLEAN"}, [pr(comments=[comment(HUMAN)], totals={"comments": 130})],
+        0, [f"comment from kaminski-dev: {HUMAN}", "read 1 of 130 comments"], "deadline"),
+}
 
 
 def checkout(root, name, workflow=None):
@@ -427,7 +469,8 @@ def main():
         checkout(root, "no-bot", "- **Review bot**: `coderabbitai[bot]` on PRs into `pre-main`.")
         with ThreadPoolExecutor(8) as pool:
             jobs = [pool.submit(run_case, root, name, *spec) for name, spec in CASES.items()]
-            jobs += [pool.submit(second_watcher, root), pool.submit(restart_replays, root)]
+            jobs += [pool.submit(second_watcher, root)]
+            jobs += [pool.submit(restart, root, name, *spec) for name, spec in RESTARTS.items()]
             results = [job.result() for job in jobs]
     for line in results:
         print(line)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Adapted from t3dotgg/tstack@1085050 skills/babysit-pr/scripts/pr-wait, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: ends at a --minutes deadline (20 by default) restarted by a push to the head; the review bot and the bases it reviews come from docs/agents/workflow.md, Greptile and Macroscope gating removed; the gh user's comments are events, only those opening with dk:issue-flow's attribution note are skipped; the bot's verdict on the head (`reviews <id>...`, `clean`, `rate limited`, `paused`) taken over from wait-review.py; the repo comes from origin when neither --repo nor a URL names it; gh calls are bounded by the deadline; a line from someone not a collaborator is tagged; a page holding less than its total blocks ready and ends an any-change wait.
+# Adapted from t3dotgg/tstack@1085050 skills/babysit-pr/scripts/pr-wait, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: ends at a --minutes deadline (20 by default) restarted by a push to the head; the review bot and the bases it reviews come from docs/agents/workflow.md, Greptile and Macroscope gating removed; the gh user's comments are events, only those opening with dk:issue-flow's attribution note are skipped; the bot's verdict on the head (`reviews <id>...`, `clean`, `rate limited`, `paused`) taken over from wait-review.py; the repo comes from origin when neither --repo nor a URL names it; gh calls are bounded by the deadline; a line from someone not a collaborator is tagged; a page holding less than its total blocks ready and ends an any-change wait when its count or total changes: the state file keeps the last poll's unread pages, so a restart counts only a new or changed one.
 """pr-wait: watch one GitHub pull request and print one line per real event (dk:issue-flow step 6).
 
   python3 -I pr-wait <pr> [--until ready|green|any-change] [--repo owner/name] [--minutes 20] [--interval 20]
@@ -57,7 +57,9 @@ Events
     files they touch could not be read (the next poll reads them again)
   - merge state became BEHIND or DIRTY
   - a connection (comments, reviews, threads, a thread's comments) holds more
-    than the page read: `read <n> of <total> ...`, once per run
+    than the page read: `read <n> of <total> ...`, printed once per run, and
+    again with an event whenever the last poll, a restarted watcher's
+    included, did not report that page with the same count and total
   - the PR merged or closed
   - the deadline passed
 
@@ -347,6 +349,9 @@ class Watcher:
         self.baseline = state is None
         self.state: Json = state or {"reported": [], "base_oid": None, "merge_state": None}
         self.reported: set[str] = set(self.state["reported"])
+        # The last poll's unread pages as `read <n> of <total> <key>`, without the head SHA so a push alone does not count
+        # them again; a state file from before this field has none.
+        self.unread: set[str] = set(self.state.get("unread", []))
         self.printed: set[str] = set()
         self.events = 0
         self.head: str | None = None
@@ -365,6 +370,7 @@ class Watcher:
 
     def save(self) -> None:
         self.state["reported"] = sorted(self.reported)
+        self.state["unread"] = sorted(self.unread)
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.state))
         tmp.replace(self.path)
@@ -530,15 +536,24 @@ class Watcher:
                 self.emit(f"c:{review['id']}",
                           f"review from {speaker(review)} ({state}): {snippet(review['body'])} {review['url']}")
         # A connection holding more than the page read can hide events and threads, so ready cannot vouch for this head.
-        pages = [(pr["comments"], "comments"), (pr["reviews"], "reviews"), (pr["reviewThreads"], "review threads")]
+        # (connection, what the warning names, its key in the state file)
+        pages = [(pr["comments"], "comments", "comments"), (pr["reviews"], "reviews", "reviews"),
+                 (pr["reviewThreads"], "review threads", "review threads")]
         for t in threads:
             where = f"{t['path']}:{t['line']}" if t["line"] else t["path"]
-            pages.append((t["comments"], f"comments on the thread at {where}"))
+            nodes = t["comments"]["nodes"]
+            key = f"thread {nodes[0]['id']}" if nodes else where  # two threads can share a line; the first comment names one
+            pages.append((t["comments"], f"comments on the thread at {where}", key))
+        outgrown = [(page, what, key) for page, what, key in pages if page.get("totalCount", 0) > len(page["nodes"])]
+        unread = [f"read {len(page['nodes'])} of {page['totalCount']} {key}" for page, _, key in outgrown]
         unread_lines = [f"read {len(page['nodes'])} of {page['totalCount']} {what}, so ready is not reported on {short}"
-                        for page, what in pages if page.get("totalCount", 0) > len(page["nodes"])]
-        for line in unread_lines:
-            self.events += not self.baseline and line not in self.printed
+                        for page, what, _ in outgrown]
+        for text, line in zip(unread, unread_lines):
+            if not self.baseline and text not in self.unread:
+                self.events += 1
+                self.printed.discard(line)  # a counted warning prints again, so the event has its line
             self.say(line)
+        self.unread = set(unread)
         unresolved: list[str] = []
         for thread in threads:
             nodes = thread["comments"]["nodes"]
