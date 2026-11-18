@@ -390,12 +390,18 @@ def second_watcher(root):
 
 def restart(root, name, before, after, code, want, unwanted):
     """Two watchers in turn on one PR, both waiting for any change: the first sees the `before` polls and records its
-    baseline, the second sees the `after` polls. The second run's exit and stdout are checked."""
+    baseline, the second sees the `after` polls. The second run's exit and stdout are checked. A dict as `before` is
+    written as the state file in place of the first run."""
     fix = dict(polls=before, checks=GREEN, args=["--until", "any-change", *QUIET])
     case, env = case_env(root, name, fix)
-    out, err = start(root, case, env, fix).communicate(timeout=30)
-    if "deadline passed" not in out:
-        return f"FAIL {name}: the first run ended without its deadline: {out!r}"
+    if isinstance(before, dict):
+        os.makedirs(os.path.join(case, ".local", "state", "pr-wait"))
+        with open(os.path.join(case, ".local", "state", "pr-wait", "acme__ledger__1.json"), "w") as f:
+            json.dump(before, f)
+    else:
+        out, err = start(root, case, env, fix).communicate(timeout=30)
+        if "deadline passed" not in out:
+            return f"FAIL {name}: the first run ended without its deadline: {out!r}"
     fix = dict(fix, polls=after)
     with open(os.path.join(case, "fix.json"), "w") as f:
         json.dump(fix, f)
@@ -415,6 +421,12 @@ RESTARTS = {
         OUTGROWN, OUTGROWN, 1,
         ["read 1 of 101 comments on the thread at src/app.py:12, so ready is not reported on 1111111", "deadline passed"],
         "#1 ready on"),
+    "a restart on an outgrown page that grew wakes an any-change wait": (
+        OUTGROWN, [pr(threads=[thread(inline(7), resolved=True, total=102)])], 0,
+        ["read 1 of 102 comments on the thread at src/app.py:12"], "deadline"),
+    "a state file from before unread warnings were kept loads": (
+        {"reported": [], "base_oid": BASE, "merge_state": "CLEAN"}, [pr(comments=[comment(HUMAN)], totals={"comments": 130})],
+        0, [f"comment from kaminski-dev: {HUMAN}", "read 1 of 130 comments"], "deadline"),
 }
 
 
