@@ -226,7 +226,7 @@ def case_slow_gh_is_cut_off(root):
         name = f"slow-{budget}"
         repo = make_repo(root, name, "feat/6-slow")
         stubs = make_stubs(root, name, {"gh pr-list sleep": "30", "gh pr-list": "[]"})
-        limit = budget + SLACK
+        limit = 4 * budget + SLACK  # rev-parse, branch and status run one after another before gh, each on the budget
         try:
             code, out, _ = run(repo, stubs, env={"DK_BASELINE_TIMEOUT": str(budget)}, timeout=limit)
         except subprocess.TimeoutExpired:
@@ -235,8 +235,9 @@ def case_slow_gh_is_cut_off(root):
         if "pr list --head feat/6-slow " not in calls(stubs, "gh") or not os.path.exists(sleeping):
             return False
         cut = time.time() - os.stat(sleeping).st_mtime
-        if budget == BUDGETS[0]:  # the later budgets are as long as the default, so ignoring them would not show
-            assert cut < budget + AFTER_CUT, f"hook exited {cut:.1f} s after gh started, on a {budget} s budget"
+        # The later budgets are as long as the default, so only the first shows a hook that ignores them.
+        bound = budget + (AFTER_CUT if budget == BUDGETS[0] else SLACK)
+        assert cut < bound, f"hook exited {cut:.1f} s after gh started, on a {budget} s budget"
         assert code == 0 and out.startswith(f"{name} · feat/6-slow") and "PR" not in out, out
         return True
     within_a_budget(attempt)
