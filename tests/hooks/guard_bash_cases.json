@@ -513,5 +513,8 @@
   {"cmd": "python3 -I /x/issue-flow/pr-wait --help 'unterminated", "expect": "allow"},
   {"cmd": "perl -e 'print 1' /x/issue-flow/pr-wait 42 'unterminated", "expect": "allow"},
   {"cmd": "python3 -I /x/issue-flow/pr-wait 42 > --help 'unterminated", "expect": "deny"},
-  {"cmd": "python3 -I /x/issue-flow/pr-wait 42 >  --help 'unterminated", "expect": "deny"}
+  {"cmd": "python3 -I /x/issue-flow/pr-wait 42 >  --help 'unterminated", "expect": "deny"},
+  {"why": "PR #147 review: python's -W and -X take the next word as their value, so the script comes after it", "cmd": "python3 -W ignore ./pr-wait 42", "expect": "deny"},
+  {"cmd": "python3 -X dev -I ./pr-wait 42 'unterminated", "expect": "deny"},
+  {"cmd": "python3 -W ignore -c 'print(\"pr-wait\")'", "expect": "allow"}
 ]
