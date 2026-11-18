@@ -882,7 +882,7 @@ GH_POLL = r"\bgh" + GH_REPO_FLAG + r"\s+(?:(?:" + "|".join(
     + r"|(?!" + END + r"\sgraphql\b)(?:(?!" + END + API_WRITE + r")|(?=" + END + API_GET + r"))))"
 # `perl -e 'alarm N; exec @ARGV' <command>`: how dk:issue-flow bounds a wait where `timeout` is missing
 EXEC_ARGV = r"\bexec\s*(?:\(\s*)?@ARGV\b"
-NOT_HELP = r"(?!" + END + r"\s(?<![<>]\s)(?:-h|--help)\b)"  # help exits at once; `> --help` is a file
+NOT_HELP = r"(?!" + END + r"(?<![<>\s])\s+(?:-h|--help)\b)"  # help exits at once; `> --help` is a file
 RAW_ALARM = r"(?:perl\s+-[eE]\s*(?:'[^']*" + EXEC_ARGV + r"[^']*'|\"[^\"]*" + EXEC_ARGV + r"[^\"]*\")\s+" + PREFIX + r")?"
 RAW_WAITS = [re.compile(p, re.S) for p in (
     START + PREFIX + RAW_ALARM + r"(gh)" + GH_REPO_FLAG + r"\s+(?:pr\s+checks\b" + END + r"\s--watch\b(?!=false)|run\s+watch\b)",
