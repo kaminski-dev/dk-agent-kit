@@ -57,7 +57,8 @@ Events
     files they touch could not be read (the next poll reads them again)
   - merge state became BEHIND or DIRTY
   - a connection (comments, reviews, threads, a thread's comments) holds more
-    than the page read: `read <n> of <total> ...`, once per run
+    than the page read: `read <n> of <total> ...`, printed once per run and
+    counted as an event only the first time the state file sees that line
   - the PR merged or closed
   - the deadline passed
 
@@ -347,6 +348,8 @@ class Watcher:
         self.baseline = state is None
         self.state: Json = state or {"reported": [], "base_oid": None, "merge_state": None}
         self.reported: set[str] = set(self.state["reported"])
+        # Unread-page warnings already counted, kept across restarts; a state file from before them has none.
+        self.unread: set[str] = set(self.state.get("unread", []))
         self.printed: set[str] = set()
         self.events = 0
         self.head: str | None = None
@@ -365,6 +368,7 @@ class Watcher:
 
     def save(self) -> None:
         self.state["reported"] = sorted(self.reported)
+        self.state["unread"] = sorted(self.unread)
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.state))
         tmp.replace(self.path)
@@ -536,8 +540,9 @@ class Watcher:
             pages.append((t["comments"], f"comments on the thread at {where}"))
         unread_lines = [f"read {len(page['nodes'])} of {page['totalCount']} {what}, so ready is not reported on {short}"
                         for page, what in pages if page.get("totalCount", 0) > len(page["nodes"])]
-        for line in unread_lines:
-            self.events += not self.baseline and line not in self.printed
+        for line in unread_lines:  # printed once per run, counted once per PR
+            self.events += not self.baseline and line not in self.unread
+            self.unread.add(line)
             self.say(line)
         unresolved: list[str] = []
         for thread in threads:
