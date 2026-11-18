@@ -886,7 +886,7 @@ NOT_HELP = r"(?!" + END + r"(?<![<>\s])\s+(?:-h|--help)\b)"  # help exits at onc
 RAW_ALARM = r"(?:perl\s+-[eE]\s*(?:'[^']*" + EXEC_ARGV + r"[^']*'|\"[^\"]*" + EXEC_ARGV + r"[^\"]*\")\s+" + PREFIX + r")?"
 RAW_WAITS = [re.compile(p, re.S) for p in (
     START + PREFIX + RAW_ALARM + r"(gh)" + GH_REPO_FLAG + r"\s+(?:pr\s+checks\b" + END + r"\s--watch\b(?!=false)|run\s+watch\b)",
-    START + PREFIX + RAW_ALARM + r"(?:python[\d.]*\s+(?:-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?(pr-wait)(?=$|[\s;&|)`<>])" + NOT_HELP,
+    START + PREFIX + RAW_ALARM + r"(?:python[\d.]*\s+(?:-[WX]\s+\S+\s+|-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?(pr-wait)(?=$|[\s;&|)`<>])" + NOT_HELP,
     START + PREFIX + r"(watch)\s" + END + GH_POLL,
     START + r"(" + "|".join(LOOP_KEYWORDS) + r")\b(?=.*?" + GH_POLL + r")(?=.*?\bsleep\b)",
     START + r"(while|until)\b[^;\n]*?" + GH_POLL,
@@ -943,7 +943,9 @@ def alarm_target(words):
 
 def runs_pr_wait(words):
     if words and re.fullmatch(r"python[\d.]*", os.path.basename(words[0])):
-        words = list(itertools.dropwhile(lambda w: w.startswith("-"), words[1:]))
+        words = words[1:]
+        while words and words[0].startswith("-"):
+            words = words[2:] if words[0] in ("-W", "-X") else words[1:]  # these two take the next word
     return bool(words) and os.path.basename(words[0]) == "pr-wait" and not {"-h", "--help"} & set(words)
 
 
