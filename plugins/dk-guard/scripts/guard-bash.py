@@ -881,11 +881,12 @@ GH_POLL = r"\bgh" + GH_REPO_FLAG + r"\s+(?:(?:" + "|".join(
     rf"{group}\s+(?:{'|'.join(subs)})" for group, subs in READS.items()) + r")\b|api\b(?:" + API_QUERY \
     + r"|(?!" + END + r"\sgraphql\b)(?:(?!" + END + API_WRITE + r")|(?=" + END + API_GET + r"))))"
 # `perl -e 'alarm N; exec @ARGV' <command>`: how dk:issue-flow bounds a wait where `timeout` is missing
-EXEC_ARGV = r"\bexec\s*\(?\s*@ARGV\b"
+EXEC_ARGV = r"\bexec\s*(?:\(\s*)?@ARGV\b"
+NOT_HELP = r"(?!" + END + r"\s(?<![<>]\s)(?:-h|--help)\b)"  # help exits at once; `> --help` is a file
 RAW_ALARM = r"(?:perl\s+-[eE]\s*(?:'[^']*" + EXEC_ARGV + r"[^']*'|\"[^\"]*" + EXEC_ARGV + r"[^\"]*\")\s+" + PREFIX + r")?"
 RAW_WAITS = [re.compile(p, re.S) for p in (
     START + PREFIX + RAW_ALARM + r"(gh)" + GH_REPO_FLAG + r"\s+(?:pr\s+checks\b" + END + r"\s--watch\b(?!=false)|run\s+watch\b)",
-    START + PREFIX + RAW_ALARM + r"(?:python[\d.]*\s+(?:-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?(pr-wait)(?=$|[\s;&|)`<>])(?!" + END + r"\s(?:-h|--help)\b)",
+    START + PREFIX + RAW_ALARM + r"(?:python[\d.]*\s+(?:-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?(pr-wait)(?=$|[\s;&|)`<>])" + NOT_HELP,
     START + PREFIX + r"(watch)\s" + END + GH_POLL,
     START + r"(" + "|".join(LOOP_KEYWORDS) + r")\b(?=.*?" + GH_POLL + r")(?=.*?\bsleep\b)",
     START + r"(while|until)\b[^;\n]*?" + GH_POLL,

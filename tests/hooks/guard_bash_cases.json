@@ -511,5 +511,6 @@
   {"cmd": "python3 -I -c 'import ast; ast.parse(open(\"pr-wait\").read())'", "expect": "allow"},
   {"why": "#133 review: pr-wait's help exits at once, and a perl script without exec @ARGV runs no command", "cmd": "python3 -I /x/issue-flow/pr-wait --help", "expect": "allow"},
   {"cmd": "python3 -I /x/issue-flow/pr-wait --help 'unterminated", "expect": "allow"},
-  {"cmd": "perl -e 'print 1' /x/issue-flow/pr-wait 42 'unterminated", "expect": "allow"}
+  {"cmd": "perl -e 'print 1' /x/issue-flow/pr-wait 42 'unterminated", "expect": "allow"},
+  {"cmd": "python3 -I /x/issue-flow/pr-wait 42 > --help 'unterminated", "expect": "deny"}
 ]
