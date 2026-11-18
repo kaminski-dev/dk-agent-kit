@@ -434,6 +434,10 @@ RESTARTS = {
         OUTGROWN, [pr(head=NEW, threads=[thread(inline(7), resolved=True, total=101)])], 1,
         ["read 1 of 101 comments on the thread at src/app.py:12, so ready is not reported on 2222222", "deadline passed"],
         "#1 ready on"),
+    "a restart wakes an any-change wait on a second thread at the same line that outgrew its page": (
+        OUTGROWN, [pr(threads=[thread(inline(7), resolved=True, total=101),
+                                    thread(inline(8, id="RC_2"), resolved=True, total=101)])], 0,
+        [f"{THREAD_UNREAD}\n#1 {THREAD_UNREAD}"], "deadline"),
     "a restart on an outgrown page that grew wakes an any-change wait": (
         OUTGROWN, [pr(threads=[thread(inline(7), resolved=True, total=102)])], 0,
         ["read 1 of 102 comments on the thread at src/app.py:12"], "deadline"),
