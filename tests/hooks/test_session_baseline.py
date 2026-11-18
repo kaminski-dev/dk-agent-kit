@@ -12,6 +12,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK = os.path.join(HERE, "..", "..", "plugins", "dk-guard", "scripts", "session-baseline.py")
@@ -20,7 +21,7 @@ STUB = """#!/bin/sh
 dir=$(dirname "$0")
 echo "$*" >> "$dir/{name}.calls"
 for key in "$1-$2" "$1"; do
-  [ -f "$dir/{name}.$key.sleep" ] && sleep "$(cat "$dir/{name}.$key.sleep")"
+  [ -f "$dir/{name}.$key.sleep" ] && touch "$dir/{name}.$key.sleeping" && sleep "$(cat "$dir/{name}.$key.sleep")"
   if [ -f "$dir/{name}.$key.out" ]; then cat "$dir/{name}.$key.out"; exit 0; fi
 done
 exit 1
@@ -28,12 +29,15 @@ exit 1
 # The slow-gh case gives each git and gh call each budget in turn. A loaded machine can answer git too late for
 # 1 s, so the case first checks that the hook reached gh with the branch it read: a run that did not says the
 # machine was slow and moves to the next budget; a run that did checks the hook in full.
-BUDGETS = (1, 5)
+BUDGETS = (1, 5, 15)
 SLACK = 10  # s a loaded machine may add to a hook run beyond its budget
+# s the hook may take to exit once gh's budget ran out: under the 5 s default, so a 1 s budget it ignores shows
+AFTER_CUT = 2
 
 
 def make_stubs(root, name, answers=None):
-    """answers maps keys like 'gh pr-list' or 'docker ps' to stdout; a key ending ' sleep' to seconds."""
+    """answers maps keys like 'gh pr-list' or 'docker ps' to stdout; a key ending ' sleep' to seconds, and the stub
+    touches <tool>.<key>.sleeping when it starts that sleep."""
     path = os.path.join(root, name + "-bin")
     os.makedirs(path)
     for tool in ("gh", "docker"):
@@ -71,7 +75,6 @@ def make_repo(root, name, branch="main"):
 
 
 def within_a_budget(attempt):
-    """Call attempt(budget) for each of BUDGETS until it returns True: git answered inside that budget."""
     for budget in BUDGETS:
         if attempt(budget):
             return
@@ -229,8 +232,11 @@ def case_slow_gh_is_cut_off(root):
             code, out, _ = run(repo, stubs, env={"DK_BASELINE_TIMEOUT": str(budget)}, timeout=limit)
         except subprocess.TimeoutExpired:
             raise AssertionError(f"hook waited over {limit} s for gh") from None
-        if "pr list --head feat/6-slow " not in calls(stubs, "gh"):
+        sleeping = os.path.join(stubs, "gh.pr-list.sleeping")
+        if "pr list --head feat/6-slow " not in calls(stubs, "gh") or not os.path.exists(sleeping):
             return False
+        cut = time.time() - os.stat(sleeping).st_mtime
+        assert cut < budget + AFTER_CUT, f"hook exited {cut:.1f} s after gh started, on a {budget} s budget"
         assert code == 0 and out.startswith(f"{name} · feat/6-slow") and "PR" not in out, out
         return True
     within_a_budget(attempt)

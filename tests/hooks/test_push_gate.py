@@ -24,7 +24,7 @@ FAIL = ("#!/bin/sh\ntouch .gate-ran\necho 'first line, scrolled away'\n"
 # The timeout case gives the gate each budget in turn. A loaded machine can start a gate too late to print its
 # first line inside 1 s, so the fixture touches .started after that line: a run without it says the machine
 # was slow and moves to the next budget; a run with it checks the hook in full.
-BUDGETS = (1, 5)
+BUDGETS = (1, 5, 15)
 
 
 def git(path, *args):
@@ -74,7 +74,6 @@ def gate_ran(repo):
 
 
 def within_a_budget(attempt):
-    """Call attempt(budget) for each of BUDGETS until it returns True: the fixture started inside that budget."""
     for budget in BUDGETS:
         if attempt(budget):
             return
@@ -172,11 +171,12 @@ def case_gate_that_hangs_lets_the_push_through_and_says_so(root):
         gate = "#!/bin/sh\necho 'starting tests'\ntouch .started\nsleep 30\n"
         main, wt = make_checkout(root, f"hangs-{budget}", gate)
         code, out, err = run(main, f"cd {wt} && git push", env={"DK_PUSH_GATE_TIMEOUT": str(budget)})
-        if not os.path.exists(os.path.join(wt, ".started")):
-            return False
         assert code == 0 and out and not denial(out), (code, out, err)
         message = out.get("systemMessage", "")
-        assert f"timed out after {budget} s" in message and "starting tests" in message, out
+        assert f"timed out after {budget} s" in message, out
+        if not os.path.exists(os.path.join(wt, ".started")):
+            return False
+        assert "starting tests" in message, out
         return True
     within_a_budget(attempt)
 
