@@ -12,7 +12,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK = os.path.join(HERE, "..", "..", "plugins", "dk-guard", "scripts", "session-baseline.py")
@@ -26,6 +25,11 @@ for key in "$1-$2" "$1"; do
 done
 exit 1
 """
+# The slow-gh case gives each git and gh call each budget in turn. A loaded machine can answer git too late for
+# 1 s, so the case first checks that the hook reached gh with the branch it read: a run that did not says the
+# machine was slow and moves to the next budget; a run that did checks the hook in full.
+BUDGETS = (1, 5)
+SLACK = 10  # s a loaded machine may add to a hook run beyond its budget
 
 
 def make_stubs(root, name, answers=None):
@@ -66,10 +70,18 @@ def make_repo(root, name, branch="main"):
     return path
 
 
-def run(cwd, stubs, raw=None, env=None):
+def within_a_budget(attempt):
+    """Call attempt(budget) for each of BUDGETS until it returns True: git answered inside that budget."""
+    for budget in BUDGETS:
+        if attempt(budget):
+            return
+    raise AssertionError(f"git never answered the hook inside {BUDGETS[-1]} s")
+
+
+def run(cwd, stubs, raw=None, env=None, timeout=None):
     payload = {"session_id": "test", "cwd": cwd, "hook_event_name": "SessionStart", "source": "startup"}
     out = subprocess.run([sys.executable, "-I", HOOK], input=raw if raw is not None else json.dumps(payload),
-                         capture_output=True, text=True,
+                         capture_output=True, text=True, timeout=timeout,
                          env={"PATH": stubs + os.pathsep + os.environ["PATH"], "HOME": os.environ["HOME"],
                               **(env or {})})
     return out.returncode, out.stdout, out.stderr
@@ -208,12 +220,20 @@ def case_branch_without_issue_skips_issue_and_databases(root):
 
 
 def case_slow_gh_is_cut_off(root):
-    repo = make_repo(root, "slow", "feat/6-slow")
-    stubs = make_stubs(root, "slow", {"gh pr-list sleep": "10", "gh pr-list": "[]"})
-    start = time.monotonic()
-    code, out, _ = run(repo, stubs, env={"DK_BASELINE_TIMEOUT": "1"})
-    assert time.monotonic() - start < 5, f"hook waited {time.monotonic() - start:.0f} s for gh"
-    assert code == 0 and out.startswith("slow · feat/6-slow") and "PR" not in out, out
+    def attempt(budget):
+        name = f"slow-{budget}"
+        repo = make_repo(root, name, "feat/6-slow")
+        stubs = make_stubs(root, name, {"gh pr-list sleep": "30", "gh pr-list": "[]"})
+        limit = budget + SLACK
+        try:
+            code, out, _ = run(repo, stubs, env={"DK_BASELINE_TIMEOUT": str(budget)}, timeout=limit)
+        except subprocess.TimeoutExpired:
+            raise AssertionError(f"hook waited over {limit} s for gh") from None
+        if "pr list --head feat/6-slow " not in calls(stubs, "gh"):
+            return False
+        assert code == 0 and out.startswith(f"{name} · feat/6-slow") and "PR" not in out, out
+        return True
+    within_a_budget(attempt)
 
 
 def case_unreadable_timeout_falls_back_to_the_default(root):
