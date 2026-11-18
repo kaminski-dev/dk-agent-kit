@@ -881,11 +881,11 @@ GH_POLL = r"\bgh" + GH_REPO_FLAG + r"\s+(?:(?:" + "|".join(
     rf"{group}\s+(?:{'|'.join(subs)})" for group, subs in READS.items()) + r")\b|api\b(?:" + API_QUERY \
     + r"|(?!" + END + r"\sgraphql\b)(?:(?!" + END + API_WRITE + r")|(?=" + END + API_GET + r"))))"
 # `perl -e 'alarm N; exec @ARGV' <command>`: how dk:issue-flow bounds a wait where `timeout` is missing
-ALARM = re.compile(r"\bexec\s*\(?\s*@ARGV\b")
-RAW_ALARM = r"(?:perl\s+-[eE]\s*(?:'[^']*'|\"[^\"]*\")\s+" + PREFIX + r")?"
+EXEC_ARGV = r"\bexec\s*\(?\s*@ARGV\b"
+RAW_ALARM = r"(?:perl\s+-[eE]\s*(?:'[^']*" + EXEC_ARGV + r"[^']*'|\"[^\"]*" + EXEC_ARGV + r"[^\"]*\")\s+" + PREFIX + r")?"
 RAW_WAITS = [re.compile(p, re.S) for p in (
     START + PREFIX + RAW_ALARM + r"(gh)" + GH_REPO_FLAG + r"\s+(?:pr\s+checks\b" + END + r"\s--watch\b(?!=false)|run\s+watch\b)",
-    START + PREFIX + RAW_ALARM + r"(?:python[\d.]*\s+(?:-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?(pr-wait)(?=$|[\s;&|)`<>])",
+    START + PREFIX + RAW_ALARM + r"(?:python[\d.]*\s+(?:-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?(pr-wait)(?=$|[\s;&|)`<>])(?!" + END + r"\s(?:-h|--help)\b)",
     START + PREFIX + r"(watch)\s" + END + GH_POLL,
     START + r"(" + "|".join(LOOP_KEYWORDS) + r")\b(?=.*?" + GH_POLL + r")(?=.*?\bsleep\b)",
     START + r"(while|until)\b[^;\n]*?" + GH_POLL,
@@ -933,23 +933,22 @@ def api_reads(args):
     return (method or "GET").upper() == "GET" and (method is not None or not fields)
 
 
-def alarmed(words):
-    """The command under `perl -e '…exec @ARGV' <command>`, or `words` unchanged."""
-    if len(words) > 2 and os.path.basename(words[0]) == "perl" and words[1] in ("-e", "-E") and ALARM.search(words[2]):
+def alarm_target(words):
+    if len(words) > 2 and os.path.basename(words[0]) == "perl" and words[1] in ("-e", "-E") \
+            and re.search(EXEC_ARGV, words[2]):
         return command_words(words[3:])[1]
     return words
 
 
 def runs_pr_wait(words):
-    """True when `words` run dk:issue-flow's PR watcher, directly or through python."""
     if words and re.fullmatch(r"python[\d.]*", os.path.basename(words[0])):
         words = list(itertools.dropwhile(lambda w: w.startswith("-"), words[1:]))
-    return bool(words) and os.path.basename(words[0]) == "pr-wait"
+    return bool(words) and os.path.basename(words[0]) == "pr-wait" and not {"-h", "--help"} & set(words)
 
 
 def watches(words):
-    words = alarmed(words)
-    if runs_pr_wait(words):  # waits until the PR is ready or its 20-minute deadline passes
+    words = alarm_target(words)
+    if runs_pr_wait(words):  # blocks until its --until goal or its --minutes deadline (20 by default)
         return True
     if words and os.path.basename(words[0]) == "watch":  # watch(1) reruns its command until stopped
         return bool(re.search(GH_POLL, " ".join(words[1:])))

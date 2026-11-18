@@ -490,7 +490,7 @@
   {"cmd": "echo \"((\" ; cat <<EOF\n`id`\nEOF\necho 'x", "expect": "deny"},
   {"cmd": "cat <<E\\OF\nhi\nEOF\ngit push origin main\necho 'x", "expect": "deny"},
   {"cmd": "cat <<\"E\"OF\n`id`\nEOF\ngit push origin main\necho 'x", "expect": "deny"},
-  {"why": "#133: dk:issue-flow's PR watcher in the foreground blocks the session up to its 20-minute deadline", "cmd": "python3 -I ~/.claude/plugins/marketplaces/dk-agent-kit/plugins/dk/skills/issue-flow/pr-wait 42", "expect": "deny"},
+  {"why": "#133: dk:issue-flow's PR watcher in the foreground blocks the session until its deadline, 20 minutes by default", "cmd": "python3 -I ~/.claude/plugins/marketplaces/dk-agent-kit/plugins/dk/skills/issue-flow/pr-wait 42", "expect": "deny"},
   {"cmd": "cd ~/workspace/dk-agent-kit-124 && python3 -I ~/.claude/plugins/marketplaces/dk-agent-kit/plugins/dk/skills/issue-flow/pr-wait 42 --until green", "expect": "deny"},
   {"cmd": "/Users/me/workspace/dk-agent-kit/plugins/dk/skills/issue-flow/pr-wait 42 --minutes 30", "expect": "deny"},
   {"cmd": "timeout 1200 python3 ./pr-wait 7 --until ready 2>&1 | tail -5", "expect": "deny"},
@@ -498,6 +498,7 @@
   {"cmd": "python3 -I /x/issue-flow/pr-wait 42 'unterminated", "expect": "deny"},
   {"why": "#133: issue-flow bounds a wait with perl's alarm, the form most past foreground pr-wait calls took", "cmd": "cd /Users/me/workspace/jetztbar-1300 && perl -e 'alarm 1200; exec @ARGV' python3 -I /Users/me/workspace/dk-agent-kit/plugins/dk/skills/issue-flow/pr-wait 1301 2>&1 | tail -5", "expect": "deny"},
   {"cmd": "perl -e 'alarm 1200; exec @ARGV' gh pr checks 5 --watch", "expect": "deny"},
+  {"cmd": "perl -e 'alarm 1200; exec @ARGV' python3 -I /x/issue-flow/pr-wait 42 'unterminated", "expect": "deny"},
   {"why": "#133: the same watcher in the background, and reads or mentions of it, wait on nothing", "cmd": "cd /Users/me/workspace/jetztbar-1300 && perl -e 'alarm 1200; exec @ARGV' python3 -I /Users/me/workspace/dk-agent-kit/plugins/dk/skills/issue-flow/pr-wait 1301", "background": true, "expect": "allow"},
   {"cmd": "grep -n 'pr-wait' plugins/dk/skills/issue-flow/SKILL.md", "expect": "allow"},
   {"cmd": "cat plugins/dk/skills/issue-flow/pr-wait", "expect": "allow"},
@@ -507,5 +508,8 @@
   {"cmd": "git commit -m 'Deny a foreground pr-wait 42 (#133)'", "repo": "feature", "expect": "allow"},
   {"cmd": "python3 -I tests/test_pr_wait.py", "expect": "allow"},
   {"cmd": "python3 -m py_compile plugins/dk/skills/issue-flow/pr-wait", "expect": "allow"},
-  {"cmd": "python3 -I -c 'import ast; ast.parse(open(\"pr-wait\").read())'", "expect": "allow"}
+  {"cmd": "python3 -I -c 'import ast; ast.parse(open(\"pr-wait\").read())'", "expect": "allow"},
+  {"why": "#133 review: pr-wait's help exits at once, and a perl script without exec @ARGV runs no command", "cmd": "python3 -I /x/issue-flow/pr-wait --help", "expect": "allow"},
+  {"cmd": "python3 -I /x/issue-flow/pr-wait --help 'unterminated", "expect": "allow"},
+  {"cmd": "perl -e 'print 1' /x/issue-flow/pr-wait 42 'unterminated", "expect": "allow"}
 ]
