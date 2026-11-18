@@ -156,6 +156,7 @@ def paused(last, latest):
 GREEN = [{"name": "test", "bucket": "pass", "link": "https://ci/test", "description": ""}]
 FAILED = [{"name": "test", "bucket": "fail", "link": "https://ci/test", "description": ""}]
 PENDING = [{"name": "test", "bucket": "pending", "link": "", "description": ""}]
+THREAD_UNREAD = "read 1 of 101 comments on the thread at src/app.py:12, so ready is not reported on 1111111"
 QUIET = ["--minutes", str(1.5 / 60)]  # a case whose event must not come ends at its deadline
 HUMAN = "Please rename the flag"
 STRANGER = {"login": "drive-by", "__typename": "User"}
@@ -255,6 +256,11 @@ CASES = {
         polls=[pr(threads=[thread(inline(7), resolved=True)]), pr(threads=[thread(inline(7), resolved=True, total=101)])],
         checks=GREEN, args=["--until", "any-change", *QUIET]),
         0, ["read 1 of 101 comments on the thread at src/app.py:12"], "deadline"),
+    "a page outgrown again in one run wakes an any-change wait and is printed again": (dict(
+        polls=[pr(threads=[thread(inline(7), resolved=True, total=101)]), pr(threads=[thread(inline(7), resolved=True)]),
+               pr(threads=[thread(inline(7), resolved=True, total=101)])],
+        checks=GREEN, args=["--until", "any-change", *QUIET]),
+        0, [f"{THREAD_UNREAD}\n#1 {THREAD_UNREAD}"], "deadline"),
     "a page already outgrown at the baseline does not wake an any-change wait": (dict(
         polls=[pr(threads=[thread(inline(7), resolved=True, total=101)])],
         checks=GREEN, args=["--until", "any-change", *QUIET]),
