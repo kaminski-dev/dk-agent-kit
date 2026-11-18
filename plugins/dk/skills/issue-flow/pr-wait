@@ -57,8 +57,8 @@ Events
     files they touch could not be read (the next poll reads them again)
   - merge state became BEHIND or DIRTY
   - a connection (comments, reviews, threads, a thread's comments) holds more
-    than the page read: `read <n> of <total> ...`, printed once per run and
-    counted as an event only when the last poll, a restarted watcher's
+    than the page read: `read <n> of <total> ...`, printed once per run, and
+    again with an event whenever the last poll, a restarted watcher's
     included, did not report that page with the same count and total
   - the PR merged or closed
   - the deadline passed
@@ -349,7 +349,8 @@ class Watcher:
         self.baseline = state is None
         self.state: Json = state or {"reported": [], "base_oid": None, "merge_state": None}
         self.reported: set[str] = set(self.state["reported"])
-        # The last poll's unread-page warnings, less the head; a state file from before this field has none.
+        # The last poll's unread-page warnings without the head SHA, so a push alone does not count them again; a state
+        # file from before this field has none.
         self.unread: set[str] = set(self.state.get("unread", []))
         self.printed: set[str] = set()
         self.events = 0
@@ -543,7 +544,9 @@ class Watcher:
                   for page, what in pages if page.get("totalCount", 0) > len(page["nodes"])]
         unread_lines = [f"{text}, so ready is not reported on {short}" for text in unread]
         for text, line in zip(unread, unread_lines):
-            self.events += not self.baseline and text not in self.unread and line not in self.printed
+            if not self.baseline and text not in self.unread:
+                self.events += 1
+                self.printed.discard(line)  # a counted warning prints again, so the event has its line
             self.say(line)
         self.unread = set(unread)
         unresolved: list[str] = []
