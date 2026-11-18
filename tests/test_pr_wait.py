@@ -155,6 +155,7 @@ def paused(last, latest):
 
 GREEN = [{"name": "test", "bucket": "pass", "link": "https://ci/test", "description": ""}]
 FAILED = [{"name": "test", "bucket": "fail", "link": "https://ci/test", "description": ""}]
+PENDING = [{"name": "test", "bucket": "pending", "link": "", "description": ""}]
 QUIET = ["--minutes", str(1.5 / 60)]  # a case whose event must not come ends at its deadline
 HUMAN = "Please rename the flag"
 STRANGER = {"login": "drive-by", "__typename": "User"}
@@ -391,12 +392,13 @@ def second_watcher(root):
 def restart(root, name, before, after, code, want, unwanted):
     """Two watchers in turn on one PR, both waiting for any change: the first sees the `before` polls and records its
     baseline, the second sees the `after` polls. The second run's exit and stdout are checked. A dict as `before` is
-    written as the state file in place of the first run."""
-    fix = dict(polls=before, checks=GREEN, args=["--until", "any-change", *QUIET])
+    written as the state file in place of the first run. The check stays pending, so a new head's checks never finish."""
+    fix = dict(polls=before, checks=PENDING, args=["--until", "any-change", *QUIET])
     case, env = case_env(root, name, fix)
     if isinstance(before, dict):
-        os.makedirs(os.path.join(case, ".local", "state", "pr-wait"))
-        with open(os.path.join(case, ".local", "state", "pr-wait", "acme__ledger__1.json"), "w") as f:
+        state = os.path.join(case, ".local", "state", "pr-wait")
+        os.makedirs(state)
+        with open(os.path.join(state, "acme__ledger__1.json"), "w") as f:
             json.dump(before, f)
     else:
         out, err = start(root, case, env, fix).communicate(timeout=30)
@@ -413,7 +415,8 @@ def restart(root, name, before, after, code, want, unwanted):
 
 
 OUTGROWN = [pr(threads=[thread(inline(7), resolved=True, total=101)])]
-# name: (polls before the restart, polls after it, exit code, lines stdout must hold, text stdout must not hold)
+# name: (polls before the restart or the state file in place of a first run, polls after it, exit code, lines stdout
+# must hold, text stdout must not hold)
 RESTARTS = {
     "a restart replays a missed event": ([pr()], [pr(comments=[comment(HUMAN)])],
                                          0, [f"comment from kaminski-dev: {HUMAN}"], "deadline"),
