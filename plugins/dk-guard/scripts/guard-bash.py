@@ -819,8 +819,8 @@ class Walk:
         return self.cwd if os.path.realpath(self.cwd) == os.path.realpath(os.path.normpath(self.cwd)) else None
 
     def fill_git_dirs(self, words, seg):
-        """`words` with a `git -C` directory filled in where it is certain; a second `-C` starts at the first."""
-        if words.count("-C") != 1 or self.switched:
+        """`words` with the first `git -C` directory, where a second one starts, filled in if it is certain."""
+        if "-C" not in words or self.switched:
             return words
         k = words.index("-C") + 1
         if k == len(words) or "$" not in words[k]:

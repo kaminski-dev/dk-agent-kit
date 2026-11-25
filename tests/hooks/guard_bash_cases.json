@@ -190,6 +190,8 @@
   {"why": "PR #68 review: export expands every operand before it sets one", "cmd": "export B=.. WT=$B/feature; cd \"$WT\"; git push", "repo": "main", "expect": "ask"},
   {"cmd": "B=.. WT=$B/feature; cd \"$WT\"; git push", "repo": "main", "expect": "allow"},
   {"why": "PR #68 review: a checkout that may have changed branch in the call", "cmd": "WT=../feature; git -C \"$WT\" switch main && git -C \"$WT\" push", "repo": "main", "expect": "ask"},
+  {"cmd": "WT=~/../feature; git -C \"$WT\" switch main && git -C \"$WT\" push", "repo": "main", "expect": "ask"},
+  {"cmd": "WT=..; git -C \"$WT\" -C feature push", "repo": "main", "expect": "allow"},
   {"cmd": "WT=../feature; cd \"$WT\" && git checkout main && git push", "repo": "main", "expect": "ask"},
   {"why": "PR #68 review: a command the guard cannot read, or a wrapped cd", "cmd": "WT=../feature; cd \"$WT\"; go=cd; $go ../main-checkout; git push", "repo": "main", "expect": "ask"},
   {"cmd": "WT=../feature; cd \"$WT\"; - cd ../main-checkout; git push", "repo": "main", "expect": "ask"},
