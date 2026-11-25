@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Runs fork-guard.py as a real PreToolUse hook on Agent tool payloads.
 
-The prompts copy the shapes of past Agent calls: implementer forks were handed
-an issue to implement, a worktree with its branch, or a `git worktree add` to
-run; sweep forks were handed a slice of files in a worktree and told not to
+The prompts copy the shapes of past Agent calls: implementer forks were asked
+to implement an issue, to commit, push or open a PR, or to run `git worktree
+add`; sweep forks were handed a slice of files in a worktree and told not to
 commit. The hook denies the first kind when it is a fork and prints nothing
 otherwise.
 """
@@ -109,6 +109,68 @@ def case_a_fork_asked_to_commit_is_denied_wherever_the_ask_appears():
 def case_a_fork_told_to_implement_an_issue_with_words_in_between_is_denied():
     assert_denied(run(fork("Work on issue #42: change the code and run the tests")))
     assert_denied(run(fork("Implement the fix for issue #42 in the shared checkout; commit changes")))
+
+
+def case_an_instruction_to_commit_push_or_open_a_pr_is_denied():
+    for prompt in ("Work in src, then commit.", "Fix it, commit, push.", "Once green, commit and push.",
+                   "Set up the tree\ncommit per green step", "1. Read it\n2. Push the branch.", "**Commit** the fix",
+                   "Run `git push origin HEAD`.", "Run gh pr create --fill.", "Create a pull request when it passes.", "Please commit your changes.",
+                   "When done commit your changes.", "Work in src \u2014 commit once green.",
+                   "Work test-first, with a commit per step.", "Make the fixes, committing per step."):
+        assert_denied(run(fork(prompt)))
+
+
+def case_an_ask_after_a_negation_that_does_not_reach_it_is_denied():
+    for prompt in ("Do not touch port 5432, commit per green step.", "Never use the shared browser. Then open the PR.",
+                   "If the tests do not pass, commit the red test or the note.", "Do not push but commit your changes.",
+                   "Do not edit tests and docs, commit per step or per file.",
+                   "Do not run the whole suite and commit your changes.", "Don't forget to commit your changes.",
+                   "Do not stop at a plan, implement #42.", "Rules (never skip):\n- Commit per green step",
+                   "Read the docs first. Commit the rest."):
+        assert_denied(run(fork(prompt)))
+
+
+def case_a_negated_ask_is_allowed_wherever_the_negation_stands():
+    for prompt in ("Do not edit tests, commit, push, or open a PR.", "Never commit, push.", "Do not commit and push.",
+                   "Do not commit the notes or\nopen a PR", "Don\u2019t commit, or push the branch.",
+                   "Do not, under any circumstances, commit the files",
+                   "Do not edit files, branches or run git worktree add ../x.",
+                   "Never:\n- commit the files\n- push the branch", "Do not implement #42, only describe it.",
+                   "Change no history, e.g. git commit.", "Never run `git worktree add ../x -b y`."):
+        assert_allowed(run(fork(prompt)))
+
+
+def case_an_ask_meant_for_somebody_else_is_allowed():
+    for prompt in ("List the callers; I will review, commit and push it.", "Another fork owns #43; leave it alone.",
+                   "The other fork owns #43.", "A sibling fork owns #44.",
+                   "Sweep src; the parent will check it and open the PR."):
+        assert_allowed(run(fork(prompt)))
+
+
+def case_commit_push_and_fix_as_nouns_are_allowed():
+    for prompt in ("Report the commit list and the last push.", "Commit: abc1234", "Review the fix for #42.",
+                   "Crash between effect and commit, retries.", "Read the stub (push.jsonl).", "List the open PRs of #42.",
+                   "Review the branch that implements #42.", "Commits: 39b5a91 (fix) for issue #42.",
+                   "Commit to one answer."):
+        assert_allowed(run(fork(prompt)))
+
+
+def case_a_fork_fixing_a_slice_of_an_issues_sweep_is_allowed():
+    for prompt in ("Fix the typos in your slice of #41.", "Fix every comment for the #41 comment sweep."):
+        assert_allowed(run(fork(prompt)))
+
+
+def case_a_fork_told_to_implement_an_issue_in_other_shapes_is_denied():
+    for prompt in ("Implement #360 cleanup and verify it.", "Implement https://github.com/o/r/issues/42.",
+                   "You are the fork implementing #206 end to end.", "/dk:implement #42", "Follow the dk:implement flow.",
+                   "You are responsible for ticket #42.", "You are the fork for issue #43 only."):
+        assert_denied(run(fork(prompt)))
+
+
+def case_a_quoted_git_worktree_add_to_run_is_denied_and_a_quoted_mention_is_not():
+    assert_denied(run(fork("Use `git worktree add` for the control run.")))
+    assert_allowed(run(fork("Grep the docs for `git worktree add` and read how they use dk:implement-spec.")))
+    assert_allowed(run(fork("The doc reference: `git worktree add ../x -b y` is stale; say why.")))
 
 
 def case_a_fork_told_not_to_commit_or_open_a_pr_is_allowed():
