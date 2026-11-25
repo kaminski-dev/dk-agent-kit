@@ -102,6 +102,35 @@ def case_a_sweep_fork_in_the_parents_worktree_and_branch_is_allowed():
                             "run git commit.", description="Sweep remaining pages")))
 
 
+def case_a_fork_asked_to_commit_is_denied_wherever_the_ask_appears():
+    assert_denied(run(fork("The worktree already exists. Fix checkout for #42, commit changes and report")))
+
+
+def case_a_fork_told_to_implement_an_issue_with_words_in_between_is_denied():
+    assert_denied(run(fork("Work on issue #42: change the code and run the tests")))
+    assert_denied(run(fork("Implement the fix for issue #42 in the shared checkout; commit changes")))
+
+
+def case_a_fork_told_not_to_commit_or_open_a_pr_is_allowed():
+    assert_allowed(run(fork("Review #41; do not commit or open a PR", description="Review cart")))
+
+
+def case_a_fork_told_only_where_the_worktree_and_branch_are_is_allowed():
+    assert_allowed(run(fork("The worktree already exists on branch feat/58; inspect files and return findings only",
+                            description="Inspect cart")))
+    assert_allowed(run(fork("The worktree already exists on branch feat/58; do not commit; inspect src/cart",
+                            description="Inspect cart")))
+
+
+def case_a_fork_told_not_to_run_git_worktree_add_is_allowed():
+    assert_allowed(run(fork("Do not run git worktree add; inspect the existing checkout", description="Inspect")))
+
+
+def case_a_mention_of_git_worktree_add_is_allowed():
+    assert_allowed(run(fork("Review documentation that mentions `git worktree add`; do not run commands",
+                            description="Review docs")))
+
+
 def case_a_plain_subagent_with_the_same_prompt_is_allowed():
     for prompt in (WORKTREE_BRIEF, IMPLEMENT_BRIEF):
         assert_allowed(run({"description": "Implement #42", "prompt": prompt, "subagent_type": "general-purpose"}))
