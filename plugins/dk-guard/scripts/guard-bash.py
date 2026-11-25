@@ -119,16 +119,19 @@ class QuoteState:
             elif (inner, c) in (('"', '"'), ("`", "`"), ("$(", ")"), ("(", ")"), ("${", "}")):
                 self.open.pop()
                 self.in_word = inner != "("
-            elif c == "`" or c == "$" and line.startswith("(", i):
-                self.open.append("`" if c == "`" else "$(")
+            elif c == "`":
+                self.open.append(c)
                 self.in_word = False
-                i += c == "$"
+            elif c == "$" and line.startswith("(", i):
+                self.open.append("$(")
+                self.in_word = False
+                i += 1
             elif inner == '"':
                 pass
             elif c == "$" and line.startswith(("'", "{"), i):
                 self.open.append(c + line[i])
                 i += 1
-            elif c in "'\"(":
+            elif c in "'\"" or c == "(" and inner != "${":
                 self.open.append(c)
                 self.in_word = was_in_word or c != "("
             elif c == "#" and not was_in_word and inner != "${":
@@ -149,10 +152,12 @@ def heredoc_lines(cmd):
         pending += quotes.read_line(line)
         if quotes.continued or not pending:
             continue
-        # a body starts after the last line of its command, past a quote or substitution opened after the operator
-        depth = quotes.depth()
-        ready, pending = [p for p in pending if p[0] >= depth], [p for p in pending if p[0] < depth]
-        for _, dash, word in ready:
+        # a body starts after the last line of its command, past a quote or substitution opened after the operator;
+        # a substitution that closes first leaves its here-doc without one
+        now = quotes.depth()
+        ready = [(dash, word) for depth, dash, word in pending if depth == now]
+        pending = [(depth, dash, word) for depth, dash, word in pending if depth < now]
+        for dash, word in ready:
             delim = QUOTED_PART.sub(unquote, word)
             expands = not QUOTED_PART.search(word)
             while i < len(lines):
