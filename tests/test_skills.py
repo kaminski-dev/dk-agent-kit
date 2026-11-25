@@ -750,7 +750,7 @@ ci_slot = re.search(r"^- \*\*CI and deploy\*\*: .*(?:\n  .*)*", (DK / "skills/se
 ci_slot = ci_slot.group(0) if ci_slot else ""
 for what, pattern in (
     ("the workflow that runs the CI against `pre-main`", r"which workflow, if any, runs that CI against `pre-main`"),
-    ("that workflow by the name `gh run list --workflow` takes", r"`gh run list --workflow`"),
+    ("that workflow by the name `gh run list --workflow` takes", r"by the name `gh run list --workflow` takes"),
     ("how a run shows the commit it tested", r"how one of its runs shows the commit it tested"),
 ):
     if not re.search(pattern, ci_slot):
