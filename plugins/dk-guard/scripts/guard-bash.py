@@ -207,8 +207,8 @@ LEAD = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}", "fi
 # Words that open or close a compound command: from the first one on, a segment may run never or more than once.
 COMPOUND = LEAD | {"for", "foreach", "select", "repeat", "case", "coproc"}
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\[[^]]*\])?\+?=")
-# A source word whose dropped quotes matter: a `$` in single quotes, after a backslash or before a quote, a quoted
-# `~`, or a name that only a quote separates from more word characters (`"$WT"x`).
+# A source word whose dropped quotes matter: a `$` in single quotes, after a backslash or before a quote, a quote at or
+# after a `~`, or a name that only a quote or backslash separates from more word characters (`"$WT"x`).
 LITERAL = re.compile(r"""'[^']*\$[^']*'|\\\$|\$["']|\$\w+["'\\]+\w|^\w*=?["'\\]+(?:\w+=)?~|~[^/]*["'\\]""")
 # Commands that run the command after their own options; letters are the options that take a value.
 # A function name holds no `$` or `=`: `X=$(date)` is an assignment whose substitution reads as `$()`.
@@ -671,7 +671,8 @@ RUN_TIME = re.compile(r"[$`]")  # in a path: the guard does not know it all
 UNSEEN = {"eval", "source", ".", "trap", "pushd", "popd", "chdir"}
 SETTERS = DECLARE | {"read", "unset", "getopts", "vared"}
 SHELL_SETS = {"PWD", "OLDPWD", "REPLY", "OPTARG", "OPTIND"}
-SWITCHERS = {"checkout", "switch", "symbolic-ref"}  # git and gh subcommands that put a checkout on another branch
+# words of the git and gh calls that put a checkout on another branch
+SWITCHERS = {"checkout", "switch", "symbolic-ref", "--delete-branch"}
 
 
 def assignments(words):
@@ -705,7 +706,7 @@ class Walk:
         self.cwd, self.steps = cwd, []
         self.last_cd, self.before_last_cd = None, (None, [None])
         self.varied = False  # a `cd` so far named its directory through a variable or a substitution
-        self.literal_cwd = cwd  # where the literal `cd`s lead, wherever they ran; None once another kind counts
+        self.literal_cwd = cwd  # where the literal `cd`s lead, wherever they ran; None after another kind, until an absolute one
         self.switched = False  # a checkout may be on another branch than before the call
         self.values = {}  # name: (text, the step that set it)
 
@@ -733,7 +734,8 @@ class Walk:
                 self.doubt(name)
         self.values.update(settled)
         if words and os.path.basename(words[0]) in ("git", "gh"):
-            self.switched = self.switched or bool(SWITCHERS.intersection(words))
+            renames = "branch" in words and {"-m", "-M", "--move"}.intersection(words)
+            self.switched = self.switched or bool(renames or SWITCHERS.intersection(words))
         if words and (words[0] in UNSEEN or words[0] == "-" or RUN_TIME.search(words[0])):
             self.doubt(*self.values)
             self.steps, self.last_cd = [None], None
@@ -805,20 +807,27 @@ class Walk:
         return text if text.startswith("$") else os.path.normpath(self.join(self.cwd, text))
 
     def path(self, seg):
-        """The directory the segment runs in, None when it is known only at run time."""
-        if self.literal_cwd or self.switched or not self.holds(self.steps, seg):
-            return self.literal_cwd
+        """The directory the push rules take the segment to run in: where the literal `cd`s lead, else `sure_cwd`."""
+        return self.literal_cwd or self.sure_cwd(seg)
+
+    def sure_cwd(self, seg):
+        """The directory the segment surely runs in; None when that is known only at run time, or when a checkout may
+        have switched branch."""
+        if self.switched or not self.holds(self.steps, seg):
+            return None
         # `cd` takes `..` off the path as written, git off the directory a link leads to
         return self.cwd if os.path.realpath(self.cwd) == os.path.realpath(os.path.normpath(self.cwd)) else None
 
     def fill_git_dirs(self, words, seg):
-        """`words` with each `git -C` directory filled in where it is certain."""
-        def fill(word):
-            text, certain = self.resolve(word, seg)
-            known = certain and not self.switched and (os.path.isabs(text) or self.holds(self.steps, seg))
-            return self.join(self.cwd, text) if known else word
-
-        return [fill(w) if k and words[k - 1] == "-C" and "$" in w else w for k, w in enumerate(words)]
+        """`words` with a `git -C` directory filled in where it is certain; a second `-C` starts at the first."""
+        if words.count("-C") != 1 or self.switched:
+            return words
+        k = words.index("-C") + 1
+        if k == len(words) or "$" not in words[k]:
+            return words
+        text, certain = self.resolve(words[k], seg)
+        path = cd_into(self.sure_cwd(seg), text) if certain else None
+        return words[:k] + [path or words[k]] + words[k + 1:]
 
 
 def commands(segs, cwd):
