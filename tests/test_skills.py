@@ -745,6 +745,17 @@ if not runs or any("--workflow" not in r for r in runs) or "workflow.md" not in 
                   "run per CI workflow workflow.md names (`gh run list --workflow`) that tested pre-main's head, "
                   "never the latest run of any")
 
+# Evidence's pre-main run needs a workflow.md that names the workflow and the commit its runs tested (#106).
+ci_slot = re.search(r"^- \*\*CI and deploy\*\*: .*(?:\n  .*)*", (DK / "skills/setup/workflow-parameters.md").read_text(), re.M)
+ci_slot = ci_slot.group(0) if ci_slot else ""
+for what, pattern in (
+    ("the workflow that runs the CI against `pre-main`", r"which workflow, if any, runs that CI against `pre-main`"),
+    ("that workflow by the name `gh run list --workflow` takes", r"`gh run list --workflow`"),
+    ("how a run shows the commit it tested", r"how one of its runs shows the commit it tested"),
+):
+    if not re.search(pattern, ci_slot):
+        errors.append(f"skills/setup: workflow-parameters.md's **CI and deploy** does not ask for {what}")
+
 # PR, spec and research diagrams follow one set of rules, kept in dk:pr (#116): labels and arrows from pstack
 # statechart, the box and word limits from pstack ketchup, the build-up series from teach.
 pr_skill = skills["pr"].read_text()
