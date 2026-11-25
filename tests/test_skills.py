@@ -541,6 +541,9 @@ for what, pattern in (
     # CodeRabbit on #136 (#112): the threshold is judged on errors both sides report.
     ("each side's error count reported beside the threshold", r"median and range, with each side's error count"),
     ("the work confirmed to have happened", r"work confirmed to have happened"),
+    # CodeRabbit local review on #136 (#138): two readings of spread or effect give two verdicts on the same runs.
+    ("what spread and effect are, in one unit",
+     r"[Ss]pread is the wider of the two sides' ranges[^|]*effect the absolute difference of the medians[^|]*unit"),
     ("the inconclusive verdict when the spread is larger than the effect",
      r"spread larger than the effect.*\*\*inconclusive\*\*"),
 ):
