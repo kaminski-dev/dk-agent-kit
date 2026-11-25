@@ -195,7 +195,7 @@ for what, pattern in (
     ("a rare path or small cost kept a nit only when its impact is small", IMPACT),
     ("each next-round prompt carrying its own axis's ledger rows", r"its own axis's ledger rows"),
     ("each open id reaching the next round with its claim and location",
-     r"\*\*Next round\*\*[^\n]*each open id's original claim and `file:line` from the report"),
+     r"\*\*Next round\*\*[^\n]*each open id's original claim and `file:line` from the report that raised it"),
     ("the nits-only stop only when no nit's fix changed behaviour code", r"round brings only nits[^.]*no behaviour code"),
     # CodeRabbit on #136, round 2 (#112): a declined nit has no issue, so the report names one only when filed.
     ("an issue number reported only for a declined finding scope intake filed",
@@ -512,7 +512,7 @@ if not re.search(r"\"Picking up a handoff\" section.*verbatim", written):
 if not re.search(r"Right below that section, name the branch, its worktree path, the issue and the PR[^\n]*`none`",
                  written):
     errors.append("skills/handoff: the written document must name its branch, worktree path, issue and PR "
-                  "(or `none`) near the top")
+                  "(or `none`) right below that section")
 if not re.search(r"\A---\n.*?\n---\n\n<!-- Adapted from t3dotgg/tstack@[0-9a-f]+ skills/takeover, MIT \(© 2026 Theo Browne\)\. ",
                  handoff, re.S):
     errors.append("skills/handoff: no `<!-- Adapted from t3dotgg/tstack@<commit> skills/takeover, MIT (© 2026 Theo Browne).` "
