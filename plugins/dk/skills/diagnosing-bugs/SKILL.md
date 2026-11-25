@@ -3,7 +3,7 @@ name: diagnosing-bugs
 description: Diagnosis loop for a bug or slowdown whose cause is unknown. Use when asked to diagnose or debug, or something breaks, throws, fails or is slow.
 ---
 
-<!-- Adapted from mattpocock/skills@4ae2317 skills/engineering/diagnosing-bugs, MIT (© 2026 Matt Pocock). Changed for dk-agent-kit: model-invoked with a shorter description; loops and the HITL copy live in the issue's scratch folder, and the user runs that copy in their own terminal, pasting its output back redacted as Phase 1's run; artifacts captured through the helper docs/agents/observability.md names; the regression test goes through dk:tdd and the final proof through dk:verify, whose control run carries the Phase 2 scenario, at the branch's last pre-fix commit for a bug born on the branch; the confirmed cause goes into the PR through dk:pr; a missing seam is handed to the user's /dk:improve-codebase-architecture. -->
+<!-- Adapted from mattpocock/skills@4ae2317 skills/engineering/diagnosing-bugs, MIT (© 2026 Matt Pocock). Changed for dk-agent-kit: model-invoked with a shorter description; loops and the HITL copy live in the issue's scratch folder, and the user runs that copy in their own terminal, pasting its output back redacted as Phase 1's run; artifacts captured through the helper docs/agents/observability.md names; the regression test goes through dk:tdd and the final proof through dk:verify, whose control run carries the Phase 2 scenario, at the branch's last pre-fix commit for a bug born on the branch; the confirmed cause goes into the PR through dk:pr; a missing seam is handed to the user's /dk:improve-codebase-architecture, while the fix goes ahead, proven by the Phase 1 loop and dk:verify's control run. -->
 
 # Diagnosing Bugs
 
@@ -125,7 +125,7 @@ Write the regression test **before the fix**, but only if there is a **correct s
 
 A correct seam is one where the test exercises the **real bug pattern** as it occurs at the call site. If the only available seam is too shallow (single-caller test when the bug needs multiple callers, unit test that can't replicate the chain that triggered the bug), a regression test there gives false confidence.
 
-**If no correct seam exists, that itself is the finding.** The codebase architecture is preventing the bug from being locked down. State it in your report and in the PR, and recommend the user run `/dk:improve-codebase-architecture` to find the seam; it is user-invoked, so starting it is theirs.
+**If no correct seam exists, that itself is the finding.** The codebase architecture is preventing the bug from being locked down. State it in your report and in the PR, and recommend the user run `/dk:improve-codebase-architecture` to find the seam; it is user-invoked, so starting it is theirs. The fix goes ahead without waiting for that work: the Phase 1 loop turning green and `dk:verify`'s control run prove it, in place of the regression test `dk:verify`'s Bug fix row asks for.
 
 If a correct seam exists, call the Skill tool with `dk:tdd`, propose that seam under its seam rule, and run its loop through these steps:
 
@@ -140,7 +140,7 @@ If a correct seam exists, call the Skill tool with `dk:tdd`, propose that seam u
 Required before declaring done:
 
 - [ ] Original repro no longer reproduces (re-run the Phase 1 loop)
-- [ ] Regression test passes (or absence of seam is documented)
+- [ ] Regression test passes; with no correct seam, the missing seam is recorded in the report and the PR, and the Phase 1 loop and `dk:verify`'s control run are the proof
 - [ ] All `[DEBUG-...]` instrumentation removed (`grep` the prefix)
 - [ ] Throwaway harnesses and scripts sit in `$SCRATCH/<N>/`, and `git status` shows none in the tree
 - [ ] The fix is proven: call the Skill tool with `dk:verify`, with the loop kept in Phase 2 as its control run's scenario, and the branch's last pre-fix commit as the control when the bug came in on this branch (`dk:verify` step 4)
