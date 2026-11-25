@@ -194,9 +194,8 @@ for what, pattern in (
     ("severity by impact and likelihood", r"impact and likelihood"),
     ("a rare path or small cost kept a nit only when its impact is small", IMPACT),
     ("each next-round prompt carrying its own axis's ledger rows", r"its own axis's ledger rows"),
-    # CodeRabbit local review on #136 (#138): id, severity and outcome do not say which claim an open id was.
     ("each open id reaching the next round with its claim and location",
-     r"\*\*Next round\*\*[^\n]*each open id with its original claim and `file:line`"),
+     r"\*\*Next round\*\*[^\n]*each open id's original claim and `file:line` from the report"),
     ("the nits-only stop only when no nit's fix changed behaviour code", r"round brings only nits[^.]*no behaviour code"),
     # CodeRabbit on #136, round 2 (#112): a declined nit has no issue, so the report names one only when filed.
     ("an issue number reported only for a declined finding scope intake filed",
@@ -490,6 +489,7 @@ if not re.search(r"skipped inline finding.*thread", skipped) or not re.search(
 
 # The agent picking up a handoff never loads the skill, so the written document carries the pickup rules (#118).
 handoff = skills["handoff"].read_text()
+written = handoff[:handoff.find("## Picking up")]
 pickup = re.search(r"^## Picking up a handoff\n.*?(?=^## |\Z)", handoff, re.M | re.S)
 pickup = pickup.group(0) if pickup else ""
 for what, pattern in (
@@ -507,11 +507,10 @@ for what, pattern in (
 ):
     if not re.search(pattern, pickup, re.S):
         errors.append(f"skills/handoff: its 'Picking up a handoff' section does not name {what}")
-if not re.search(r"\"Picking up a handoff\" section.*verbatim", handoff[:handoff.find("## Picking up")]):
+if not re.search(r"\"Picking up a handoff\" section.*verbatim", written):
     errors.append("skills/handoff: the written document must open with the 'Picking up a handoff' section, copied verbatim")
-# CodeRabbit local review on #136 (#138): the pickup checks the branch, issue and PR the document names.
-if not re.search(r"near the top, [^\n]*branch, its worktree path, the issue and the PR[^\n]*`none`",
-                 handoff[:handoff.find("## Picking up")]):
+if not re.search(r"Right below that section, name the branch, its worktree path, the issue and the PR[^\n]*`none`",
+                 written):
     errors.append("skills/handoff: the written document must name its branch, worktree path, issue and PR "
                   "(or `none`) near the top")
 if not re.search(r"\A---\n.*?\n---\n\n<!-- Adapted from t3dotgg/tstack@[0-9a-f]+ skills/takeover, MIT \(© 2026 Theo Browne\)\. ",
@@ -546,9 +545,9 @@ for what, pattern in (
     # CodeRabbit on #136 (#112): the threshold is judged on errors both sides report.
     ("each side's error count reported beside the threshold", r"median and range, with each side's error count"),
     ("the work confirmed to have happened", r"work confirmed to have happened"),
-    # CodeRabbit local review on #136 (#138): two readings of spread or effect give two verdicts on the same runs.
     ("what spread and effect are, in one unit",
-     r"[Ss]pread is the wider of the two sides' ranges[^|]*effect the absolute difference of the medians[^|]*unit"),
+     r"[Ss]pread is the wider of the two sides' ranges \(max minus min\)[^|]*effect the absolute difference of the medians"
+     r"[^|]*the metric's own unit"),
     ("the inconclusive verdict when the spread is larger than the effect",
      r"spread larger than the effect.*\*\*inconclusive\*\*"),
 ):
@@ -664,11 +663,11 @@ else:
         ("a bug born on the branch, whose control is its last pre-fix commit", r"last pre-fix commit[^.]*`dk:verify` step 4"),
         ("the confirmed cause into the PR through dk:pr", r"Skill tool with `dk:pr`"),
         ("a missing seam routed to the user's /dk:improve-codebase-architecture", r"`/dk:improve-codebase-architecture`"),
-        # CodeRabbit local review on #136 (#138): the seamless branch said nothing about the fix Phase 6 still asks for.
         ("the fix going ahead without a seam, proven by the loop and dk:verify's control run",
-         r"\*\*If no correct seam exists[^\n]*fix goes ahead[^\n]*Phase 1 loop[^\n]*`dk:verify`'s control run"),
+         r"\*\*If no correct seam exists[^\n]*fix goes ahead without waiting[^\n]*Phase 1 loop[^\n]*`dk:verify`'s control run"
+         r"[^\n]*in place of the regression test"),
         ("the same proof in Phase 6's checklist when there is no seam",
-         r"- \[ \] Regression test passes[^\n]*no correct seam[^\n]*Phase 1 loop[^\n]*`dk:verify`'s control run"),
+         r"- \[ \] Regression test passes[^\n]*no correct seam[^\n]*recorded in the report and the PR[^\n]*Phase 1 loop[^\n]*`dk:verify`'s control run"),
         # CodeRabbit local review on #136 (#112): the user runs the HITL copy, so their pasted run is the one Phase 1 needs.
         ("the user's pasted HITL run counting as Phase 1's run", r"HITL[^.]*the user's run counts"),
     ):
