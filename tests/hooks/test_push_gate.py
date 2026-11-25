@@ -174,6 +174,13 @@ def case_directory_known_only_at_run_time_runs_no_gate_and_says_so(root):
     assert not gate_ran(wt)
 
 
+def case_directory_the_call_creates_runs_no_gate_and_says_so(root):
+    main, wt = make_checkout(root, "created", FAIL)
+    code, out, err = run(main, f'WT={wt}-new; git worktree add "$WT" -b feat/new && cd "$WT" && git push origin feat/new')
+    context = ((out or {}).get("hookSpecificOutput") or {}).get("additionalContext", "")
+    assert code == 0 and not denial(out) and "did not run" in context, (code, out, err)
+
+
 def case_gate_that_hangs_lets_the_push_through_and_says_so(root):
     def attempt(budget):
         gate = "#!/bin/sh\necho 'starting tests'\ntouch .started\nsleep 30\n"
