@@ -9,7 +9,7 @@ The kit's scripts take the repo they ask `gh` about from the checkout's `origin`
 | origin URL | repo |
 |---|---|
 | `git@github.com:o/r.git`, `https://GitHub.com/o/r.git`, `ssh://git@github.com:22/o/r.git` | `o/r` |
-| `https://notgithub.com/o/r.git`, `git@gh-work:o/r.git`, `git@ghe.corp.example:o/r.git`, `https://mirror.example/github.com/o/r.git` (a `github.com` in another host's path, query or fragment, or in a local path) | none |
+| `https://notgithub.com/o/r.git`, `git@gh-work:o/r.git`, `git@ghe.corp.example:o/r.git`, `https://mirror.example/github.com/o/r.git` (a `github.com` in another host's path, query or fragment, or below the first directory of a local path) | none |
 
 The alternative, letting `gh` resolve the repo itself (even with an inherited `GH_REPO` stripped), lets `gh repo set-default` or `gh`'s ranking of remotes (an `upstream` ahead of `origin`) pick a repo other than the checkout's own. That is the bug class #97 closed: a script reading another repo's PRs and issues without an error, and an agent acting on them. One rule, `origin`, keeps the answer the same in every shell.
 
