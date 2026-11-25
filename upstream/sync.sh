@@ -12,15 +12,19 @@ if [[ -z "$dir" ]]; then
   trap 'rm -rf "$dir"' EXIT
 fi
 
-# One line per source: "<owner/repo> <commit> <path>...", from each
-# "## <owner>/<repo> ... @ <commit>" heading and the Upstream path column
-# (comma-separated, each listed once) of the table under it.
+# One line per source: "<owner/repo> <commit> <branch> <path>...", from each
+# "## <owner>/<repo> ... @ <commit>[..<branch>]" heading (HEAD when it names no
+# branch) and the Upstream path column (comma-separated, each listed once) of
+# the table under it.
 sources() {
   awk '
-    function flush() { if (repo != "" && paths != "") print repo, commit, paths }
+    function flush() { if (repo != "" && paths != "") print repo, commit, branch, paths }
     /^## / {
       flush(); repo = ""; paths = ""; rows = 0; split("", seen)
-      if (match($0, / @ [0-9a-f]+$/)) { repo = $2; commit = substr($0, RSTART + 3) }
+      if (match($0, / @ [0-9a-f]+(\.\.[^ ]+)?$/)) {
+        repo = $2; commit = substr($0, RSTART + 3); branch = "HEAD"
+        if (i = index(commit, "..")) { branch = substr(commit, i + 2); commit = substr(commit, 1, i - 1) }
+      }
       next
     }
     repo != "" && /^\|/ {
@@ -32,7 +36,7 @@ sources() {
   ' "$here/UPSTREAM.md"
 }
 
-while read -r repo base paths <&3; do
+while read -r repo base branch paths <&3; do
   clone="$dir/$repo"
   if [[ -d "$clone/.git" ]]; then
     git -C "$clone" fetch -q origin
@@ -42,7 +46,7 @@ while read -r repo base paths <&3; do
   else
     git clone -q "https://github.com/$repo" "$clone"
   fi
-  head=$(git -C "$clone" rev-parse --short refs/remotes/origin/HEAD)
+  head=$(git -C "$clone" rev-parse --short "refs/remotes/origin/$branch")
   out=""
   for p in $paths; do
     if ! git -C "$clone" cat-file -e "$base:$p" 2>/dev/null; then
@@ -62,7 +66,7 @@ while read -r repo base paths <&3; do
   fi
 done 3< <(sources)
 if [[ -n "${1:-}" ]]; then
-  echo "Full diff of one path: git -C $dir/<owner>/<repo> diff <recorded> origin/HEAD -- <path>"
+  echo "Full diff of one path: git -C $dir/<owner>/<repo> diff <recorded>..<head> -- <path>, with <recorded>..<head> as printed above"
 else
-  echo "Full diff of one path: rerun as upstream/sync.sh <clones-dir> to keep the clones, then git -C <clones-dir>/<owner>/<repo> diff <recorded> origin/HEAD -- <path>"
+  echo "Full diff of one path: rerun as upstream/sync.sh <clones-dir> to keep the clones, then git -C <clones-dir>/<owner>/<repo> diff <recorded>..<head> -- <path>, with <recorded>..<head> as printed above"
 fi
