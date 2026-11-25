@@ -100,7 +100,7 @@ class QuoteState:
         self.in_word, self.continued = self.in_word and self.continued, False
         while i < len(line):
             c, inner, was_in_word = line[i], self.open[-1] if self.open else "", self.in_word
-            self.in_word = was_in_word if c == "(" else c not in " \t;&|<>"
+            self.in_word = c not in " \t;&|"
             i += 1
             if c == "\\" and inner != "'":
                 self.continued = i == len(line)
@@ -116,7 +116,6 @@ class QuoteState:
                 self.open.append(c)
             elif c == "$" and line.startswith("(", i):
                 self.open.append("(")
-                self.in_word = False
                 i += 1
             elif inner == '"':
                 pass
