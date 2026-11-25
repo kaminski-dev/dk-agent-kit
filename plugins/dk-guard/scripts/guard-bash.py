@@ -71,7 +71,7 @@ def unquote(part):
 
 
 def without_arithmetic(line):
-    """The line with each $((...)) and ((...)) that closes on it cut out, since a << in one is a shift."""
+    """The line with the < in each $((...)) and ((...)) that closes on it blanked, since a << in one is a shift."""
     opens, spans = [], []
     for i, c in enumerate(line):
         if c == "(":
@@ -82,21 +82,82 @@ def without_arithmetic(line):
                 spans.append((start, i + 1))
     kept, end = [], 0
     for start, stop in sorted(spans):
-        if start >= end:  # an outermost span; a nested one lies inside the cut already
-            kept.append(line[end:start] + " ")
+        if start >= end:  # an outermost span; a nested one lies inside the blanked one already
+            kept += line[end:start], line[start:stop].replace("<", " ")
             end = stop
     return "".join(kept) + line[end:]
+
+
+class QuoteState:
+    """What is still open after the command lines read so far, innermost last: quotes, substitutions, `${` and plain
+    parentheses. A `${` inside double quotes is not tracked, so a quote in it counts as the outer string's."""
+
+    def __init__(self):
+        self.open, self.in_word, self.continued = [], False, False
+
+    def depth(self):
+        """How many of them hold back a here-doc body; plain parentheses do not."""
+        return sum(o != "(" for o in self.open)
+
+    def read_line(self, line):
+        """Read one command line and return the (depth, dash, word) of each here-doc it opens outside quotes and
+        comments."""
+        line, found, i = without_arithmetic(line), [], 0
+        self.in_word, self.continued = self.in_word and self.continued, False
+        while i < len(line):
+            c, inner, was_in_word = line[i], self.open[-1] if self.open else "", self.in_word
+            self.in_word = c not in " \t;&|<>)"
+            i += 1
+            if c == "\\" and inner != "'":
+                self.continued = i == len(line)
+                if self.continued:
+                    self.in_word = was_in_word
+                i += 1
+            elif inner in ("'", "$'"):
+                if c == "'":
+                    self.open.pop()
+            elif (inner, c) in (('"', '"'), ("`", "`"), ("$(", ")"), ("(", ")"), ("${", "}")):
+                self.open.pop()
+                self.in_word = inner != "("
+            elif c == "`":
+                self.open.append(c)
+                self.in_word = False
+            elif c == "$" and line.startswith("(", i):
+                self.open.append("$(")
+                self.in_word = False
+                i += 1
+            elif inner == '"':
+                pass
+            elif c == "$" and line.startswith(("'", "{"), i):
+                self.open.append(c + line[i])
+                i += 1
+            elif c in "'\"" or c == "(" and inner != "${":
+                self.open.append(c)
+                self.in_word = was_in_word or c != "("
+            elif c == "#" and not was_in_word and inner != "${":
+                break
+            elif c == "<" and (m := HEREDOC.match(line, i - 1)):
+                found.append((self.depth(), *m.groups()))
+        return found
 
 
 def heredoc_lines(cmd):
     """Yield (line, None) for each command line and (line, expands) for each line of a heredoc body, `expands`
     True when no part of its delimiter word is quoted or escaped."""
-    lines, i = cmd.split("\n"), 0
+    lines, i, quotes, pending = cmd.split("\n"), 0, QuoteState(), []
     while i < len(lines):
         line = lines[i]
         i += 1
         yield line, None
-        for dash, word in HEREDOC.findall(without_arithmetic(line)):
+        pending += quotes.read_line(line)
+        if quotes.continued or not pending:
+            continue
+        # a body starts after the last line of its command, past a quote or substitution opened after the operator;
+        # with its own substitution closed, it has none (one reopened at the same depth is not told apart)
+        now = quotes.depth()
+        ready = [(dash, word) for depth, dash, word in pending if depth == now]
+        pending = [(depth, dash, word) for depth, dash, word in pending if depth < now]
+        for dash, word in ready:
             delim = QUOTED_PART.sub(unquote, word)
             expands = not QUOTED_PART.search(word)
             while i < len(lines):
