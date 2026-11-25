@@ -21,6 +21,10 @@ PASS = "#!/bin/sh\necho 'lint ok'\ntouch .gate-ran\n"
 FAIL = ("#!/bin/sh\ntouch .gate-ran\necho 'first line, scrolled away'\n"
         "for i in $(seq 1 60); do echo \"noise $i\"; done\n"
         "echo 'src/a.ts(3,1): error TS2304: Cannot find name foo' >&2\nexit 1\n")
+# The timeout case gives the gate each budget in turn. A loaded machine can start a gate too late to print its
+# first line inside 1 s, so the fixture touches .started after that line: a run without it says the machine
+# was slow and moves to the next budget; a run with it checks the hook in full.
+BUDGETS = (1, 5, 15)
 
 
 def git(path, *args):
@@ -67,6 +71,13 @@ def run(cwd, command, env=None):
 
 def gate_ran(repo):
     return os.path.exists(os.path.join(repo, ".gate-ran"))
+
+
+def within_a_budget(attempt):
+    for budget in BUDGETS:
+        if attempt(budget):
+            return
+    raise AssertionError(f"the fixture gate never printed its first line inside {BUDGETS[-1]} s")
 
 
 def denial(out):
@@ -156,10 +167,18 @@ def case_directory_known_only_at_run_time_runs_no_gate_and_says_so(root):
 
 
 def case_gate_that_hangs_lets_the_push_through_and_says_so(root):
-    main, wt = make_checkout(root, "hangs", "#!/bin/sh\necho 'starting tests'\nsleep 30\n")
-    code, out, err = run(main, f"cd {wt} && git push", env={"DK_PUSH_GATE_TIMEOUT": "1"})
-    assert code == 0 and out and not denial(out), (code, out, err)
-    assert "timed out after 1 s" in out.get("systemMessage", "") and "starting tests" in out["systemMessage"], out
+    def attempt(budget):
+        gate = "#!/bin/sh\necho 'starting tests'\ntouch .started\nsleep 30\n"
+        main, wt = make_checkout(root, f"hangs-{budget}", gate)
+        code, out, err = run(main, f"cd {wt} && git push", env={"DK_PUSH_GATE_TIMEOUT": str(budget)})
+        assert code == 0 and out and not denial(out), (code, out, err)
+        message = out.get("systemMessage", "")
+        assert f"timed out after {budget} s" in message, out
+        if not os.path.exists(os.path.join(wt, ".started")):
+            return False
+        assert "starting tests" in message, out
+        return True
+    within_a_budget(attempt)
 
 
 def case_decisions_go_to_the_guard_log(root):
