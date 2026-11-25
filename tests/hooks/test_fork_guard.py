@@ -117,7 +117,8 @@ def case_an_instruction_to_commit_push_or_open_a_pr_is_denied():
                    "Run `git push origin HEAD`.", "Run gh pr create --fill.", "Create a pull request when it passes.", "Please commit your changes.",
                    "When the tests pass commit your changes.", "Now commit the fix.", "Commit src/cart.ts and report.",
                    "Open a new PR.", "Run `git add -A && git commit -m x`.", "Steps:\n1) Fix it\n2) Push the branch",
-                   "I am away, so commit the fix.", "Work in src \u2014 commit once green.",
+                   "I will be away, so commit the fix.",
+                   "I will review it while you commit the rest.", "At each step commit per change.", "Work in src \u2014 commit once green.",
                    "Work test-first, with a commit per step.", "Make the fixes, committing per step."):
         assert_denied(run(fork(prompt)))
 
@@ -127,7 +128,7 @@ def case_an_ask_after_a_negation_that_does_not_reach_it_is_denied():
                    "If the tests do not pass, commit the red test or the note.", "Do not push but commit your changes.",
                    "Do not edit tests and docs, commit per step or per file.",
                    "Do not push, commit per green step.", "Do not delegate, implement #42.",
-                   "Do not run the whole suite and commit your changes.", "Don't forget to commit your changes.",
+                   "Do not run the whole suite and commit your changes.", "Don't forget to commit the rest.", "Do not work on main so push the branch.",
                    "Do not stop at a plan, implement #42.", "Rules (never skip):\n- Commit per green step",
                    "Read the docs first. Commit the rest."):
         assert_denied(run(fork(prompt)))
@@ -160,7 +161,8 @@ def case_commit_push_and_fix_as_nouns_are_allowed():
     for prompt in ("Report the commit list and the last push.", "Commit: abc1234", "Review the fix for #42.",
                    "Crash between effect and commit, retries.", "Read the stub (push.jsonl).", "List the open PRs of #42.",
                    "Review the branch that implements #42.", "Commits: 39b5a91 (fix) for issue #42.",
-                   "Commit to one answer."):
+                   "Commit to one answer.",
+                   "Check the audit after commit per #602.", 'Check step 4, "commit per green step".'):
         assert_allowed(run(fork(prompt)))
 
 
