@@ -11,8 +11,9 @@ push with the gate's last lines; a passing gate is silent.
 
 Pushes of verify-assets/*, branch deletes and pushes guard-bash.py denies
 anyway run no gate. A checkout without a gate, or no checkout at all: nothing
-happens. A directory known only at run time (`cd "$WT" && git push`) runs no
-gate either, and the agent is told so.
+happens. A directory known only at run time (`cd "$(…)" && git push`, or `$WT`
+when the call does not set it or may have switched the checkout's branch), or
+missing before the call, runs no gate either, and the agent is told so.
 
 It fails open: a gate that outlives TIMEOUT is killed and the push goes through
 with a message to the user. A crash, or the hook's own timeout in hooks.json,
@@ -40,7 +41,7 @@ def git_commands(cmd, cwd, guard):
     segs = guard.split(cmd)
     if segs is None:  # the guard's raw-string fallback, so an unsplittable command is still gated
         raw = guard.strip_heredocs(cmd)
-        return [(tokens, guard.effective_cwd(raw, offset, cwd)) for offset, tokens in guard.segments(raw, "git")]
+        return list(guard.raw_git(raw, cwd))
     return [(words, path) for _, words, path in guard.commands(segs, cwd)
             if words and os.path.basename(words[0]) == "git"]
 
@@ -70,13 +71,13 @@ def gated(rest, path, guard):
 
 def push_roots(cmd, cwd, guard, stop):
     """(the checkout roots of the command's gated pushes, in order, without repeats; whether a gated push runs in a
-    directory known only at run time)."""
+    directory known only at run time, or one that does not exist yet)."""
     roots, unknown = [], False
     for tokens, path in git_commands(cmd, cwd, guard):
         args, path = guard.git_subcommand(tokens, path)
         if args[:1] != ["push"] or not gated(args[1:], path, guard):
             continue
-        if path is None:
+        if path is None or not os.path.isdir(path):
             unknown = True
             continue
         root = (stop.git(path, "rev-parse", "--show-toplevel") or "").strip()
@@ -120,8 +121,9 @@ def main():
         out["hookSpecificOutput"] = {
             "hookEventName": "PreToolUse",
             "additionalContext": f"dk-guard: {stop.GATE} did not run for this push: its directory is known only at "
-                                 "run time. Write the worktree path literally (`cd <worktree> && git push`), or run "
-                                 "the gate there by hand."}
+                                 "run time, or does not exist before the call. Push in a call of its own with the "
+                                 "worktree path written literally (`cd <worktree> && git push`), or run the gate "
+                                 "there by hand."}
     if out:
         print(json.dumps(out))
 

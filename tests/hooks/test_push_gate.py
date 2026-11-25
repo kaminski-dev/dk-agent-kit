@@ -158,12 +158,27 @@ def case_push_outside_a_repo_does_nothing(root):
     assert run(root, f"cd {plain} && git push origin feat/x") == (0, None, "")
 
 
+def case_directory_in_a_variable_the_call_sets_runs_its_gate(root):
+    main, wt = make_checkout(root, "same-call", FAIL)
+    for push in ('cd "$WT" && git push origin feat/same-call', 'git -C "$WT" push origin feat/same-call'):
+        _, out, _ = run(main, f"WT={wt}; {push}")
+        assert denial(out) and gate_ran(wt), (push, out)
+        os.remove(os.path.join(wt, ".gate-ran"))
+
+
 def case_directory_known_only_at_run_time_runs_no_gate_and_says_so(root):
     main, wt = make_checkout(root, "runtime", FAIL)
-    code, out, err = run(main, f'WT={wt}; cd "$WT" && git push origin feat/runtime')
+    code, out, err = run(main, f'WT=$(echo {wt}); cd "$WT" && git push origin feat/runtime')
     context = ((out or {}).get("hookSpecificOutput") or {}).get("additionalContext", "")
     assert code == 0 and not denial(out) and "did not run" in context, (code, out, err)
     assert not gate_ran(wt)
+
+
+def case_directory_the_call_creates_runs_no_gate_and_says_so(root):
+    main, wt = make_checkout(root, "created", FAIL)
+    code, out, err = run(main, f'WT={wt}-new; git worktree add "$WT" -b feat/new && cd "$WT" && git push origin feat/new')
+    context = ((out or {}).get("hookSpecificOutput") or {}).get("additionalContext", "")
+    assert code == 0 and not denial(out) and "did not run" in context, (code, out, err)
 
 
 def case_gate_that_hangs_lets_the_push_through_and_says_so(root):

@@ -3,7 +3,7 @@
 
 Each case runs in a throwaway git repo checked out on `main` or on a feature
 branch, so implicit pushes resolve the way they would in a session (`"repo":
-"verify"`: in a dk:verify run directory, `<scratch>/50/verify.Ab3dE9`), and with a
+"verify"`: in a dk:verify run directory, `<scratch>/50/verify.Ab3dE9`; the `main` one holds `linked`, a link into the feature repo), and with a
 throwaway HOME whose zsh alias list holds ALIASES (`"aliases": false`: a HOME
 without the list). A case with `max_seconds` fails when the hook takes longer.
 """
@@ -67,6 +67,7 @@ def main():
                  "none": root,
                  "verify": os.path.join(root, "50", "verify.Ab3dE9")}
         os.makedirs(os.path.join(repos["verify"], "shots"))
+        os.symlink(os.path.join(repos["feature"], ".git"), os.path.join(repos["main"], "linked"))
         homes = {True: make_home(root, "home", ALIASES), False: make_home(root, "home-no-aliases", None)}
         for case in cases:
             cwd = repos[case.get("repo", "none")]
