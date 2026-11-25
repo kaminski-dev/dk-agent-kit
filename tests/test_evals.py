@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -273,6 +274,160 @@ r = run(ws, "gh pr view 1 --json statusCheckRollup --jq '.statusCheckRollup[] | 
         cwd=ws / "app")
 check("gate: gh pr view returns the stored checks as check runs",
       r.stdout == "test\tCOMPLETED\tSUCCESS\ne2e\tIN_PROGRESS\t\n", (r.stdout, r.stderr))
+
+# pr-wait's reads (#134): its GraphQL query is the contract, and the real script runs against the stand-in.
+PR_WAIT = EVALS.parent / "skills" / "issue-flow" / "pr-wait"
+QUERY = re.search(r'^QUERY = """\n(.*?)^"""', PR_WAIT.read_text(), re.M | re.S).group(1)
+BASE_OID = git(ws, "app", "rev-parse", "origin/pre-main").stdout.strip()
+GREEN = [{"name": "test", "bucket": "pass", "link": "https://ci/test"}]
+
+
+def graphql(query, num=1, owner="acme"):
+    return run(ws, f"gh api graphql -f query={shlex.quote(query)} -f owner={owner} -f name=ledger -F number={num}", cwd=ws / "app")
+
+
+def pr_wait(*args, minutes=2, interval=0):
+    """The real pr-wait on PR 1 in the fixture's checkout, as (exit code, its lines)."""
+    shutil.rmtree(ws.parent / ".local", ignore_errors=True)
+    r = run(ws, f"python3 -I '{PR_WAIT}' 1 --minutes {minutes} --interval {interval} {' '.join(args)}", cwd=ws / "app")
+    return r.returncode, r.stdout, r.stderr[-300:]
+
+
+def settings(**state):
+    state_file.write_text(json.dumps({**json.loads(state_file.read_text()), **state}))
+
+
+settings(required_checks={})
+store_pr(1)
+r = graphql(QUERY)
+got = json.loads(r.stdout) if r.returncode == 0 else r.stderr
+EMPTY = {"totalCount": 0, "nodes": []}
+URL = "https://github.com/acme/ledger/pull/1"
+check("pr-wait's query: a PR with nothing said on it", got == {"data": {
+    "viewer": {"login": "agent"},
+    "repository": {"pullRequest": {
+        "url": URL, "state": "OPEN", "headRefOid": TIP, "baseRefName": "pre-main", "mergeStateStatus": "UNKNOWN",
+        "author": {"login": "agent"}, "baseRef": {"target": {"oid": BASE_OID}},
+        "comments": EMPTY, "reviews": EMPTY, "reviewThreads": EMPTY}}}}, got)
+store_pr(1, mergeStateStatus="BLOCKED", comments=[{"author": "owner", "body": "Please rename it."}],
+         reviews=[{"author": "coderabbitai[bot]", "body": "One finding.", "databaseId": 71, "authorAssociation": "NONE"}],
+         threads=[{"path": "a.py", "line": 3, "comments": [{"author": "coderabbitai[bot]", "body": "Rename.", "review": 71,
+                                                           "authorAssociation": "NONE"},
+                                                          {"author": "agent", "body": "Done."}]}])
+r = graphql(QUERY)
+got = json.loads(r.stdout)["data"]["repository"]["pullRequest"] if r.returncode == 0 else r.stderr
+OWNER, BOT = {"login": "owner", "__typename": "User"}, {"login": "coderabbitai", "__typename": "Bot"}
+check("pr-wait's query: comments, reviews and threads in GitHub's shape", isinstance(got, dict) and (
+    got["mergeStateStatus"], got["comments"], got["reviews"], got["reviewThreads"]) == (
+    "BLOCKED",
+    {"totalCount": 1, "nodes": [{"id": "IC_1", "url": f"{URL}#IC_1", "body": "Please rename it.",
+                                 "authorAssociation": "OWNER", "author": OWNER}]},
+    {"totalCount": 1, "nodes": [{"id": "PRR_1", "databaseId": 71, "url": f"{URL}#PRR_1", "state": "COMMENTED",
+                                 "body": "One finding.", "commit": {"oid": TIP}, "authorAssociation": "NONE", "author": BOT}]},
+    {"totalCount": 1, "nodes": [{"isResolved": False, "path": "a.py", "line": 3, "comments": {"totalCount": 2, "nodes": [
+        {"id": "PRRC_1_1", "url": f"{URL}#PRRC_1_1", "body": "Rename.", "authorAssociation": "NONE", "author": BOT,
+         "pullRequestReview": {"databaseId": 71}},
+        {"id": "PRRC_1_2", "url": f"{URL}#PRRC_1_2", "body": "Done.", "authorAssociation": "OWNER",
+         "author": {"login": "agent", "__typename": "User"}, "pullRequestReview": {"databaseId": None}}]}}]}), got)
+store_pr(1, comments=[{"author": "owner", "body": str(n)} for n in range(130)])
+r = graphql(QUERY)
+got = json.loads(r.stdout)["data"]["repository"]["pullRequest"]["comments"] if r.returncode == 0 else r.stderr
+check("pr-wait's query: last: 100 of 130 comments", isinstance(got, dict) and got["totalCount"] == 130
+      and [c["body"] for c in got["nodes"]] == [str(n) for n in range(30, 130)], str(got)[:300])
+
+# A field pr-wait starts to read fails here, also on a page the PR leaves empty, and so does any other query.
+store_pr(1)
+for old, gained in (("url state headRefOid", "url state headRefOid title"), ("viewer { login }", "viewer { login name }"),
+                    ("isResolved path line", "isResolved isOutdated path line"),
+                    ("id databaseId url", "id databaseId submittedAt url"),
+                    ("pullRequestReview { databaseId }", "pullRequestReview { databaseId state }"),
+                    ("comments(last: 100)", "comments(first: 100)")):
+    r = graphql(QUERY.replace(old, gained))
+    check(f"pr-wait's query: one that reads `{gained}` instead fails loud",
+          old in QUERY and r.returncode != 0 and r.stdout == "" and "tracker stand-in" in r.stderr, (r.stdout[:200], r.stderr))
+for query in ("query { viewer { login } }", QUERY.replace("      author { login }\n", "", 1), "",
+              'mutation { resolveReviewThread(input: {threadId: "T"}) { thread { isResolved } } }'):
+    r = graphql(query)
+    check(f"another GraphQL query fails loud: {query[:30].strip()!r}",
+          r.returncode != 0 and r.stdout == "" and "tracker stand-in" in r.stderr, (r.stdout[:200], r.stderr))
+for num, owner, text in ((9, "acme", "Could not resolve to a PullRequest with the number of 9"),
+                         (1, "other", "Could not resolve to a Repository with the name 'other/ledger'")):
+    r = graphql(QUERY, num, owner)
+    check(f"pr-wait's query: {owner}/ledger#{num} does not resolve", r.returncode != 0 and text in r.stderr, (r.stdout[:200], r.stderr))
+
+READY = dict(mergeable="MERGEABLE", mergeStateStatus="CLEAN", checks=GREEN)
+store_pr(1, **READY)
+(ws / ".tracker" / "repos.log").write_text("")
+code, out, err = pr_wait("--until", "ready")
+check("pr-wait: a ready PR exits 0 with its ready line", code == 0 and out.startswith(f"#1 ready on {TIP[:7]}: 1 pass; "
+      "no review bot on pre-main; 0 unresolved threads; merge state CLEAN; 0 commits behind pre-main"), (code, out, err))
+asked = [line.split("\t", 1)[0] for line in (ws / ".tracker" / "repos.log").read_text().splitlines()]
+check("pr-wait: every gh call is one line of repos.log, asked for origin's repo", asked and set(asked) == {"acme/ledger"}, asked)
+settings(required_checks={"pre-main": ["test", "e2e"]})
+code, out, err = pr_wait("--until", "ready", minutes=0.05, interval=1)
+check("pr-wait: a required check that never started is not ready", code == 1 and "deadline passed" in out and "ready on" not in out,
+      (code, out, err))
+store_pr(1, **{**READY, "checks": GREEN + [{"name": "e2e", "bucket": "fail", "link": "https://ci/e2e"}]})
+code, out, err = pr_wait("--until", "ready")
+check("pr-wait: a failed required check is not ready", (code, out) == (1, "#1 required check failed: e2e https://ci/e2e\n"),
+      (code, out, err))
+settings(required_checks={})
+for status, text in (("DIRTY", "merge state is DIRTY"), ("BEHIND", "merge state is BEHIND")):
+    store_pr(1, **{**READY, "mergeStateStatus": status})
+    code, out, err = pr_wait("--until", "ready")
+    check(f"pr-wait: a {status} PR is not ready", code == 1 and text in out and "ready on" not in out, (code, out, err))
+store_pr(1, **READY, threads=[{"path": "a.py", "line": 3, "comments": [{"author": "owner", "body": "Why?"}]}])
+code, out, err = pr_wait("--until", "ready")
+check("pr-wait: an unresolved thread blocks ready", code == 1 and "blocked by 1 unresolved thread" in out, (code, out, err))
+store_pr(1, **{k: v for k, v in READY.items() if k != "checks"})
+code, out, err = pr_wait("--until", "ready", minutes=0.05, interval=1)
+check("pr-wait: a PR without checks is watched to the deadline", code == 1 and "deadline passed" in out, (code, out, err))
+
+# Approval pending: on main the review bot's verdict is the approval pr-wait waits for; a human one it leaves to the gate.
+store_pr(1, **READY, base="main")
+code, out, err = pr_wait("--until", "ready", minutes=0.05, interval=1)
+check("pr-wait: a PR the review bot has yet to approve is not ready", code == 1 and "deadline passed" in out and "ready on" not in out,
+      (code, out, err))
+store_pr(1, **READY, base="main", reviews=[{"author": "coderabbitai[bot]", "body": "Fine.", "databaseId": 71}])
+code, out, err = pr_wait("--until", "ready")
+check("pr-wait: the bot's review on the head makes it ready", code == 0 and "reviews 71" in out and "#1 ready on" in out, (code, out, err))
+store_pr(1, **{**READY, "mergeStateStatus": "BLOCKED", "reviewDecision": "REVIEW_REQUIRED"})
+code, out, err = pr_wait("--until", "ready")
+got = gate(1)
+check("approval: pr-wait names the merge state BLOCKED, and the gate reads REVIEW_REQUIRED",
+      "merge state BLOCKED" in out and isinstance(got, dict) and got["reviewDecision"] == "REVIEW_REQUIRED", (code, out, err, got))
+
+# The base moving under the PR: the overlap is read from origin, from the PR's own files and the base's new commits.
+store_pr(1, **{**READY, "checks": [{"name": "e2e", "bucket": "fail", "link": "https://ci/e2e"}]})
+pr_wait("--until", "green")  # the failed check ends the run, with the base recorded
+git(ws, "app", "checkout", "-q", "-b", "mover", "origin/pre-main")
+(ws / "app" / "ledger" / "audit_store.py").write_text((ws / "app" / "ledger" / "audit_store.py").read_text() + "\n")
+(ws / "app" / "NEW.md").write_text("new\n")
+git(ws, "app", "add", "-A")
+git(ws, "app", "commit", "-qm", "move")
+git(ws, "app", "push", "-q", "origin", "mover:pre-main")
+moved = git(ws, "app", "rev-parse", "mover").stdout.strip()
+r = run(ws, f"python3 -I '{PR_WAIT}' 1 --until any-change --minutes 2 --interval 0", cwd=ws / "app")
+check("pr-wait: the base moved over a file the PR touches",
+      (r.returncode, r.stdout) == (0, f"#1 pre-main moved to {moved[:7]} and touches files in this PR: ledger/audit_store.py\n"),
+      (r.returncode, r.stdout, r.stderr[-300:]))
+store_pr(1, **READY)
+code, out, err = pr_wait("--until", "green")
+check("pr-wait: the green line counts the commit the branch is behind", code == 0 and "; 1 commit behind pre-main" in out, (code, out, err))
+git(ws, "app", "push", "-q", "-f", "origin", f"{BASE_OID}:refs/heads/pre-main")
+
+store_pr(1, checks=GREEN + [{"name": "e2e", "bucket": "pending"}])
+r = run(ws, "gh pr checks 1", cwd=ws / "app")
+check("gh pr checks: exits 8 while one is pending", r.returncode == 8 and "e2e\tpending" in r.stdout, (r.returncode, r.stdout, r.stderr))
+store_pr(1, checks=[{"name": "e2e", "bucket": "fail", "link": "https://ci/e2e"}])
+r = run(ws, "gh pr checks 1", cwd=ws / "app")
+check("gh pr checks: exits 1 when one failed", r.returncode == 1 and "e2e\tfail" in r.stdout, (r.returncode, r.stdout, r.stderr))
+r = run(ws, "gh api repos/acme/ledger/compare/nowhere...pre-main", cwd=ws / "app")
+check("gh api compare: an unknown commit is a 404", r.returncode != 0 and "HTTP 404" in r.stderr, (r.stdout, r.stderr))
+store_pr(1, head="fix/353-never-pushed")
+r = graphql(QUERY)
+check("pr-wait's query: a head that is not on origin fails loud", r.returncode != 0 and "fix/353-never-pushed" in r.stderr,
+      (r.stdout[:200], r.stderr))
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
 # The review fixture with work in progress: the same branch, plus an uncommitted edit and an untracked
