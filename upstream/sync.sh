@@ -39,14 +39,18 @@ sources() {
 while read -r repo base branch paths <&3; do
   clone="$dir/$repo"
   if [[ -d "$clone/.git" ]]; then
-    git -C "$clone" fetch -q origin
+    # Without --prune a branch deleted upstream keeps comparing as it last was.
+    git -C "$clone" fetch -q --prune origin
     # Fetch neither recreates a missing origin/HEAD (git before 2.48) nor
     # moves an existing one when upstream changes its default branch.
     git -C "$clone" remote set-head origin --auto >/dev/null
   else
     git clone -q "https://github.com/$repo" "$clone"
   fi
-  head=$(git -C "$clone" rev-parse --short "refs/remotes/origin/$branch")
+  if ! head=$(git -C "$clone" rev-parse --verify -q --short "refs/remotes/origin/$branch"); then
+    echo "$repo $base..$branch: branch not found upstream"
+    continue
+  fi
   out=""
   for p in $paths; do
     if ! git -C "$clone" cat-file -e "$base:$p" 2>/dev/null; then
