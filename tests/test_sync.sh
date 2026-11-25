@@ -124,6 +124,7 @@ expect "misspelt.md: not found at $hl_base"
 # The temp clones are gone when the run ends, so the full-diff hint asks for a
 # rerun that keeps them instead of naming a directory that no longer exists.
 expect "rerun as upstream/sync.sh <clones-dir>"
+expect "git -C <clones-dir>/<owner>/<repo> diff <recorded>..<head> -- <path>"
 
 # A reused clone that lacks origin/HEAD still gets compared, and the run goes
 # on to the next source. Git before 2.48 never recreates the ref on fetch;
@@ -154,7 +155,7 @@ expect "=== dropped.md"
 expect "frozen: legacy tweak"
 refuse "frozen: rewrite"
 # A named branch deleted upstream is named and the run goes on to the next
-# source, also from a reused clone that still holds the branch.
+# source, from a fresh clone and from a reused one that still holds the branch.
 git -C "$tmp/remotes/frozen/f" branch -q -D legacy
 cat >>"$tmp/kit/upstream/UPSTREAM.md" <<EOF
 
@@ -164,12 +165,14 @@ cat >>"$tmp/kit/upstream/UPSTREAM.md" <<EOF
 |---|---|---|
 | agents/locator | .claude/agents/locator.md | trimmed |
 EOF
-out=$("$sync" "$clones" 2>&1) || fail "sync.sh after a named branch was deleted exited non-zero: $out"
-expect "frozen/f $fr_base..legacy: branch not found upstream"
-[[ $(grep -c "^hl/hl " <<<"$out") == 2 ]] || fail "the source after the missing branch was not compared:
+for dir in "" "$clones"; do
+  out=$("$sync" "$dir" 2>&1) || fail "sync.sh after a named branch was deleted exited non-zero: $out"
+  expect "frozen/f $fr_base..legacy: branch not found upstream"
+  [[ $(grep -c "^hl/hl " <<<"$out") == 2 ]] || fail "the source after the missing branch was not compared:
 $out"
+done
 # With a clones dir the hint names it, ready to run.
-expect "git -C $clones/<owner>/<repo> diff"
+expect "git -C $clones/<owner>/<repo> diff <recorded>..<head> -- <path>"
 refuse "rerun as"
 
 echo "sync: all checks passed"
