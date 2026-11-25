@@ -153,6 +153,21 @@ expect "frozen/f $fr_base..$fr_moved"
 expect "=== dropped.md"
 expect "frozen: legacy tweak"
 refuse "frozen: rewrite"
+# A named branch deleted upstream is named and the run goes on to the next
+# source, also from a reused clone that still holds the branch.
+git -C "$tmp/remotes/frozen/f" branch -q -D legacy
+cat >>"$tmp/kit/upstream/UPSTREAM.md" <<EOF
+
+## hl/hl after-frozen (Apache-2.0) @ $hl_base
+
+| dk file | Upstream path | Changes |
+|---|---|---|
+| agents/locator | .claude/agents/locator.md | trimmed |
+EOF
+out=$("$sync" "$clones" 2>&1) || fail "sync.sh after a named branch was deleted exited non-zero: $out"
+expect "frozen/f $fr_base..legacy: branch not found upstream"
+[[ $(grep -c "^hl/hl " <<<"$out") == 2 ]] || fail "the source after the missing branch was not compared:
+$out"
 # With a clones dir the hint names it, ready to run.
 expect "git -C $clones/<owner>/<repo> diff"
 refuse "rerun as"
