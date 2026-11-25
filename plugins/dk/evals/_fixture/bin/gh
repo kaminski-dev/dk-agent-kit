@@ -17,6 +17,12 @@ That read pages at 30 as GitHub does: --paginate prints every page as its own JS
 (--jq runs on each), or one array of pages with --slurp.
 "search_qualifiers": false makes a search with is:blocked fail, as on a GitHub without it.
 "other_repos" maps "owner/repo" to {number: state}, for `gh issue view N --repo owner/repo`.
+A PR may hold isDraft, mergeable, mergeStateStatus, reviewDecision and headRefOid (origin's head when it
+holds none), "checks" as rows of `gh pr checks` ({name, bucket, link}), "comments" ({author, body}),
+"reviews" ({author, state, body, commit, databaseId}; without a commit, of whatever the head is) and "threads" ({path, line, isResolved, comments}, where
+a comment's "review" is its review's databaseId). An author ending in [bot] is a bot.
+"new_pr" in the state is stored on each PR `pr create` opens; "required_checks" maps a base to its check names.
+`gh api graphql` answers one query: the one dk:issue-flow's pr-wait sends, field for field.
 """
 import fcntl
 import json
@@ -134,18 +140,30 @@ def open_blockers(state, num):
     return [b for b in state["issues"][num].get("blocked_by", []) if state["issues"][str(b)]["state"] == "open"]
 
 
-def blockers_from(values, state):
-    """The issue numbers or URLs of every --blocked-by / --add-blocked-by, each an issue of this repo."""
-    nums = [v.strip().lstrip("#").rsplit("/", 1)[-1] for value in values or [] for v in value.split(",") if v.strip()]
-    for n in nums:
-        if n not in state["issues"]:
-            fail(f"GraphQL: Could not resolve to an issue or pull request with the number of {n}.")
-    return [int(n) for n in nums]
+def blockers_from(flag, o, state):
+    """The numbers of this repo's issues that flag names. gh takes another repo's URL too; that issue is not in
+    this tracker, so it fails as one gh cannot read."""
+    nums = []
+    for ref in [v.strip() for value in o.get(flag, []) for v in value.split(",") if v.strip()]:
+        url = re.match(r"https?://([^/]+)/([^/]+/[^/]+)/(?:issues|pull)/(\d+)", ref)
+        host, repo, num = url.groups() if url else ("github.com", state["repo"], ref.removeprefix("#"))
+        if host.lower() != "github.com":
+            error = f'issue reference "{ref}" belongs to a different host ({host}) than the current repository (github.com)'
+        elif repo.lower() != state["repo"].lower():
+            error = f"GraphQL: Could not resolve to a Repository with the name '{repo}'. (repository)"
+        elif not num.isdigit():
+            error = f'invalid issue format: "{ref}"'
+        elif num not in state["issues"]:
+            error = f"GraphQL: Could not resolve to an issue or pull request with the number of {num}."
+        else:
+            nums.append(int(num))
+            continue
+        fail(f'resolving {flag} reference "{ref}": {error}')
+    return nums
 
 
 def add_blockers(issue, blockers):
-    blocked_by = issue.setdefault("blocked_by", [])
-    blocked_by += [b for b in blockers if b not in blocked_by]
+    issue["blocked_by"] = list(dict.fromkeys(issue.get("blocked_by", []) + blockers))
 
 
 def blocked_filter(search):
@@ -246,7 +264,7 @@ def cmd_issue(sub, args, state):
                 fail(f"could not add label: '{l}' not found")
             if l not in i["labels"]:
                 i["labels"].append(l)
-        add_blockers(i, blockers_from(o.get("--add-blocked-by"), state))
+        add_blockers(i, blockers_from("--add-blocked-by", o, state))
         if "--title" in o:
             i["title"] = o["--title"]
         if "--body" in o or "--body-file" in o:
@@ -261,7 +279,7 @@ def cmd_issue(sub, args, state):
         i["state"] = "closed" if sub == "close" else "open"
         save(state)
     elif sub == "create":
-        blockers = blockers_from(o.get("--blocked-by"), state)
+        blockers = blockers_from("--blocked-by", o, state)
         num = str(max(int(n) for n in state["issues"]) + 1)
         state["issues"][num] = {"title": o.get("--title") or o.get("-t") or "", "body": body_of(o), "state": "open",
                                 "labels": labels_from(o.get("--label") or o.get("-l")), "comments": [],
@@ -321,14 +339,169 @@ def write_record(path, num, record):
     path.write_text(record)
 
 
+def origin_git(*args):
+    """git in the workspace's origin: its output, or None when git fails."""
+    r = subprocess.run(["git", "--git-dir", str(WS / "origin.git"), *args], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def origin_oid(rev):
+    return origin_git("rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}")
+
+
+def three_dot(base, head):
+    ends = origin_oid(base), origin_oid(head)
+    if None in ends or origin_git("merge-base", *ends) is None:
+        fail("gh: Not Found (HTTP 404)")
+    return "...".join(ends)
+
+
+def spoken(pr_url, node_id, record):
+    """What a comment, a review and a thread's comment share."""
+    author = record.get("author", "owner")
+    return {"id": node_id, "url": f"{pr_url}#{node_id}", "body": record.get("body", ""),
+            "authorAssociation": record.get("authorAssociation", "OWNER"),
+            "author": {"login": author.removesuffix("[bot]"), "__typename": "Bot" if author.endswith("[bot]") else "User"}}
+
+
+# gh pr checks' bucket -> a check run's (status, conclusion)
+CHECK_RUN = {"pass": ("COMPLETED", "SUCCESS"), "fail": ("COMPLETED", "FAILURE"), "pending": ("IN_PROGRESS", ""),
+             "skipping": ("COMPLETED", "SKIPPED"), "cancel": ("COMPLETED", "CANCELLED")}
+
+
+def check_run(row):
+    status, conclusion = CHECK_RUN[row["bucket"]]
+    return {"__typename": "CheckRun", "name": row["name"], "status": status, "conclusion": conclusion,
+            "detailsUrl": row.get("link", "")}
+
+
+def review(pr, i, record):
+    return {**spoken(pr["url"], f"PRR_{i}", record), "databaseId": record.get("databaseId", i),
+            "state": record.get("state", "COMMENTED"), "commit": {"oid": record.get("commit", pr["headRefOid"])}}
+
+
 def pr_json(state, pr):
-    return {**pr, "url": f"https://github.com/{state['repo']}/pull/{pr['number']}"}
+    d = {"isDraft": False, "mergeable": "UNKNOWN", "mergeStateStatus": "UNKNOWN", "reviewDecision": "", **pr,
+         "url": f"https://github.com/{state['repo']}/pull/{pr['number']}", "headRefName": pr["head"],
+         "baseRefName": pr["base"], "headRefOid": pr.get("headRefOid") or origin_oid(f"refs/heads/{pr['head']}") or "",
+         "statusCheckRollup": [check_run(c) for c in pr.get("checks", [])]}
+    d["comments"] = [spoken(d["url"], f"IC_{i}", c) for i, c in enumerate(pr.get("comments", []), 1)]
+    d["reviews"] = [review(d, i, r) for i, r in enumerate(pr.get("reviews", []), 1)]
+    d["latestReviews"] = list({r["author"]["login"]: r for r in d["reviews"]}.values())
+    return d
+
+
+def selection(query):
+    """A GraphQL query's fields, each with its arguments, as {field: its own fields or None}; None for anything else."""
+    m = re.fullmatch(r"\s*query\s*\([^)]*\)\s*\{(.*)\}\s*", query, re.S)
+    tokens = iter(re.findall(r"[{}]|\w+(?:\([^)]*\))?|\S", m.group(1)) if m else [])
+
+    def fields():
+        out, last = {}, None
+        for t in tokens:
+            if t == "}":
+                break
+            if t == "{":
+                out[last] = fields()
+            else:
+                out[t], last = None, t
+        return out
+    out = fields() if m else None
+    return None if list(tokens) or query.count("{") != query.count("}") else out
+
+
+def answer(fields, value, path="query"):
+    """value read through a query's fields, which must be the ones it answers. A list's first item is a blank one:
+    it checks the fields of a page that holds nothing."""
+    if isinstance(value, list):
+        return [answer(fields, v, path) for v in value][1:]
+    if value is None:
+        return None
+    asked, held = set(fields or {}), set(value) if isinstance(value, dict) else set()
+    if asked != held:
+        fail(f"gh api graphql: {path} differs from the query this repo's tracker stand-in answers (pr-wait's) in "
+             + ", ".join(sorted(map(str, asked ^ held))))
+    if not held:
+        return value
+    return {k.partition("(")[0]: answer(fields[k], v, f"{path}.{k}") for k, v in value.items()}
+
+
+def page(nodes, blank, kept):
+    return {"totalCount": len(nodes), "nodes": [blank, *nodes[kept]]}
+
+
+def pr_graphql(state, pr):
+    """The PR as pr-wait's GraphQL query reads it, for answer()."""
+    d = pr_json(state, pr)
+    if not d["headRefOid"]:
+        fail(f"gh: {d['headRefName']} is not on origin, so this repo's tracker stand-in has no head for PR #{d['number']}")
+    base = origin_oid(f"refs/heads/{d['baseRefName']}")
+    last = slice(-100, None)
+
+    def thread_comment(node_id, record):
+        return {"pullRequestReview": {"databaseId": record.get("review")}, **spoken(d["url"], node_id, record)}
+
+    def thread(i, r):
+        return {"isResolved": r.get("isResolved", False), "path": r.get("path"), "line": r.get("line"),
+                "comments(first: 100)": page([thread_comment(f"PRRC_{i}_{j}", c) for j, c in enumerate(r.get("comments", []), 1)],
+                                             thread_comment("", {}), slice(100))}
+    return {**{k: d[k] for k in ("url", "state", "headRefOid", "baseRefName", "mergeStateStatus")},
+            "author": {"login": pr.get("author", "agent")}, "baseRef": base and {"target": {"oid": base}},
+            "comments(last: 100)": page(d["comments"], spoken(d["url"], "", {}), last),
+            "reviews(last: 100)": page(d["reviews"], review(d, 0, {}), last),
+            "reviewThreads(last: 100)": page([thread(i, r) for i, r in enumerate(pr.get("threads", []), 1)], thread(0, {}), last)}
+
+
+def api_fields(o):
+    """gh api's fields: each -f, and the last -F, which every other command takes for a body file."""
+    values = [o["-F"]] if isinstance(o.get("-F"), str) else []
+    values += [v for flag in ("--field", "-f", "--raw-field") for v in o.get(flag, [])]
+    return dict(v.partition("=")[::2] for v in values)
+
+
+def api_graphql(o, state):
+    sent = api_fields(o)
+    asked = selection(sent.get("query", ""))
+    if asked is None:
+        fail("gh api graphql: this repo's tracker stand-in answers pr-wait's query only")
+    repo = f"{sent.get('owner')}/{sent.get('name')}"
+    if repo != state["repo"]:
+        fail(f"gh: Could not resolve to a Repository with the name '{repo}'.")
+    prs = [p for p in state["prs"] if str(p["number"]) == sent.get("number")]
+    if not prs:
+        fail(f"gh: Could not resolve to a PullRequest with the number of {sent.get('number')}.")
+    data = {"viewer": {"login": "agent"},
+            "repository(owner: $owner, name: $name)": {"pullRequest(number: $number)": pr_graphql(state, prs[0])}}
+    emit({"data": answer(asked, data)}, o)
+
+
+def api_rules(base, o, state):
+    names = state.get("required_checks", {}).get(base, [])
+    emit([{"type": "required_status_checks", "parameters": {"required_status_checks": [{"context": n} for n in names]}}]
+         if names else [], o)
+
+
+def api_compare(spec, o):
+    base, _, head = spec.partition("...")
+    span = three_dot(base, head)
+    behind, ahead = origin_git("rev-list", "--left-right", "--count", span).split()
+    files = origin_git("diff", "--name-only", span).splitlines()
+    emit({"ahead_by": int(ahead), "behind_by": int(behind), "files": [{"filename": f} for f in files]}, o)
 
 
 def cmd_api(args, state):
     pos, o = opts(args, VALUE_FLAGS, MULTI)
+    if pos == ["graphql"]:
+        return api_graphql(o, state)
     method = (o.get("--method") or o.get("-X") or "GET").upper()
     parts = pos[0].strip("/").split("/") if pos else []
+    if method == "GET" and parts[:3] == ["repos", *state["repo"].split("/")]:
+        if parts[3:5] == ["rules", "branches"]:
+            return api_rules("/".join(parts[5:]), o, state)
+        if parts[3:4] == ["branches"] and parts[-2:] == ["protection", "required_status_checks"]:
+            fail("gh: Branch not protected (HTTP 404)")
+        if parts[3:4] == ["compare"]:
+            return api_compare("/".join(parts[4:]), o)
     if method not in ("GET", "POST") or len(parts) < 5 or parts[:3] != ["repos", *state["repo"].split("/")] \
             or parts[3] != "issues":
         fail(f"gh api {method} {'/'.join(parts)}: not supported by this repo's tracker stand-in")
@@ -343,15 +516,10 @@ def cmd_api(args, state):
                 "issue_dependencies_summary": {"blocked_by": len(open_blockers(state, n)),
                                                "total_blocked_by": len(i.get("blocked_by", []))}}
     if method == "POST" and parts[5:] == ["dependencies", "blocked_by"]:
-        values = [o["-F"]] if isinstance(o.get("-F"), str) else []
-        values += [v for flag in ("--field", "-f", "--raw-field") for v in o.get(flag, [])]
-        fields = dict(v.partition("=")[::2] for v in values)
-        blocker = str(int(fields.get("issue_id", "0")) - 900000)
+        blocker = str(int(api_fields(o).get("issue_id", "0")) - 900000)
         if blocker not in state["issues"]:
             fail("gh: Validation Failed (HTTP 422): issue_id names no issue in this repository")
-        blocked_by = state["issues"][num].setdefault("blocked_by", [])
-        if int(blocker) not in blocked_by:
-            blocked_by.append(int(blocker))
+        add_blockers(state["issues"][num], [int(blocker)])
         save(state)
         emit(rest_issue(blocker), o)
     elif method == "POST":
@@ -364,14 +532,29 @@ def cmd_api(args, state):
         fail(f"gh api {'/'.join(parts)}: not supported by this repo's tracker stand-in")
 
 
+def pr_checks(pr, o):
+    rows = [{"link": "", "description": "", "state": next(s for s in reversed(CHECK_RUN[c["bucket"]]) if s), **c}
+            for c in pr.get("checks", [])]
+    if not rows:
+        fail(f"no checks reported on the '{pr['head']}' branch")
+    if "--json" in o:  # gh exits 0 here, whatever the checks say
+        emit([pick(r, o) for r in rows], o)
+        return
+    for r in rows:
+        print(f"{r['name']}\t{r['bucket']}\t0\t{r['link']}")
+    buckets = {r["bucket"] for r in rows}
+    sys.exit(1 if "fail" in buckets else 8 if "pending" in buckets else 0)
+
+
 def cmd_pr(sub, args, state):
-    pos, o = opts(args, VALUE_FLAGS, MULTI)
+    pos, o = opts(args, VALUE_FLAGS - {"-d"} if sub == "create" else VALUE_FLAGS, MULTI)
     if sub == "create":
         head = o.get("--head") or o.get("-H") or current_branch(os.getcwd())
         base = o.get("--base") or o.get("-B") or "main"
         num = max([p["number"] for p in state["prs"]], default=0) + 1
         pr = {"number": num, "title": o.get("--title") or o.get("-t") or "", "body": body_of(o),
-              "base": base, "head": head, "state": "OPEN"}
+              "base": base, "head": head, "state": "OPEN", "isDraft": "--draft" in o or "-d" in o, "mergeable": "MERGEABLE",
+              "mergeStateStatus": "CLEAN", "reviewDecision": "", **state.get("new_pr", {})}
         state["prs"].append(pr)
         save(state)
         issue = issue_of(head)
@@ -385,16 +568,23 @@ def cmd_pr(sub, args, state):
             (TRACKER / "pulls").mkdir(exist_ok=True)
             write_record(TRACKER / "pulls" / f"{issue}.md", num, record)
         print(f"https://github.com/{state['repo']}/pull/{num}")
-    elif sub in ("view", "list"):
+    elif sub in ("view", "list", "checks", "diff"):
         prs = state["prs"]
-        if sub == "view":
+        if sub != "list":
             if pos:
                 prs = [p for p in prs if str(p["number"]) == pos[0].lstrip("#")]
             else:
                 prs = [p for p in prs if p["head"] == current_branch(os.getcwd())]
             if not prs:
                 fail("no pull requests found")
+        if sub == "view":
             emit(pick(pr_json(state, prs[0]), o), o)
+        elif sub == "checks":
+            pr_checks(prs[0], o)
+        elif sub == "diff":
+            if "--name-only" not in o:
+                fail("gh pr diff without --name-only: not supported by this repo's tracker stand-in")
+            print(origin_git("diff", "--name-only", three_dot(*(f"refs/heads/{prs[0][end]}" for end in ("base", "head")))))
         else:
             want_state = (o.get("--state") or o.get("-s") or "open").upper()
             for flag, key in (("--base", "base"), ("-B", "base"), ("--head", "head"), ("-H", "head")):
@@ -410,11 +600,12 @@ def main(argv):
     global LOCK
     LOCK = open(TRACKER / ".lock", "w")
     fcntl.flock(LOCK, fcntl.LOCK_EX)
+    call = " ".join(argv).replace("\n", " ")  # one line per call
     with open(TRACKER / "calls.log", "a") as log:
-        log.write(" ".join(argv) + "\n")
+        log.write(call + "\n")
     asked = next((argv[i + 1] for i in range(len(argv) - 1) if argv[i] in ("--repo", "-R")), None)
     with open(TRACKER / "repos.log", "a") as log:
-        log.write(f"{asked or os.environ.get('GH_REPO') or '-'}\t{' '.join(argv)}\n")
+        log.write(f"{asked or os.environ.get('GH_REPO') or '-'}\t{call}\n")
     if not argv:
         fail("usage: gh <command>")
     state = load()
