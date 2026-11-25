@@ -41,7 +41,7 @@ def sh(*cmd, ok=(0,)):
 def origin_repo():
     """None when origin is no github.com repo. Read from the configured URL, before any insteadOf rewrites it."""
     url = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True).stdout.strip()
-    m = re.search(r"(?:^|[@/])github\.com(?::\d+)?[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", url, re.I)
+    m = re.search(r"^(?:[\w.+-]+://(?:[^@/?#]+@)?|(?:[^@/:]+@)?)github\.com(?::\d+)?[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", url, re.I)
     return m.group(1) if m else None
 
 
