@@ -734,7 +734,7 @@ class Walk:
                 self.doubt(name)
         self.values.update(settled)
         if words and os.path.basename(words[0]) in ("git", "gh"):
-            renames = "branch" in words and {"-m", "-M", "--move"}.intersection(words)
+            renames = "branch" in words and any(re.fullmatch(r"--move|-[A-Za-z]*[mM][A-Za-z]*", w) for w in words)
             self.switched = self.switched or bool(renames or SWITCHERS.intersection(words))
         if words and (words[0] in UNSEEN or words[0] == "-" or RUN_TIME.search(words[0])):
             self.doubt(*self.values)
@@ -761,16 +761,17 @@ class Walk:
 
     def cd(self, args, step, seg):
         before, target = (self.cwd, self.steps), args[0] if args else "~"
-        if target == "-":
+        text, certain = self.resolve(target, seg)
+        self.varied = self.varied or bool(RUN_TIME.search(target))
+        if text == "-":
             # back to where the last `cd` started, if that one went through
             went = self.last_cd if self.cwd and os.path.isdir(self.cwd) else None
             self.literal_cwd = None
             self.cwd, steps = self.before_last_cd
+            step = step if certain or target == "-" else None
             self.steps = steps + [went, step]
         else:
-            text, certain = self.resolve(target, seg)
             step = step if certain and len(args) < 2 else None
-            self.varied = self.varied or bool(RUN_TIME.search(target))
             if args:
                 anchored = not self.varied and (self.literal_cwd or os.path.isabs(text))
                 self.literal_cwd = self.join(self.literal_cwd, text) if anchored else None
