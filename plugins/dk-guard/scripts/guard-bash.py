@@ -153,7 +153,7 @@ def heredoc_lines(cmd):
         if quotes.continued or not pending:
             continue
         # a body starts after the last line of its command, past a quote or substitution opened after the operator;
-        # a substitution that closes first leaves its here-doc without one
+        # with its own substitution closed, it has none (one reopened at the same depth is not told apart)
         now = quotes.depth()
         ready = [(dash, word) for depth, dash, word in pending if depth == now]
         pending = [(depth, dash, word) for depth, dash, word in pending if depth < now]

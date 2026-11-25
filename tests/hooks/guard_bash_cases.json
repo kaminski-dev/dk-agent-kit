@@ -533,6 +533,7 @@
   {"cmd": "cat <<EOF; echo \"$(cat <<'X'\ngit push origin main\nX\n)\"\ngit push origin main\nEOF\necho 'x", "expect": "allow"},
   {"cmd": "cat <<EOF; (\ngit push origin main\nEOF\nid)\necho 'x", "expect": "allow"},
   {"why": "#109 review: a here-doc whose substitution closes on the same line has no body", "cmd": "x=\"$(cat <<EOF)\"\ngit push origin main\nEOF\necho 'x", "expect": "deny"},
+  {"cmd": "cat <<EOF\nhi\nEOF\necho ok\ngit push origin main\necho 'x", "expect": "deny"},
   {"cmd": "cat <<EOF \\\n> f\ngit push origin main\nEOF\necho 'x", "expect": "allow"},
   {"why": "#133: dk:issue-flow's PR watcher in the foreground blocks the session until its deadline, 20 minutes by default", "cmd": "python3 -I ~/.claude/plugins/marketplaces/dk-agent-kit/plugins/dk/skills/issue-flow/pr-wait 42", "expect": "deny"},
   {"cmd": "cd ~/workspace/dk-agent-kit-124 && python3 -I ~/.claude/plugins/marketplaces/dk-agent-kit/plugins/dk/skills/issue-flow/pr-wait 42 --until green", "expect": "deny"},
