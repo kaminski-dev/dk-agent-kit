@@ -606,9 +606,10 @@ for name in skills:
     if name not in ORIGINAL and not re.search(rf"^\| (skills/)?{re.escape(name)} \|", upstream, re.M):
         errors.append(f"skills/{name}: no row in upstream/UPSTREAM.md")
 
+PIN = r"([0-9a-f]{7,40})(?:\.\.\w[\w./-]*)?"  # a section heading's end: its commit, then ..<branch> when it names one
 dk_column_by_section_commit = {
     commit: " ".join(re.findall(r"^\| ([^|]+) \|", rows, re.M))
-    for commit, rows in re.findall(r"^## .*? @ ([0-9a-f]+)\n(.*?)(?=^## |\Z)", upstream, re.M | re.S)
+    for commit, rows in re.findall(rf"^## .*? @ {PIN}\n(.*?)(?=^## |\Z)", upstream, re.M | re.S)
 }
 marked = [("agents", n, p) for n, p in agents.items()] + [("skills", n, p) for n, p in skills.items()]
 for kind, name, path in marked:
@@ -617,7 +618,7 @@ for kind, name, path in marked:
             errors.append(f"{kind}/{name}: adapted from {source}@{commit}, but upstream/UPSTREAM.md has no row for it in the section at that commit")
 
 # A vendored script carries its marker as a comment; its row names it in the section at the marker's commit.
-section_by_commit = dict(re.findall(r"^## .*? @ ([0-9a-f]+)\n(.*?)(?=^## |\Z)", upstream, re.M | re.S))
+section_by_commit = dict(re.findall(rf"^## .*? @ {PIN}\n(.*?)(?=^## |\Z)", upstream, re.M | re.S))
 for path in sorted(DK.glob("skills/*/**/*")):
     if not path.is_file() or path.suffix == ".md":
         continue
@@ -670,8 +671,8 @@ for n, line in enumerate(upstream.splitlines(), 1):
     where = f"upstream/UPSTREAM.md:{n}"
     if line.startswith("## "):
         in_section, table_rows = True, 0
-        if not re.fullmatch(r"## [\w.-]+/[\w.-]+(?: [^()@]+)? \([^()]+\) @ [0-9a-f]{7,40}", line):
-            errors.append(f"{where}: heading is not '## <owner>/<repo> [label] (<license>) @ <commit>'")
+        if not re.fullmatch(r"## [\w.-]+/[\w.-]+(?: [^()@]+)? \([^()]+\) @ " + PIN, line):
+            errors.append(f"{where}: heading is not '## <owner>/<repo> [label] (<license>) @ <commit>[..<branch>]'")
         continue
     if not (in_section and line.startswith("|")):
         continue
@@ -690,7 +691,7 @@ for n, line in enumerate(upstream.splitlines(), 1):
 # Each source in UPSTREAM.md keeps its license notice: a THIRD_PARTY row that links the repo and names
 # the section's commit, its license and a license file that exists. A pin that moves takes the row along.
 third_party = (ROOT / "THIRD_PARTY" / "README.md").read_text().splitlines()
-for repo, license_name, commit in re.findall(r"^## (\S+) .*?\(([^()]+)\) @ ([0-9a-f]+)$", upstream, re.M):
+for repo, license_name, commit in re.findall(rf"^## (\S+) .*?\(([^()]+)\) @ {PIN}$", upstream, re.M):
     row = next((r for r in third_party if re.search(rf"\(https://github\.com/{re.escape(repo)}[)/]", r)), None)
     if row is None:
         errors.append(f"THIRD_PARTY/README.md: no row links github.com/{repo}, a source in upstream/UPSTREAM.md")
