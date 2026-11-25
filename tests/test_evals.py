@@ -209,6 +209,72 @@ pr = pull_on(ws, "353", "HEAD")
 check("353 review: the seeded branch still meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr)
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
+# The ready gate's reads (#134): dk:issue-flow step 6 reads the PR through gh pr view.
+ws = scaffold("code-review-353")
+state_file = ws / ".tracker" / "state.json"
+TIP = git(ws, "app", "rev-parse", "HEAD").stdout.strip()
+issue_flow = (EVALS.parent / "skills" / "issue-flow" / "SKILL.md").read_text()
+gate_fields = re.search(r"`gh pr view <PR> --json (headRefOid,[\w,]+)`", issue_flow)
+check("gate: dk:issue-flow's ready gate names its gh pr view fields", gate_fields is not None, "no such command in step 6")
+GATE = gate_fields.group(1) if gate_fields else ""
+
+
+def store_pr(num, **record):
+    """Put PR num for the fixture's fix branch into the tracker's state, in place of one with its number."""
+    state = json.loads(state_file.read_text())
+    state["prs"] = [p for p in state["prs"] if p["number"] != num]
+    state["prs"].append({"number": num, "title": "t", "body": "Closes #353", "base": "pre-main",
+                         "head": "fix/353-history-order", "state": "OPEN", **record})
+    state_file.write_text(json.dumps(state))
+
+
+def gate(num):
+    """The ready gate's read of PR num, as the skill writes it."""
+    r = run(ws, f"gh pr view {num} --json {GATE}", cwd=ws / "app")
+    return json.loads(r.stdout) if r.returncode == 0 else r.stderr
+
+
+store_pr(1, isDraft=True, mergeable="CONFLICTING", mergeStateStatus="DIRTY", reviewDecision="REVIEW_REQUIRED",
+         headRefOid="c" * 40)
+got = gate(1)
+check("gate: gh pr view returns every ready-gate field stored on the PR",
+      got == {"headRefOid": "c" * 40, "state": "OPEN", "isDraft": True, "reviewDecision": "REVIEW_REQUIRED",
+              "mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY"}, got)
+store_pr(1)
+got = gate(1)
+check("gate: a PR that stores none of them has origin's head and an unknown merge state",
+      got == {"headRefOid": TIP, "state": "OPEN", "isDraft": False, "reviewDecision": "",
+              "mergeable": "UNKNOWN", "mergeStateStatus": "UNKNOWN"}, got)
+state_file.write_text(json.dumps({**json.loads(state_file.read_text()), "prs": []}))
+pull_on(ws, "353", "HEAD")
+got = gate(1)
+check("gate: a PR gh pr create opens is mergeable and clean",
+      got == {"headRefOid": TIP, "state": "OPEN", "isDraft": False, "reviewDecision": "",
+              "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN"}, got)
+state_file.write_text(json.dumps({**json.loads(state_file.read_text()), "prs": [], "new_pr": {
+    "mergeStateStatus": "BLOCKED", "reviewDecision": "REVIEW_REQUIRED"}}))
+run(ws, "gh pr create --draft --base pre-main --head fix/353-check --title t --body b", cwd=ws / "app")
+got = gate(1)
+check("gate: new_pr in the state sets what a PR the agent opens carries",
+      got == {"headRefOid": TIP, "state": "OPEN", "isDraft": True, "reviewDecision": "REVIEW_REQUIRED",
+              "mergeable": "MERGEABLE", "mergeStateStatus": "BLOCKED"}, got)
+blocking = re.search(r"`gh pr view <PR> (--json latestReviews --jq '[^']*')`", issue_flow)
+check("gate: dk:issue-flow's ready gate names its read of requested changes", blocking is not None, "no such command in step 6")
+store_pr(1)
+r = run(ws, f"gh pr view 1 {blocking.group(1) if blocking else ''}", cwd=ws / "app")
+check("gate: a PR without reviews has nobody requesting changes", (r.returncode, r.stdout) == (0, ""), (r.stdout, r.stderr))
+store_pr(1, reviews=[{"author": "ada", "state": "CHANGES_REQUESTED", "body": "No."},
+                     {"author": "bo", "state": "CHANGES_REQUESTED", "body": "No."},
+                     {"author": "bo", "state": "APPROVED", "body": ""}])
+r = run(ws, f"gh pr view 1 {blocking.group(1) if blocking else ''}", cwd=ws / "app")
+check("gate: an author's latest review counts", (r.returncode, r.stdout) == (0, "ada\n"), (r.stdout, r.stderr))
+store_pr(1, checks=[{"name": "test", "bucket": "pass", "link": "https://ci/test"}, {"name": "e2e", "bucket": "pending"}])
+r = run(ws, "gh pr view 1 --json statusCheckRollup --jq '.statusCheckRollup[] | [.name, .status, .conclusion] | @tsv'",
+        cwd=ws / "app")
+check("gate: gh pr view returns the stored checks as check runs",
+      r.stdout == "test\tCOMPLETED\tSUCCESS\ne2e\tIN_PROGRESS\t\n", (r.stdout, r.stderr))
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
 # The review fixture with work in progress: the same branch, plus an uncommitted edit and an untracked
 # file, each breaking a documented standard that a review of the commits alone cannot see.
 ws = scaffold("code-review-wip")
