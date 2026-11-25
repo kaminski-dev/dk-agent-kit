@@ -11,8 +11,8 @@ push with the gate's last lines; a passing gate is silent.
 
 Pushes of verify-assets/*, branch deletes and pushes guard-bash.py denies
 anyway run no gate. A checkout without a gate, or no checkout at all: nothing
-happens. A directory known only at run time (`cd "$WT" && git push`) runs no
-gate either, and the agent is told so.
+happens. A directory known only at run time (`cd "$(…)" && git push`, or `$WT`
+when the call does not set it) runs no gate either, and the agent is told so.
 
 It fails open: a gate that outlives TIMEOUT is killed and the push goes through
 with a message to the user. A crash, or the hook's own timeout in hooks.json,
@@ -40,7 +40,7 @@ def git_commands(cmd, cwd, guard):
     segs = guard.split(cmd)
     if segs is None:  # the guard's raw-string fallback, so an unsplittable command is still gated
         raw = guard.strip_heredocs(cmd)
-        return [(tokens, guard.effective_cwd(raw, offset, cwd)) for offset, tokens in guard.segments(raw, "git")]
+        return [(tokens, path) for _, tokens, path in guard.raw_commands(raw, cwd, "git")]
     return [(words, path) for _, words, path in guard.commands(segs, cwd)
             if words and os.path.basename(words[0]) == "git"]
 
