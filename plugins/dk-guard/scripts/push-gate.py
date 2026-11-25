@@ -40,7 +40,7 @@ def git_commands(cmd, cwd, guard):
     segs = guard.split(cmd)
     if segs is None:  # the guard's raw-string fallback, so an unsplittable command is still gated
         raw = guard.strip_heredocs(cmd)
-        return [(tokens, path) for _, tokens, path in guard.raw_commands(raw, cwd, "git")]
+        return list(guard.raw_git(raw, cwd))
     return [(words, path) for _, words, path in guard.commands(segs, cwd)
             if words and os.path.basename(words[0]) == "git"]
 
@@ -70,13 +70,13 @@ def gated(rest, path, guard):
 
 def push_roots(cmd, cwd, guard, stop):
     """(the checkout roots of the command's gated pushes, in order, without repeats; whether a gated push runs in a
-    directory known only at run time)."""
+    directory known only at run time, or one that does not exist yet)."""
     roots, unknown = [], False
     for tokens, path in git_commands(cmd, cwd, guard):
         args, path = guard.git_subcommand(tokens, path)
         if args[:1] != ["push"] or not gated(args[1:], path, guard):
             continue
-        if path is None:
+        if path is None or not os.path.isdir(path):  # the call may create it
             unknown = True
             continue
         root = (stop.git(path, "rev-parse", "--show-toplevel") or "").strip()

@@ -170,6 +170,7 @@
   {"cmd": "WT=../feature; cd \"$WT\" >/dev/null 2>&1; git push", "repo": "main", "expect": "allow"},
   {"why": "PR #68 review: a bare cd that may not have run leaves the directory", "cmd": "(cd); git push", "repo": "main", "expect": "deny"},
   {"cmd": "false && cd; git push", "repo": "main", "expect": "deny"},
+  {"cmd": "WT=.; [ -d nope ] || cd; cd \"$WT\"; git push", "repo": "feature", "expect": "ask"},
   {"why": "PR #68 review: a variable set through another name, or by the shell, is not known", "cmd": "WT=../feature; X=${WT::=../main-checkout}; cd \"$WT\" && git push", "repo": "main", "expect": "ask"},
   {"cmd": "WT=../feature; X=WT; read $X <<< ../main-checkout; cd \"$WT\" && git push", "repo": "main", "expect": "ask"},
   {"cmd": "WT=../feature; X='WT=../main-checkout'; export $X; cd \"$WT\" && git push", "repo": "main", "expect": "ask"},
