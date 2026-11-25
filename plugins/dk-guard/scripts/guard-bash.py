@@ -71,7 +71,7 @@ def unquote(part):
 
 
 def without_arithmetic(line):
-    """The line with each $((...)) and ((...)) that closes on it cut out, since a << in one is a shift."""
+    """The line with the < in each $((...)) and ((...)) that closes on it blanked, since a << in one is a shift."""
     opens, spans = [], []
     for i, c in enumerate(line):
         if c == "(":
@@ -82,21 +82,73 @@ def without_arithmetic(line):
                 spans.append((start, i + 1))
     kept, end = [], 0
     for start, stop in sorted(spans):
-        if start >= end:  # an outermost span; a nested one lies inside the cut already
-            kept.append(line[end:start] + " ")
+        if start >= end:  # an outermost span; a nested one lies inside the blanked one already
+            kept += line[end:start], line[start:stop].replace("<", " ")
             end = stop
     return "".join(kept) + line[end:]
+
+
+class QuoteState:
+    """The quotes and substitutions still open after the command lines read so far, innermost last."""
+
+    def __init__(self):
+        self.open, self.in_word, self.continued = [], False, False
+
+    def heredocs(self, line):
+        """Read one command line and return the (dash, word) of each here-doc it opens outside quotes and comments."""
+        line, found, i = without_arithmetic(line), [], 0
+        self.in_word, self.continued = self.in_word and self.continued, False
+        while i < len(line):
+            c, inner, was_in_word = line[i], self.open[-1] if self.open else "", self.in_word
+            self.in_word = was_in_word if c == "(" else c not in " \t;&|<>"
+            i += 1
+            if c == "\\" and inner != "'":
+                self.continued = i == len(line)
+                if self.continued:
+                    self.in_word = was_in_word
+                i += 1
+            elif inner in ("'", "$'"):
+                if c == "'":
+                    self.open.pop()
+            elif c == '"' == inner or c == "`" == inner or c == ")" and inner == "(":
+                self.open.pop()
+            elif c == "`":
+                self.open.append(c)
+            elif c == "$" and line.startswith("(", i):
+                self.open.append("(")
+                self.in_word = False
+                i += 1
+            elif inner == '"':
+                pass
+            elif c == "$" and line.startswith("'", i):
+                self.open.append("$'")
+                i += 1
+            elif c in "'\"(":
+                self.open.append(c)
+            elif c == "#" and not was_in_word:
+                break
+            elif c == "<" and (m := HEREDOC.match(line, i - 1)):
+                found.append(m.groups())
+                i = m.end()
+        return found
+
+    def before_body(self):
+        """Whether the next line still belongs to this command, so a pending here-doc body starts after it."""
+        return self.continued or self.open[-1:] in (["'"], ["$'"], ['"'])
 
 
 def heredoc_lines(cmd):
     """Yield (line, None) for each command line and (line, expands) for each line of a heredoc body, `expands`
     True when no part of its delimiter word is quoted or escaped."""
-    lines, i = cmd.split("\n"), 0
+    lines, i, quotes, pending = cmd.split("\n"), 0, QuoteState(), []
     while i < len(lines):
         line = lines[i]
         i += 1
         yield line, None
-        for dash, word in HEREDOC.findall(without_arithmetic(line)):
+        pending += quotes.heredocs(line)
+        if quotes.before_body():
+            continue
+        for dash, word in pending:
             delim = QUOTED_PART.sub(unquote, word)
             expands = not QUOTED_PART.search(word)
             while i < len(lines):
@@ -105,6 +157,7 @@ def heredoc_lines(cmd):
                 if (body.lstrip("\t") if dash else body) == delim:
                     break
                 yield body, expands
+        pending = []
 
 
 def strip_heredocs(cmd):
