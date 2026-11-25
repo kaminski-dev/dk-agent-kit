@@ -140,7 +140,7 @@ def case_an_ask_after_a_negation_that_does_not_reach_it_is_denied():
 def case_a_negated_ask_is_allowed_wherever_the_negation_stands():
     for prompt in ("Do not edit tests, commit, push, or open a PR.",
                    "Do not edit files, commit changes, push the branch, open a PR.", "Do **not** commit, push.",
-                   "Do not edit (or move) files, commit, or push the branch.",
+                   "Do not edit (or move) files, commit changes, or push the branch.",
                    "You cannot edit files, push the branch, or open a PR.", "You may not commit, push.",
                    "Report only; no edits, git commit, or git push.", "Not allowed: edit files, commit changes.",
                    "Work without running git add, git commit, or git push.", "Forbidden:\n- git commit\n- git push",
@@ -185,6 +185,8 @@ def case_a_fork_told_to_implement_an_issue_in_other_shapes_is_denied():
                    "Start with dk:implement.", "/dk:implement 42", "Implement the CI/CD change for issue #42.",
                    "Fix issue #42. The bug is in src/cart.ts.", "You own issue #42. Work in ../wt-42.",
                    "Fix issue #42 in src/cart.", "You will be responsible for issue #42.",
+                   "You are the fork that implements #43.", "You are the fork that fixes #44.", "You are fixing #45.",
+                   "You are working on #46.",
                    "Skill: dk:implement",
                    "You are the fork implementing #206 end to end.", "/dk:implement #42", "Follow the dk:implement flow.",
                    "You are responsible for ticket #42.", "You are the fork for issue #43 only."):
