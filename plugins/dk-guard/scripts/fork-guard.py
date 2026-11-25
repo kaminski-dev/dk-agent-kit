@@ -26,7 +26,7 @@ BULLET = re.compile(r"\s*(?:[-*+]|\d+[.)])\s")
 
 # What stands right before a verb that instructs the fork.
 LEAD = re.compile(
-    r"(?:\A[\s*_>#+-]*(?:\d+\)\s+)?|[,:(\n]|&&|\b(?:and|then|also|please|finally|now|but|instead|so|done"
+    r"(?:\A[\s*_>#+-]*(?:\d+\)\s+)?|[,:(\n]|&&|\b(?:and|then|also|please|finally|now|but|instead|so|done|end|finished|pass(?:es)?"
     r"|you(?:['’]ll|\s+(?:should|must|may|can|will|are\s+to|have\s+to))?|need\s+to|(?:task|job)\s+is\s+to"
     r"|(?:remember|sure|forget|fail|hesitate)\s+to))[\s*_]*\Z", I)
 # Somebody else's step: "I will commit and push".
@@ -45,7 +45,8 @@ TURN = re.compile(r"\b(?:then|but|instead|so)\b", I)
 AND = re.compile(r"\band\b", I)
 OR = re.compile(r"\b(?:or|nor)\b", I)
 OR_LAST = re.compile(rf"\b(?:or|nor)\s+(?:{RUN_VERB}\s+`?)?\Z", I)
-CADENCE = re.compile(r"\w+\s+(?:per|after|each|every|once|when|separately)\b", I)
+COMMA_LAST = re.compile(rf",\s*(?:{RUN_VERB}\s+`?)?\Z", I)
+CADENCE = re.compile(r"(?:(?:an?|one)\s+)?\w+\s+(?:per|after|each|every|once|when|separately|for\s+each)\b", I)
 GIT_STEPS = re.compile(
     r"(?:[\s,/`:]|\b(?:run|git|add|commit|push|open|create|a|any|the|your|it|PR"
     r"|pull\s+request|branch|changes|anything|and|or)\b)*\Z", I)
@@ -53,27 +54,26 @@ NOT_HEADING = re.compile(NEGATOR.pattern + r"(?:\s+\w+){0,5}\s*:[\s*_]*\Z", I)
 
 GIT = r"git\s+(?:-C\s+(?:\"[^\"]*\"|'[^']*'|\S+)\s+)?"
 ISSUE = r"(?:(?:issue|ticket)s?\s+#?\d+|#\d+|[^\s`]+/issues/\d+)\b"
-IN_A_SWEEP = (r"(?:\byour\s+(?:\w+\s+)?(?:slice|part|share|group)\b|\b[\w.~-]+/[\w./*-]+(?![\w./*#-])"
-              r"|\bthe\s+#\d+\s+(?:[\w-]+\s+)?(?:sweep|cleanup)\b)")
+IN_A_SWEEP = r"(?:\byour\s+(?:\w+\s+)?(?:slice|part|share|group)\b|\bthe\s+#\d+\s+(?:[\w-]+\s+)?(?:sweep|cleanup)\b)"
 TO_ISSUE = rf"\b(?:(?!{IN_A_SWEEP})[^,.;:`)\n]){{0,60}}?(?!{IN_A_SWEEP}){ISSUE}"
+IN_A_PATH = r"(?:[^,;:\n]{0,60}?\b(?:in|under|across))?\s+[\w.~-]+/[\w./*-]+(?![\w./*#-])"  # a slice of files
 OBJECT = (r"\s+(?:per|after|each|every|the|your|it|them|this|all|everything|only|once|when|as|with|in|on|separately|[\w~.-]+/\S+"
           r"|changes?|to(?!\s+(?:an?|one)\b)|(?:and|then)\s+(?:commit|push|open|report|rerun|run|return|post|hand))\b")
 
 # (what the fork is asked, the pattern, whether it counts only as an instruction's verb, after LEAD)
 ISSUE_ASK, GIT_ASK, WORKTREE_ASK = "an issue to implement", "a commit, push or PR to make", "a `git worktree add` to run"
 ASKS = [(what, re.compile(rx, I | re.MULTILINE), verb) for what, rx, verb in (
-    (ISSUE_ASK, rf"\b(?:implement|fix|own|work\s+on){TO_ISSUE}|\btake\s+(?:on\s+)?{ISSUE}", True),
+    (ISSUE_ASK, rf"\b(?:implement|work\s+on|(?:fix|own)(?!{IN_A_PATH})){TO_ISSUE}|\btake\s+(?:on\s+)?{ISSUE}", True),
     (ISSUE_ASK, r"(?<!\banother\s)(?<!\bother\s)(?<!\bsibling\s)\b(?:you|fork|agent)"
                 r"(?:\s+(?:are|is|that|who|which|the|a|an|fork|agent|to|will|must|should|now|one))*\s+"
-                rf"(?:(?:implement|fix|work)(?:s|es|ing)?|owns?|responsible\s+for)(?:\s+on)?{TO_ISSUE}", False),
+                rf"(?:(?:implement|work)(?:s|ing)?(?:\s+on)?|(?:fix(?:es|ing)?|owns?)(?!{IN_A_PATH})|responsible\s+for){TO_ISSUE}", False),
     (ISSUE_ASK, rf"\bfork\s+(?:for|that\s+owns)\s+{ISSUE}\s+only\b", False),
     (ISSUE_ASK, rf"(?:{RUN_VERB}|\b(?:follow(?:ing)?|call|invoke|load|per|exactly\s+as|carry\s+out|skill:))[^.;\n]{{0,40}}?"
                 r"dk:implement\b(?!-)|^\s*/dk:implement\b(?!-)", False),
     (GIT_ASK, rf"(?:{RUN_VERB}\s+`?)?\b(?:{GIT}(?:commit|push)|gh\s+pr\s+create)\b", True),
     (GIT_ASK, rf"\b(?:commit|push)\b[*_]*(?:{OBJECT}|\s*(?:[.;!](?=\s|\Z)|\Z))", True),
     (GIT_ASK, r"\b(?:open|create)\s+(?:(?:the|a|an|one|your|its|new|draft)\s+)+(?:PR|pull\s+request)\b", True),
-    (GIT_ASK, r"\b(?:an?|one)\s+commit\s+(?:per|after|for\s+each)\b|\bcommitting\s+(?:per|after|each)\b"
-              r"|(?<![\"'`“])\bcommit\s+(?:your\b|per\s+(?!#)|after\s+(?:each|every)\b)", False),
+    (GIT_ASK, r"\b(?:an?|one)\s+commit\s+(?:per|after|for\s+each)\b|\bcommitting\s+(?:per|after|each)\b", False),
     (WORKTREE_ASK, rf"\b{GIT}worktree\s+add\b", False),
 )]
 QUOTES = ("`", '"', "'")
@@ -85,10 +85,10 @@ def negated(text, pos, before, what):
     """Whether a "do not" or "never" in before governs pos: directly, along a list, or as the heading of pos's list."""
     end = CLAUSE_END.search(text, pos)
     rest = text[pos:end.start() if end else None]
-    cadence = CADENCE.match(rest)  # nobody forbids "commit per green step": it ends a list of forbidden steps
+    cadence = CADENCE.match(rest)  # after a comma, "commit per green step" is an instruction, not one more forbidden step
     for m in NEGATOR.finditer(before):
         between = before[m.end():]
-        if TURN.search(between):
+        if TURN.search(between) or ")" in between and "(" not in between:
             continue
         if not (re.search(r"[,:(]", between) or AND.search(between)) or GIT_STEPS.match(between) and not cadence:
             return True
@@ -96,7 +96,7 @@ def negated(text, pos, before, what):
             continue  # "if the tests do not pass, commit"
         if OR_LAST.search(between):
             return True
-        if between.rstrip().endswith(",") and not cadence and (what == GIT_ASK or OR.search(rest)):
+        if COMMA_LAST.search(between) and not cadence and (what == GIT_ASK or OR.search(rest)):
             return True
     line = text[text.rfind("\n", 0, pos) + 1:pos]
     if BULLET.match(line):
