@@ -89,18 +89,24 @@ def without_arithmetic(line):
 
 
 class QuoteState:
-    """The quotes and substitutions still open after the command lines read so far, innermost last."""
+    """What is still open after the command lines read so far, innermost last: quotes, substitutions, `${` and plain
+    parentheses. A `${` inside double quotes is not tracked, so a quote in it counts as the outer string's."""
 
     def __init__(self):
         self.open, self.in_word, self.continued = [], False, False
 
-    def heredocs(self, line):
-        """Read one command line and return the (dash, word) of each here-doc it opens outside quotes and comments."""
+    def depth(self):
+        """How many of them hold back a here-doc body; plain parentheses do not."""
+        return sum(o != "(" for o in self.open)
+
+    def read_line(self, line):
+        """Read one command line and return the (depth, dash, word) of each here-doc it opens outside quotes and
+        comments."""
         line, found, i = without_arithmetic(line), [], 0
         self.in_word, self.continued = self.in_word and self.continued, False
         while i < len(line):
             c, inner, was_in_word = line[i], self.open[-1] if self.open else "", self.in_word
-            self.in_word = c not in " \t;&|"
+            self.in_word = c not in " \t;&|<>)"
             i += 1
             if c == "\\" and inner != "'":
                 self.continued = i == len(line)
@@ -110,30 +116,26 @@ class QuoteState:
             elif inner in ("'", "$'"):
                 if c == "'":
                     self.open.pop()
-            elif c == '"' == inner or c == "`" == inner or c == ")" and inner == "(":
+            elif (inner, c) in (('"', '"'), ("`", "`"), ("$(", ")"), ("(", ")"), ("${", "}")):
                 self.open.pop()
-            elif c == "`":
-                self.open.append(c)
-            elif c == "$" and line.startswith("(", i):
-                self.open.append("(")
-                i += 1
+                self.in_word = inner != "("
+            elif c == "`" or c == "$" and line.startswith("(", i):
+                self.open.append("`" if c == "`" else "$(")
+                self.in_word = False
+                i += c == "$"
             elif inner == '"':
                 pass
-            elif c == "$" and line.startswith("'", i):
-                self.open.append("$'")
+            elif c == "$" and line.startswith(("'", "{"), i):
+                self.open.append(c + line[i])
                 i += 1
             elif c in "'\"(":
                 self.open.append(c)
-            elif c == "#" and not was_in_word:
+                self.in_word = was_in_word or c != "("
+            elif c == "#" and not was_in_word and inner != "${":
                 break
             elif c == "<" and (m := HEREDOC.match(line, i - 1)):
-                found.append(m.groups())
-                i = m.end()
+                found.append((self.depth(), *m.groups()))
         return found
-
-    def before_body(self):
-        """Whether the next line still belongs to this command, so a pending here-doc body starts after it."""
-        return self.continued or self.open[-1:] in (["'"], ["$'"], ['"'])
 
 
 def heredoc_lines(cmd):
@@ -144,10 +146,13 @@ def heredoc_lines(cmd):
         line = lines[i]
         i += 1
         yield line, None
-        pending += quotes.heredocs(line)
-        if quotes.before_body():
+        pending += quotes.read_line(line)
+        if quotes.continued or not pending:
             continue
-        for dash, word in pending:
+        # a body starts after the last line of its command, past a quote or substitution opened after the operator
+        depth = quotes.depth()
+        ready, pending = [p for p in pending if p[0] >= depth], [p for p in pending if p[0] < depth]
+        for _, dash, word in ready:
             delim = QUOTED_PART.sub(unquote, word)
             expands = not QUOTED_PART.search(word)
             while i < len(lines):
@@ -156,7 +161,6 @@ def heredoc_lines(cmd):
                 if (body.lstrip("\t") if dash else body) == delim:
                     break
                 yield body, expands
-        pending = []
 
 
 def strip_heredocs(cmd):
