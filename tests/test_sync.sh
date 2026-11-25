@@ -39,6 +39,11 @@ commit hl/hl "hl: locator tweak" .claude/agents/locator.md >/dev/null
 commit hl/hl "hl: thoughts tweak" .claude/agents/thoughts.md >/dev/null
 quiet_base=$(commit quiet/q "quiet base" kept.md busy.md)
 commit quiet/q "quiet: busy tweak" busy.md >/dev/null
+# A source that dropped its adapted file from the default branch and kept it on legacy.
+fr_base=$(commit frozen/f "frozen base" dropped.md)
+git -C "$tmp/remotes/frozen/f" branch legacy
+git -C "$tmp/remotes/frozen/f" rm -q dropped.md
+commit frozen/f "frozen: rewrite" rewrite.ts >/dev/null
 
 cat >"$tmp/kit/upstream/UPSTREAM.md" <<EOF
 # Upstream sources
@@ -70,6 +75,12 @@ Preamble that mentions acme/skills @ 0000000 in passing.
 | dk file | Upstream path | Changes |
 |---|---|---|
 | kept | kept.md | as-is |
+
+## frozen/f (MIT) @ $fr_base..legacy
+
+| dk file | Upstream path | Changes |
+|---|---|---|
+| dropped | dropped.md | as-is |
 EOF
 
 out=$("$sync" 2>&1) || fail "sync.sh exited non-zero: $out"
@@ -103,12 +114,17 @@ $out"
 expect "quiet/q $quiet_base.."
 grep "quiet/q" <<<"$out" | grep -qF "no changes" || fail "quiet/q line should say no changes:
 $out"
+# A section whose heading names a branch is compared against that branch, so a
+# file the default branch dropped is no change while the branch keeps it.
+expect "frozen/f $fr_base..$fr_base: no changes to adapted files"
+refuse "=== dropped.md"
 # A recorded path that does not exist at the recorded commit is named, not
 # silently counted as unchanged.
 expect "misspelt.md: not found at $hl_base"
 # The temp clones are gone when the run ends, so the full-diff hint asks for a
 # rerun that keeps them instead of naming a directory that no longer exists.
 expect "rerun as upstream/sync.sh <clones-dir>"
+expect "git -C <clones-dir>/<owner>/<repo> diff <recorded>..<head> -- <path>"
 
 # A reused clone that lacks origin/HEAD still gets compared, and the run goes
 # on to the next source. Git before 2.48 never recreates the ref on fetch;
@@ -129,8 +145,34 @@ commit quiet/q "quiet: kept on trunk" kept.md >/dev/null
 out=$("$sync" "$clones" 2>&1) || fail "sync.sh after a default-branch move exited non-zero: $out"
 expect "=== kept.md"
 expect "quiet: kept on trunk"
+# A named branch that moved upstream is reported like any other change.
+git -C "$tmp/remotes/frozen/f" checkout -q legacy
+fr_moved=$(commit frozen/f "frozen: legacy tweak" dropped.md)
+git -C "$tmp/remotes/frozen/f" checkout -q main
+out=$("$sync" "$clones" 2>&1) || fail "sync.sh after a named branch moved exited non-zero: $out"
+expect "frozen/f $fr_base..$fr_moved"
+expect "=== dropped.md"
+expect "frozen: legacy tweak"
+refuse "frozen: rewrite"
+# A named branch deleted upstream is named and the run goes on to the next
+# source, from a fresh clone and from a reused one that still holds the branch.
+git -C "$tmp/remotes/frozen/f" branch -q -D legacy
+cat >>"$tmp/kit/upstream/UPSTREAM.md" <<EOF
+
+## hl/hl after-frozen (Apache-2.0) @ $hl_base
+
+| dk file | Upstream path | Changes |
+|---|---|---|
+| agents/locator | .claude/agents/locator.md | trimmed |
+EOF
+for dir in "" "$clones"; do
+  out=$("$sync" "$dir" 2>&1) || fail "sync.sh after a named branch was deleted exited non-zero: $out"
+  expect "frozen/f $fr_base..legacy: branch not found upstream"
+  [[ $(grep -c "^hl/hl " <<<"$out") == 2 ]] || fail "the source after the missing branch was not compared:
+$out"
+done
 # With a clones dir the hint names it, ready to run.
-expect "git -C $clones/<owner>/<repo> diff"
+expect "git -C $clones/<owner>/<repo> diff <recorded>..<head> -- <path>"
 refuse "rerun as"
 
 echo "sync: all checks passed"

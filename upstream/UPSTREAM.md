@@ -4,7 +4,7 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 
 `sync.sh` parses two things, so keep them in this shape (`tests/test_skills.py` fails on either one broken):
 
-- **Section heading**: `## <owner>/<repo> [label] (<license>) @ <short commit>`. The first word is the GitHub repo; the commit ends the line. One commit per section: a file taken at another commit of the same repo gets its own section.
+- **Section heading**: `## <owner>/<repo> [label] (<license>) @ <short commit>[..<branch>]`. The first word is the GitHub repo; the commit ends the line, with `..<branch>` after it when `sync.sh` compares against that upstream branch instead of the default branch. One commit per section: a file taken at another commit of the same repo gets its own section.
 - **Upstream path column** (the second): paths from the repo root, comma-separated, no globs and no shorthand (`pstack/skills/a, pstack/skills/b`, not `pstack/skills/a, b`). A directory covers everything under it. Backticks are ignored.
 
 ## mattpocock/skills (MIT) @ 4ae2317
@@ -45,7 +45,9 @@ Each vendored or ported file, the commit it was taken from, and how far it was c
 | skills/verify-doc-check | pstack/skills/maintain-verification-skill | target is `docs/agents/verify.md` under `dk:verify`; readers per doc section; worktree on `origin/pre-main`, `origin/main` without it; fixes in one PR into `pre-main`, product gaps as `needs-triage` issues; teardown proven by `dk-pg status` |
 | agents/comment-reviewer | pstack/agents/comment-sicko.md | scoped to comments on added lines; Restates (Reshape folded in), Narrates history, Stale, Commented-out code findings; Suppression left to Standards; repo comment policy overrides the keep list; report only, persona and `/how` `/why` calls dropped; findings carry the review's id and a should or nit severity (tstack sol-loop) |
 
-## humanlayer/humanlayer (Apache-2.0) @ 99abe67
+## humanlayer/humanlayer (Apache-2.0) @ 99abe67..legacy
+
+HumanLayer's default branch dropped these files in `d8197bab`; its `legacy` branch and `legacy-final` tag carry them unchanged at the pin.
 
 | dk file | Upstream path | Changes |
 |---|---|---|
