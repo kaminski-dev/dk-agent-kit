@@ -220,7 +220,7 @@ check("gate: dk:issue-flow's ready gate names its gh pr view fields", gate_field
 GATE = gate_fields.group(1) if gate_fields else ""
 
 
-def settings(**state):
+def set_state(**state):
     state_file.write_text(json.dumps({**json.loads(state_file.read_text()), **state}))
 
 
@@ -250,18 +250,18 @@ got = gate(1)
 check("gate: a PR that stores none of them has origin's head and an unknown merge state",
       got == {"headRefOid": TIP, "state": "OPEN", "isDraft": False, "reviewDecision": "",
               "mergeable": "UNKNOWN", "mergeStateStatus": "UNKNOWN"}, got)
-settings(prs=[])
+set_state(prs=[])
 pull_on(ws, "353", "HEAD")
 got = gate(1)
 check("gate: a PR gh pr create opens is mergeable and clean",
       got == {"headRefOid": TIP, "state": "OPEN", "isDraft": False, "reviewDecision": "",
               "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN"}, got)
-settings(prs=[], new_pr={"mergeStateStatus": "BLOCKED", "reviewDecision": "REVIEW_REQUIRED"})
+set_state(prs=[], new_pr={"mergeStateStatus": "BLOCKED", "reviewDecision": "REVIEW_REQUIRED"})
 run(ws, "gh pr create -d --base pre-main --head fix/353-check --title t --body b", cwd=ws / "app")
-got = gate(1)
+got = {**gate(1), "base": json.loads(state_file.read_text())["prs"][0]["base"]}
 check("gate: new_pr in the state sets what a PR the agent opens carries",
       got == {"headRefOid": TIP, "state": "OPEN", "isDraft": True, "reviewDecision": "REVIEW_REQUIRED",
-              "mergeable": "MERGEABLE", "mergeStateStatus": "BLOCKED"}, got)
+              "mergeable": "MERGEABLE", "mergeStateStatus": "BLOCKED", "base": "pre-main"}, got)
 blocking = re.search(r"`gh pr view <PR> (--json latestReviews --jq '[^']*')`", issue_flow)
 check("gate: dk:issue-flow's ready gate names its read of requested changes", blocking is not None, "no such command in step 6")
 store_pr(1)
@@ -296,7 +296,7 @@ def pr_wait(*args, minutes=2, interval=0):
     return r.returncode, r.stdout, r.stderr[-300:]
 
 
-settings(required_checks={})
+set_state(required_checks={})
 store_pr(1)
 r = graphql(QUERY)
 got = json.loads(r.stdout) if r.returncode == 0 else r.stderr
@@ -351,7 +351,7 @@ for old, gained in (("url state headRefOid", "url state headRefOid title"), ("vi
     check(f"pr-wait's query: one that reads `{gained}` instead fails loud",
           old in QUERY and r.returncode != 0 and r.stdout == "" and "tracker stand-in" in r.stderr, (r.stdout[:200], r.stderr))
 for query in ("query { viewer { login } }", QUERY.replace("      author { login }\n", "", 1), "",
-              QUERY + "mutation { closeIssue { x } }",
+              QUERY + "mutation { closeIssue { x } }", QUERY.rstrip().removesuffix("}"), QUERY + "}",
               'mutation { resolveReviewThread(input: {threadId: "T"}) { thread { isResolved } } }'):
     r = graphql(query)
     check(f"another GraphQL query fails loud: {query[-30:].strip()!r}",
@@ -369,7 +369,7 @@ check("pr-wait: a ready PR exits 0 with its ready line", code == 0 and out.start
       "no review bot on pre-main; 0 unresolved threads; merge state CLEAN; 0 commits behind pre-main"), (code, out, err))
 asked = [line.split("\t", 1)[0] for line in (ws / ".tracker" / "repos.log").read_text().splitlines()]
 check("pr-wait: every gh call is one line of repos.log, asked for origin's repo", asked and set(asked) == {"acme/ledger"}, asked)
-settings(required_checks={"pre-main": ["test", "e2e"]})
+set_state(required_checks={"pre-main": ["test", "e2e"]})
 code, out, err = pr_wait("--until", "ready", minutes=0.05, interval=1)
 check("pr-wait: a required check that never started is not ready", code == 1 and "deadline passed" in out and "#1 ready on" not in out,
       (code, out, err))
@@ -377,7 +377,7 @@ store_pr(1, **{**READY, "checks": GREEN + [{"name": "e2e", "bucket": "fail", "li
 code, out, err = pr_wait("--until", "ready")
 check("pr-wait: a failed required check is not ready", (code, out) == (1, "#1 required check failed: e2e https://ci/e2e\n"),
       (code, out, err))
-settings(required_checks={})
+set_state(required_checks={})
 for status, text in (("DIRTY", "merge state is DIRTY"), ("BEHIND", "merge state is BEHIND")):
     store_pr(1, **{**READY, "mergeStateStatus": status})
     code, out, err = pr_wait("--until", "ready")
@@ -436,6 +436,8 @@ check("gh pr checks --json: a check's state", (r.returncode, r.stdout) == (0, "e
 git(ws, "app", "checkout", "-q", "--orphan", "lone")
 git(ws, "app", "commit", "-qm", "lone")
 git(ws, "app", "push", "-q", "origin", "lone")
+lone = git(ws, "app", "ls-remote", "--heads", "origin", "lone").stdout
+check("a branch with no history in common is on origin", "refs/heads/lone" in lone, lone)
 store_pr(1, head="lone")
 for cmd in ("gh api repos/acme/ledger/compare/nowhere...pre-main", "gh api repos/acme/ledger/compare/pre-main...lone",
             "gh pr diff 1 --name-only"):

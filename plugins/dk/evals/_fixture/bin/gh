@@ -407,7 +407,7 @@ def selection(query):
                 out[t], last = None, t
         return out
     out = fields() if m else None
-    return None if list(tokens) else out
+    return None if list(tokens) or query.count("{") != query.count("}") else out
 
 
 def answer(fields, value, path="query"):
@@ -427,7 +427,6 @@ def answer(fields, value, path="query"):
 
 
 def page(nodes, blank, kept):
-    """A connection's page as answer() reads it, its nodes behind the blank one."""
     return {"totalCount": len(nodes), "nodes": [blank, *nodes[kept]]}
 
 
