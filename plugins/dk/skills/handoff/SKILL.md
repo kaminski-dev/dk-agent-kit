@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 Write a handoff document summarising the current conversation so a fresh agent can continue the work. Save to the temporary directory of the user's OS (`$TMPDIR`, else `/tmp`; `%TEMP%` on Windows) - not the current workspace.
 
-Open the document with the "Picking up a handoff" section below, copied verbatim: the agent that picks it up reads the document, not this skill. Right below that section, near the top, name the branch, its worktree path, the issue and the PR (`none` where there is none), which the pickup checks start from.
+Open the document with the "Picking up a handoff" section below, copied verbatim: the agent that picks it up reads the document, not this skill. Right below that section, name the branch, its worktree path, the issue and the PR (`none` where there is none), which the pickup checks start from.
 
 Include a "suggested skills" section in the document, naming which skills the next agent should call the Skill tool for.
 

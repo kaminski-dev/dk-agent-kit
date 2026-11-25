@@ -123,7 +123,7 @@ When you wrote the change (`dk:implement` sends you here), or the user asks you 
 
    Agree on the evidence alone, never to end the loop.
 3. **Measure.** Run `git diff --shortstat <fixed-point>` before the first fix and after each round's fixes, once the checks they touch pass and the fixes are committed. When review fixes grew the diff, cut first: undo or narrow what no blocker or should needs, before another round.
-4. **Next round**, only while budget remains and a blocker or should is open, or behaviour code changed since the last round. Run steps 4 and 5 again with the same diff command; each prompt adds its own axis's ledger rows, each open id with its original claim and `file:line`, and the change since the last round (`git diff <last round's HEAD>`), and asks for only the open ids and the code changed since. An open id is one no reviewer has marked `resolved` yet.
+4. **Next round**, only while budget remains and a blocker or should is open, or behaviour code changed since the last round. Run steps 4 and 5 again with the same diff command; each prompt adds its own axis's ledger rows, each open id's original claim and `file:line` from the report that raised it, and the change since the last round (`git diff <last round's HEAD>`), and asks for only the open ids and the code changed since. An open id is one no reviewer has marked `resolved` yet.
 
 Done when no blocker or should is open on the current diff. Stuck when an id stays disputed after two replies, or the budget ends with a blocker or should open: show both sides in 2-3 lines each, and the user decides. Budget end is not approval.
 
