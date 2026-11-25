@@ -409,16 +409,28 @@ out=$("$dkgc" --in-use "$ws/notes-9") && fail "--in-use exited 0 on a path that 
 has "$out" "$ws/notes-9: no such directory"
 
 # Origin URL shapes, in a workspace of their own. gh has no o/r fixture, so a repo that names o/r shows
-# as one whose PRs it cannot list; the lookalike's database shows it names none.
+# as one whose PRs it cannot list; a repo that names none is listed only for its database.
 shapes="$tmp/shapes" sfx="$tmp/shapes-fixture"
 mkdir -p "$shapes" "$sfx"
-for spec in lookalike=https://notgithub.com/o/r.git caps=https://GitHub.com/o/r.git port=ssh://git@github.com:22/o/r.git; do
+with_repo=(caps=https://GitHub.com/o/r.git port=ssh://git@github.com:22/o/r.git token=https://x-access-token:t@github.com/o/r)
+no_repo=(lookalike=https://notgithub.com/o/r.git pathhost=https://mirror.example/github.com/o/r.git
+  pathuser=https://evil.example/x@github.com/o/r filepath=file:///srv/github.com/o/r
+  query=https://evil.example?x@github.com/o/r fragment=https://evil.example#x@github.com/o/r
+  scphost=evil.example:x@github.com/o/r localpath=/srv/x@github.com/o/r)
+for spec in "${with_repo[@]}" "${no_repo[@]}"; do
   git init -q "$shapes/${spec%%=*}"
   git -C "$shapes/${spec%%=*}" remote add origin "${spec#*=}"
 done
-printf '%s\t%s\t%s\t%s\n' c1 dk-pg-lookalike-1 "$shapes/lookalike" 1 >"$sfx/docker-ps"
+for spec in "${no_repo[@]}"; do
+  repo=${spec%%=*}
+  printf '%s\t%s\t%s\t%s\n' "c-$repo" "dk-pg-$repo-1" "$shapes/$repo" 1 >>"$sfx/docker-ps"
+done
 out=$(DKGC_FIXTURE="$sfx" "$dkgc" --dry-run --workspace "$shapes")
-has "$out" "lookalike (no GitHub origin)"$'\n'"  keep database dk-pg-lookalike-1 (issue #1; no GitHub checkout at $shapes/lookalike)"
-has "$out" "caps (o/r)"$'\n'"  branches skipped: gh could not list its PRs"
-has "$out" "port (o/r)"$'\n'"  branches skipped: gh could not list its PRs"
+for spec in "${with_repo[@]}"; do
+  has "$out" "${spec%%=*} (o/r)"$'\n'"  branches skipped: gh could not list its PRs"
+done
+for spec in "${no_repo[@]}"; do
+  repo=${spec%%=*}
+  has "$out" "$repo (no GitHub origin)"$'\n'"  keep database dk-pg-$repo-1 (issue #1; no GitHub checkout at $shapes/$repo)"
+done
 echo "dk-gc: all checks passed"
