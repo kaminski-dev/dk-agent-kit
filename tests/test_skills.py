@@ -653,6 +653,11 @@ else:
         ("a bug born on the branch, whose control is its last pre-fix commit", r"last pre-fix commit[^.]*`dk:verify` step 4"),
         ("the confirmed cause into the PR through dk:pr", r"Skill tool with `dk:pr`"),
         ("a missing seam routed to the user's /dk:improve-codebase-architecture", r"`/dk:improve-codebase-architecture`"),
+        # CodeRabbit local review on #136 (#138): the seamless branch said nothing about the fix Phase 6 still asks for.
+        ("the fix going ahead without a seam, proven by the loop and dk:verify's control run",
+         r"\*\*If no correct seam exists[^\n]*fix goes ahead[^\n]*Phase 1 loop[^\n]*`dk:verify`'s control run"),
+        ("the same proof in Phase 6's checklist when there is no seam",
+         r"- \[ \] Regression test passes[^\n]*no correct seam[^\n]*Phase 1 loop[^\n]*`dk:verify`'s control run"),
         # CodeRabbit local review on #136 (#112): the user runs the HITL copy, so their pasted run is the one Phase 1 needs.
         ("the user's pasted HITL run counting as Phase 1's run", r"HITL[^.]*the user's run counts"),
     ):
