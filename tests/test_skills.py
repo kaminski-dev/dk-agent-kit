@@ -509,6 +509,11 @@ for what, pattern in (
         errors.append(f"skills/handoff: its 'Picking up a handoff' section does not name {what}")
 if not re.search(r"\"Picking up a handoff\" section.*verbatim", handoff[:handoff.find("## Picking up")]):
     errors.append("skills/handoff: the written document must open with the 'Picking up a handoff' section, copied verbatim")
+# CodeRabbit local review on #136 (#138): the pickup checks the branch, issue and PR the document names.
+if not re.search(r"near the top, [^\n]*branch, its worktree path, the issue and the PR[^\n]*`none`",
+                 handoff[:handoff.find("## Picking up")]):
+    errors.append("skills/handoff: the written document must name its branch, worktree path, issue and PR "
+                  "(or `none`) near the top")
 if not re.search(r"\A---\n.*?\n---\n\n<!-- Adapted from t3dotgg/tstack@[0-9a-f]+ skills/takeover, MIT \(© 2026 Theo Browne\)\. ",
                  handoff, re.S):
     errors.append("skills/handoff: no `<!-- Adapted from t3dotgg/tstack@<commit> skills/takeover, MIT (© 2026 Theo Browne).` "
