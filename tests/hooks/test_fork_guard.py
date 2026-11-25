@@ -52,12 +52,12 @@ def assert_allowed(result):
     assert result == (0, None, ""), result
 
 
-def case_a_fork_handed_a_worktree_path_is_denied():
+def case_a_fork_told_to_commit_in_an_existing_worktree_is_denied():
     assert_denied(run(fork(WORKTREE_BRIEF)))
     assert_denied(run(fork("The worktree already exists. Commit per green step and report the SHAs.")))
 
 
-def case_a_fork_handed_a_worktree_path_and_its_branch_is_denied():
+def case_a_fork_told_to_commit_on_a_named_branch_is_denied():
     assert_denied(run(fork("Worktree (already created, work only here): /home/u/workspace/acme-7, branch "
                            "feat/7-export. Write the fixture first, commit after each green step.")))
     assert_denied(run(fork("Follow the flow for this ticket in worktree `~/workspace/acme-8` on branch "
@@ -115,7 +115,9 @@ def case_an_instruction_to_commit_push_or_open_a_pr_is_denied():
     for prompt in ("Work in src, then commit.", "Fix it, commit, push.", "Once green, commit and push.",
                    "Set up the tree\ncommit per green step", "1. Read it\n2. Push the branch.", "**Commit** the fix",
                    "Run `git push origin HEAD`.", "Run gh pr create --fill.", "Create a pull request when it passes.", "Please commit your changes.",
-                   "When done commit your changes.", "Work in src \u2014 commit once green.",
+                   "When the tests pass commit your changes.", "Now commit the fix.", "Commit src/cart.ts and report.",
+                   "Open a new PR.", "Run `git add -A && git commit -m x`.", "Steps:\n1) Fix it\n2) Push the branch",
+                   "I am away, so commit the fix.", "Work in src \u2014 commit once green.",
                    "Work test-first, with a commit per step.", "Make the fixes, committing per step."):
         assert_denied(run(fork(prompt)))
 
@@ -124,6 +126,7 @@ def case_an_ask_after_a_negation_that_does_not_reach_it_is_denied():
     for prompt in ("Do not touch port 5432, commit per green step.", "Never use the shared browser. Then open the PR.",
                    "If the tests do not pass, commit the red test or the note.", "Do not push but commit your changes.",
                    "Do not edit tests and docs, commit per step or per file.",
+                   "Do not push, commit per green step.", "Do not delegate, implement #42.",
                    "Do not run the whole suite and commit your changes.", "Don't forget to commit your changes.",
                    "Do not stop at a plan, implement #42.", "Rules (never skip):\n- Commit per green step",
                    "Read the docs first. Commit the rest."):
@@ -131,7 +134,12 @@ def case_an_ask_after_a_negation_that_does_not_reach_it_is_denied():
 
 
 def case_a_negated_ask_is_allowed_wherever_the_negation_stands():
-    for prompt in ("Do not edit tests, commit, push, or open a PR.", "Never commit, push.", "Do not commit and push.",
+    for prompt in ("Do not edit tests, commit, push, or open a PR.",
+                   "Do not edit files, commit changes, push the branch, open a PR.", "Do **not** commit, push.",
+                   "You cannot edit files, push the branch, or open a PR.", "You may not commit, push.",
+                   "Report only; no edits, git commit, or git push.", "Not allowed: edit files, commit changes.",
+                   "Work without running git add, git commit, or git push.", "Forbidden:\n- git commit\n- git push",
+                   "Do not edit src, implement #42, or fix #43.", "Never commit, push.", "Do not commit and push.",
                    "Do not commit the notes or\nopen a PR", "Don\u2019t commit, or push the branch.",
                    "Do not, under any circumstances, commit the files",
                    "Do not edit files, branches or run git worktree add ../x.",
@@ -143,7 +151,8 @@ def case_a_negated_ask_is_allowed_wherever_the_negation_stands():
 def case_an_ask_meant_for_somebody_else_is_allowed():
     for prompt in ("List the callers; I will review, commit and push it.", "Another fork owns #43; leave it alone.",
                    "The other fork owns #43.", "A sibling fork owns #44.",
-                   "Sweep src; the parent will check it and open the PR."):
+                   "Sweep src; the parent will check it and open the PR.",
+                   "I will review your edits, then commit and push."):
         assert_allowed(run(fork(prompt)))
 
 
@@ -156,12 +165,14 @@ def case_commit_push_and_fix_as_nouns_are_allowed():
 
 
 def case_a_fork_fixing_a_slice_of_an_issues_sweep_is_allowed():
-    for prompt in ("Fix the typos in your slice of #41.", "Fix every comment for the #41 comment sweep."):
+    for prompt in ("Fix the typos in your slice of #41.", "Fix the typos in src/a for #41.", "Fix every comment for the #41 comment sweep."):
         assert_allowed(run(fork(prompt)))
 
 
 def case_a_fork_told_to_implement_an_issue_in_other_shapes_is_denied():
-    for prompt in ("Implement #360 cleanup and verify it.", "Implement https://github.com/o/r/issues/42.",
+    for prompt in ("Implement #360 cleanup and verify it.", "Implement https://github.com/o/r/issues/42.", "Implement the part of #42 that covers checkout.",
+                   "Your task is to implement issue #42.", "We need to implement issue #42.", "Now fix o/r#42.",
+                   "Start with dk:implement.", "/dk:implement 42", "Skill: dk:implement",
                    "You are the fork implementing #206 end to end.", "/dk:implement #42", "Follow the dk:implement flow.",
                    "You are responsible for ticket #42.", "You are the fork for issue #43 only."):
         assert_denied(run(fork(prompt)))
@@ -169,6 +180,8 @@ def case_a_fork_told_to_implement_an_issue_in_other_shapes_is_denied():
 
 def case_a_quoted_git_worktree_add_to_run_is_denied_and_a_quoted_mention_is_not():
     assert_denied(run(fork("Use `git worktree add` for the control run.")))
+    assert_denied(run(fork("Start with `git worktree add`.")))
+    assert_allowed(run(fork("Read what \"git worktree add\" does.")))
     assert_allowed(run(fork("Grep the docs for `git worktree add` and read how they use dk:implement-spec.")))
     assert_allowed(run(fork("The doc reference: `git worktree add ../x -b y` is stale; say why.")))
 
