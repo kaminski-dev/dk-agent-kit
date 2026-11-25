@@ -12,7 +12,8 @@ push with the gate's last lines; a passing gate is silent.
 Pushes of verify-assets/*, branch deletes and pushes guard-bash.py denies
 anyway run no gate. A checkout without a gate, or no checkout at all: nothing
 happens. A directory known only at run time (`cd "$(…)" && git push`, or `$WT`
-when the call does not set it) runs no gate either, and the agent is told so.
+when the call does not set it), or missing before the call, runs no gate either,
+and the agent is told so.
 
 It fails open: a gate that outlives TIMEOUT is killed and the push goes through
 with a message to the user. A crash, or the hook's own timeout in hooks.json,
@@ -76,7 +77,7 @@ def push_roots(cmd, cwd, guard, stop):
         args, path = guard.git_subcommand(tokens, path)
         if args[:1] != ["push"] or not gated(args[1:], path, guard):
             continue
-        if path is None or not os.path.isdir(path):  # the call may create it
+        if path is None or not os.path.isdir(path):
             unknown = True
             continue
         root = (stop.git(path, "rev-parse", "--show-toplevel") or "").strip()
@@ -120,8 +121,9 @@ def main():
         out["hookSpecificOutput"] = {
             "hookEventName": "PreToolUse",
             "additionalContext": f"dk-guard: {stop.GATE} did not run for this push: its directory is known only at "
-                                 "run time. Write the worktree path literally (`cd <worktree> && git push`), or run "
-                                 "the gate there by hand."}
+                                 "run time, or does not exist before the call. Push in a call of its own with the "
+                                 "worktree path written literally (`cd <worktree> && git push`), or run the gate "
+                                 "there by hand."}
     if out:
         print(json.dumps(out))
 

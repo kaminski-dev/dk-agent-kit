@@ -207,8 +207,8 @@ LEAD = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}", "fi
 # Words that open or close a compound command: from the first one on, a segment may run never or more than once.
 COMPOUND = LEAD | {"for", "foreach", "select", "repeat", "case", "coproc"}
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\[[^]]*\])?\+?=")
-# A source word whose quotes the splitter drops although they matter: a quoted `$` or leading `~`, which the shell
-# does not expand, or a name that ends at a quote (`"$WT"x`).
+# A source word whose dropped quotes matter: a `$` in single quotes, after a backslash or before a quote, a quoted
+# `~`, or a name that only a quote separates from more word characters (`"$WT"x`).
 LITERAL = re.compile(r"""'[^']*\$[^']*'|\\\$|\$["']|\$\w+["'\\]+\w|^\w*=?["'\\]+(?:\w+=)?~|~[^/]*["'\\]""")
 # Commands that run the command after their own options; letters are the options that take a value.
 # A function name holds no `$` or `=`: `X=$(date)` is an assignment whose substitution reads as `$()`.
@@ -325,7 +325,6 @@ class Splitter:
                 self.nesting += 1
                 self.parse(")", substituted)  # a subshell
                 self.nesting -= 1
-                self.continued = self.continued and self.nesting > 0
             else:
                 mark, start = len(self.modifier_names), self.i
                 word, quoted, subs = self.word()
@@ -672,6 +671,7 @@ RUN_TIME = re.compile(r"[$`]")  # in a path: the guard does not know it all
 UNSEEN = {"eval", "source", ".", "trap", "pushd", "popd", "chdir"}
 SETTERS = DECLARE | {"read", "unset", "getopts", "vared"}
 SHELL_SETS = {"PWD", "OLDPWD", "REPLY", "OPTARG", "OPTIND"}
+SWITCHERS = {"checkout", "switch", "symbolic-ref"}  # git and gh subcommands that put a checkout on another branch
 
 
 def assignments(words):
@@ -705,7 +705,8 @@ class Walk:
         self.cwd, self.steps = cwd, []
         self.last_cd, self.before_last_cd = None, (None, [None])
         self.varied = False  # a `cd` so far named its directory through a variable or a substitution
-        self.literal = True  # literal `cd`s lead to the directory, and no `cd` so far varied
+        self.literal_cwd = cwd  # where the literal `cd`s lead, wherever they ran; None once another kind counts
+        self.switched = False  # a checkout may be on another branch than before the call
         self.values = {}  # name: (text, the step that set it)
 
     def follow(self, seg):
@@ -717,16 +718,23 @@ class Walk:
         redirected = any(t != "/dev/null" and not t.isdigit() for _, t in seg.redirects)
         step = None if seg.piped_in or seg.piped_out or redirected else seg.step
         self.doubt_mentions([w.partition("=")[2] for w in seg.words] if plain else seg.words)
+        settled = {}
         for name, op, value in assignments(seg.words):
             if op == "=":
                 text, certain = self.resolve(value, seg)
                 word = f"{name}={value}"  # in the words unless it sets an element, `name[1]=x`
                 certain = certain and plain and word in seg.words and word not in seg.literals \
-                    and not value.startswith("(") and name not in SHELL_SETS
-                self.values[name] = text, step if certain else None
+                    and name not in SHELL_SETS
+                settled[name] = text, step if certain else None
+                # `export` expands every operand before it sets one
+                self.values[name] = (text, None) if seg.words[0] == "export" else settled[name]
             elif op:
+                settled.pop(name, None)
                 self.doubt(name)
-        if words[:1] and words[0] in UNSEEN:
+        self.values.update(settled)
+        if words and os.path.basename(words[0]) in ("git", "gh"):
+            self.switched = self.switched or bool(SWITCHERS.intersection(words))
+        if words and (words[0] in UNSEEN or words[0] == "-" or RUN_TIME.search(words[0])):
             self.doubt(*self.values)
             self.steps, self.last_cd = [None], None
         if words[:1] == ["cd"]:
@@ -738,8 +746,8 @@ class Walk:
         `unset WT`, `${WT::=x}`; doubt all where the name itself is known only at run time."""
         if not self.values:
             return
-        indirect = SETTERS.intersection(words) and any(re.search(r"[$*?[]", w) for w in words)
-        if indirect or any(re.search(r"\$\{\([^)]*P", w) for w in words):
+        setter = SETTERS.intersection(words) or "-v" in words and {"printf", "print"}.intersection(words)
+        if setter and any(re.search(r"[$*?[]", w) for w in words):
             self.doubt(*self.values)
         for w in words:
             self.doubt(*re.findall(r"\w+", VARIABLE.sub(" ", w)))
@@ -750,22 +758,23 @@ class Walk:
                 self.values[name] = self.values[name][0], None
 
     def cd(self, args, step, seg):
-        if not args and (step is None or step.conditional):
-            self.steps, self.last_cd = [None], None  # it may have run; the literal `cd`s before it still count
-            return
         before, target = (self.cwd, self.steps), args[0] if args else "~"
         if target == "-":
             # back to where the last `cd` started, if that one went through
             went = self.last_cd if self.cwd and os.path.isdir(self.cwd) else None
-            self.literal = False
+            self.literal_cwd = None
             self.cwd, steps = self.before_last_cd
             self.steps = steps + [went, step]
         else:
             text, certain = self.resolve(target, seg)
-            self.varied = self.varied or bool(RUN_TIME.search(target))
-            self.literal = bool(args) and not self.varied and (self.literal or os.path.isabs(text))
-            self.cwd = self.join(text)
             step = step if certain and len(args) < 2 else None
+            self.varied = self.varied or bool(RUN_TIME.search(target))
+            if args:
+                anchored = not self.varied and (self.literal_cwd or os.path.isabs(text))
+                self.literal_cwd = self.join(self.literal_cwd, text) if anchored else None
+            elif step and not step.conditional:
+                self.literal_cwd = None
+            self.cwd = self.join(self.cwd, text)
             self.steps = [step] if os.path.isabs(text) else self.steps + [step]
         self.last_cd, self.before_last_cd = step, before
 
@@ -787,25 +796,27 @@ class Walk:
         return seg.step is not None and all(
             step is not None and (not step.conditional or step.list == seg.step.list) for step in steps)
 
-    def join(self, target):
-        if self.cwd is None or os.path.isabs(target) or target.startswith("$"):
-            return target
-        return os.path.join(self.cwd, target)
+    @staticmethod
+    def join(cwd, target):
+        return target if cwd is None or target.startswith(("/", "$")) else os.path.join(cwd, target)
 
     def guess(self, target, seg):
         text = self.resolve(target, seg)[0]
-        return text if text.startswith("$") else os.path.normpath(self.join(text))
+        return text if text.startswith("$") else os.path.normpath(self.join(self.cwd, text))
 
     def path(self, seg):
-        """The directory the segment runs in, None when it is known only at run time. While `literal`, the `cd`s count
-        wherever they ran."""
-        return self.cwd if self.literal or self.holds(self.steps, seg) else None
+        """The directory the segment runs in, None when it is known only at run time."""
+        if self.literal_cwd or self.switched or not self.holds(self.steps, seg):
+            return self.literal_cwd
+        # `cd` takes `..` off the path as written, git off the directory a link leads to
+        return self.cwd if os.path.realpath(self.cwd) == os.path.realpath(os.path.normpath(self.cwd)) else None
 
     def fill_git_dirs(self, words, seg):
         """`words` with each `git -C` directory filled in where it is certain."""
         def fill(word):
             text, certain = self.resolve(word, seg)
-            return text if certain and (os.path.isabs(text) or self.holds(self.steps, seg)) else word
+            known = certain and not self.switched and (os.path.isabs(text) or self.holds(self.steps, seg))
+            return self.join(self.cwd, text) if known else word
 
         return [fill(w) if k and words[k - 1] == "-C" and "$" in w else w for k, w in enumerate(words)]
 
@@ -833,11 +844,11 @@ def current_branch(path):
 RAW_PUSH_CD = re.compile(r"(?:^|[;&|\n(]|\b(?:then|do|else)\s)\s*cd\s+(\S+)")
 
 
-def raw_walk(cwd, steps):
-    """The Walk at the end of the raw `steps`, (offset, words) each, and a segment there. No segment has a step, since
+def raw_walk(cwd, moves):
+    """The Walk at the end of the raw `moves`, (offset, words) each, and a segment there. No segment has a step, since
     the raw text does not tell what runs: no variable is certain."""
     walk = Walk(cwd)
-    for _, words in sorted(steps):
+    for _, words in sorted(moves):
         seg = Segment("zsh", False)
         seg.words = words
         walk.follow(seg)
@@ -1720,12 +1731,12 @@ RAW_CD = re.compile(START + r"cd\s+(?!-(?:[\s;&|)]|$))(\"[^\"]*\"|'[^']*'|[^\s;&
 
 
 def check_verify_rm(cmd, cwd):
-    steps = [(m.start(1), [m.group(1) + "=" + m.group(2).strip("'\"")]) for m in RAW_ASSIGN.finditer(cmd)] \
+    moves = [(m.start(1), [m.group(1) + "=" + m.group(2).strip("'\"")]) for m in RAW_ASSIGN.finditer(cmd)] \
         + [(m.start(1), ["cd", m.group(1).strip("'\"")]) for m in RAW_CD.finditer(cmd)]
-    steps = [step for step in steps if not quoted_text(cmd, step[0])]
+    moves = [move for move in moves if not quoted_text(cmd, move[0])]
     for offset, tokens in segments(cmd, r"(?:[\w./~-]*/)?rm"):
         if not quoted_text(cmd, offset) \
-                and removes_run(tokens, *raw_walk(cwd, [step for step in steps if step[0] < offset])):
+                and removes_run(tokens, *raw_walk(cwd, [move for move in moves if move[0] < offset])):
             return [VERIFY_RM]
     return []
 
