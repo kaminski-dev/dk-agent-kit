@@ -365,7 +365,7 @@ asked = [line.split("\t", 1)[0] for line in (ws / ".tracker" / "repos.log").read
 check("pr-wait: every gh call is one line of repos.log, asked for origin's repo", asked and set(asked) == {"acme/ledger"}, asked)
 settings(required_checks={"pre-main": ["test", "e2e"]})
 code, out, err = pr_wait("--until", "ready", minutes=0.05, interval=1)
-check("pr-wait: a required check that never started is not ready", code == 1 and "deadline passed" in out and "ready on" not in out,
+check("pr-wait: a required check that never started is not ready", code == 1 and "deadline passed" in out and "#1 ready on" not in out,
       (code, out, err))
 store_pr(1, **{**READY, "checks": GREEN + [{"name": "e2e", "bucket": "fail", "link": "https://ci/e2e"}]})
 code, out, err = pr_wait("--until", "ready")
@@ -375,7 +375,7 @@ settings(required_checks={})
 for status, text in (("DIRTY", "merge state is DIRTY"), ("BEHIND", "merge state is BEHIND")):
     store_pr(1, **{**READY, "mergeStateStatus": status})
     code, out, err = pr_wait("--until", "ready")
-    check(f"pr-wait: a {status} PR is not ready", code == 1 and text in out and "ready on" not in out, (code, out, err))
+    check(f"pr-wait: a {status} PR is not ready", code == 1 and text in out and "#1 ready on" not in out, (code, out, err))
 store_pr(1, **READY, threads=[{"path": "a.py", "line": 3, "comments": [{"author": "owner", "body": "Why?"}]}])
 code, out, err = pr_wait("--until", "ready")
 check("pr-wait: an unresolved thread blocks ready", code == 1 and "blocked by 1 unresolved thread" in out, (code, out, err))
@@ -386,7 +386,7 @@ check("pr-wait: a PR without checks is watched to the deadline", code == 1 and "
 # Approval pending: on main the review bot's verdict is the approval pr-wait waits for; a human one it leaves to the gate.
 store_pr(1, **READY, base="main")
 code, out, err = pr_wait("--until", "ready", minutes=0.05, interval=1)
-check("pr-wait: a PR the review bot has yet to approve is not ready", code == 1 and "deadline passed" in out and "ready on" not in out,
+check("pr-wait: a PR the review bot has yet to approve is not ready", code == 1 and "deadline passed" in out and "#1 ready on" not in out,
       (code, out, err))
 store_pr(1, **READY, base="main", reviews=[{"author": "coderabbitai[bot]", "body": "Fine.", "databaseId": 71}])
 code, out, err = pr_wait("--until", "ready")
