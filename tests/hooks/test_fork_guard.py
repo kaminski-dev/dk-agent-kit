@@ -129,7 +129,8 @@ def case_an_ask_after_a_negation_that_does_not_reach_it_is_denied():
                    "If the tests do not pass, commit the red test or the note.", "Do not push but commit your changes.",
                    "Do not edit tests and docs, commit per step or per file.",
                    "Do not push, commit per green step.", "Do not touch main, one commit per finding.",
-                   "It is there (do not create another), commit the fix.", "Do not delegate, implement #42.",
+                   "It is there (do not create another), commit the fix.",
+                   "Do not touch main, a commit for each finding.", "Do not delegate, implement #42.",
                    "Do not run the whole suite and commit your changes.", "Don't forget to commit the rest.", "Do not work on main so push the branch.",
                    "Do not stop at a plan, implement #42.", "Rules (never skip):\n- Commit per green step",
                    "Read the docs first. Commit the rest."):
@@ -139,6 +140,7 @@ def case_an_ask_after_a_negation_that_does_not_reach_it_is_denied():
 def case_a_negated_ask_is_allowed_wherever_the_negation_stands():
     for prompt in ("Do not edit tests, commit, push, or open a PR.",
                    "Do not edit files, commit changes, push the branch, open a PR.", "Do **not** commit, push.",
+                   "Do not edit (or move) files, commit, or push the branch.",
                    "You cannot edit files, push the branch, or open a PR.", "You may not commit, push.",
                    "Report only; no edits, git commit, or git push.", "Not allowed: edit files, commit changes.",
                    "Work without running git add, git commit, or git push.", "Forbidden:\n- git commit\n- git push",
@@ -171,6 +173,8 @@ def case_commit_push_and_fix_as_nouns_are_allowed():
 
 def case_a_fork_fixing_a_slice_of_an_issues_sweep_is_allowed():
     for prompt in ("Fix the typos in your slice of #41.", "Fix the typos in src/a for #41.", "You own src/billing/** for #41.",
+                   "You own /Users/me/wt/src/billing/** for #41.", "Fix the typos in the src/billing folder for #41.",
+                   "You are working on src/a for #41.", "Fix the rest of #41's comments.",
                     "Fix every comment for the #41 comment sweep."):
         assert_allowed(run(fork(prompt)))
 
@@ -179,6 +183,8 @@ def case_a_fork_told_to_implement_an_issue_in_other_shapes_is_denied():
     for prompt in ("Implement #360 cleanup and verify it.", "Implement https://github.com/o/r/issues/42.", "Implement the part of #42 that covers checkout.",
                    "Your task is to implement issue #42.", "We need to implement issue #42.", "Now fix o/r#42.",
                    "Start with dk:implement.", "/dk:implement 42", "Implement the CI/CD change for issue #42.",
+                   "Fix issue #42. The bug is in src/cart.ts.", "You own issue #42. Work in ../wt-42.",
+                   "Fix issue #42 in src/cart.", "You will be responsible for issue #42.",
                    "Skill: dk:implement",
                    "You are the fork implementing #206 end to end.", "/dk:implement #42", "Follow the dk:implement flow.",
                    "You are responsible for ticket #42.", "You are the fork for issue #43 only."):
