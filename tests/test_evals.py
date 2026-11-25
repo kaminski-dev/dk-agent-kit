@@ -220,6 +220,10 @@ check("gate: dk:issue-flow's ready gate names its gh pr view fields", gate_field
 GATE = gate_fields.group(1) if gate_fields else ""
 
 
+def settings(**state):
+    state_file.write_text(json.dumps({**json.loads(state_file.read_text()), **state}))
+
+
 def store_pr(num, **record):
     """Put PR num for the fixture's fix branch into the tracker's state, in place of one with its number."""
     state = json.loads(state_file.read_text())
@@ -246,15 +250,14 @@ got = gate(1)
 check("gate: a PR that stores none of them has origin's head and an unknown merge state",
       got == {"headRefOid": TIP, "state": "OPEN", "isDraft": False, "reviewDecision": "",
               "mergeable": "UNKNOWN", "mergeStateStatus": "UNKNOWN"}, got)
-state_file.write_text(json.dumps({**json.loads(state_file.read_text()), "prs": []}))
+settings(prs=[])
 pull_on(ws, "353", "HEAD")
 got = gate(1)
 check("gate: a PR gh pr create opens is mergeable and clean",
       got == {"headRefOid": TIP, "state": "OPEN", "isDraft": False, "reviewDecision": "",
               "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN"}, got)
-state_file.write_text(json.dumps({**json.loads(state_file.read_text()), "prs": [], "new_pr": {
-    "mergeStateStatus": "BLOCKED", "reviewDecision": "REVIEW_REQUIRED"}}))
-run(ws, "gh pr create --draft --base pre-main --head fix/353-check --title t --body b", cwd=ws / "app")
+settings(prs=[], new_pr={"mergeStateStatus": "BLOCKED", "reviewDecision": "REVIEW_REQUIRED"})
+run(ws, "gh pr create -d --base pre-main --head fix/353-check --title t --body b", cwd=ws / "app")
 got = gate(1)
 check("gate: new_pr in the state sets what a PR the agent opens carries",
       got == {"headRefOid": TIP, "state": "OPEN", "isDraft": True, "reviewDecision": "REVIEW_REQUIRED",
@@ -287,14 +290,10 @@ def graphql(query, num=1, owner="acme"):
 
 
 def pr_wait(*args, minutes=2, interval=0):
-    """The real pr-wait on PR 1 in the fixture's checkout, as (exit code, its lines)."""
+    """The real pr-wait on PR 1 in the fixture's checkout, as (exit code, stdout, the end of stderr)."""
     shutil.rmtree(ws.parent / ".local", ignore_errors=True)
     r = run(ws, f"python3 -I '{PR_WAIT}' 1 --minutes {minutes} --interval {interval} {' '.join(args)}", cwd=ws / "app")
     return r.returncode, r.stdout, r.stderr[-300:]
-
-
-def settings(**state):
-    state_file.write_text(json.dumps({**json.loads(state_file.read_text()), **state}))
 
 
 settings(required_checks={})
@@ -329,11 +328,17 @@ check("pr-wait's query: comments, reviews and threads in GitHub's shape", isinst
          "pullRequestReview": {"databaseId": 71}},
         {"id": "PRRC_1_2", "url": f"{URL}#PRRC_1_2", "body": "Done.", "authorAssociation": "OWNER",
          "author": {"login": "agent", "__typename": "User"}, "pullRequestReview": {"databaseId": None}}]}}]}), got)
-store_pr(1, comments=[{"author": "owner", "body": str(n)} for n in range(130)])
+said = [{"author": "owner", "body": str(n)} for n in range(130)]
+store_pr(1, comments=said, reviews=said, threads=[{"path": str(n), "comments": said} for n in range(130)])
 r = graphql(QUERY)
-got = json.loads(r.stdout)["data"]["repository"]["pullRequest"]["comments"] if r.returncode == 0 else r.stderr
-check("pr-wait's query: last: 100 of 130 comments", isinstance(got, dict) and got["totalCount"] == 130
-      and [c["body"] for c in got["nodes"]] == [str(n) for n in range(30, 130)], str(got)[:300])
+got = json.loads(r.stdout)["data"]["repository"]["pullRequest"] if r.returncode == 0 else {}
+threads = got["reviewThreads"]["nodes"] if got else [{}]
+for what, page, field, numbers in (("last 100 comments", got.get("comments"), "body", range(30, 130)),
+                                   ("last 100 reviews", got.get("reviews"), "body", range(30, 130)),
+                                   ("last 100 threads", got.get("reviewThreads"), "path", range(30, 130)),
+                                   ("first 100 comments of a thread", threads[0].get("comments"), "body", range(100))):
+    check(f"pr-wait's query: of 130, the {what}", page is not None and page["totalCount"] == 130
+          and [n[field] for n in page["nodes"]] == [str(n) for n in numbers], (str(page)[:200], r.stderr))
 
 # A field pr-wait starts to read fails here, also on a page the PR leaves empty, and so does any other query.
 store_pr(1)
@@ -346,9 +351,10 @@ for old, gained in (("url state headRefOid", "url state headRefOid title"), ("vi
     check(f"pr-wait's query: one that reads `{gained}` instead fails loud",
           old in QUERY and r.returncode != 0 and r.stdout == "" and "tracker stand-in" in r.stderr, (r.stdout[:200], r.stderr))
 for query in ("query { viewer { login } }", QUERY.replace("      author { login }\n", "", 1), "",
+              QUERY + "mutation { closeIssue { x } }",
               'mutation { resolveReviewThread(input: {threadId: "T"}) { thread { isResolved } } }'):
     r = graphql(query)
-    check(f"another GraphQL query fails loud: {query[:30].strip()!r}",
+    check(f"another GraphQL query fails loud: {query[-30:].strip()!r}",
           r.returncode != 0 and r.stdout == "" and "tracker stand-in" in r.stderr, (r.stdout[:200], r.stderr))
 for num, owner, text in ((9, "acme", "Could not resolve to a PullRequest with the number of 9"),
                          (1, "other", "Could not resolve to a Repository with the name 'other/ledger'")):
@@ -383,21 +389,24 @@ store_pr(1, **{k: v for k, v in READY.items() if k != "checks"})
 code, out, err = pr_wait("--until", "ready", minutes=0.05, interval=1)
 check("pr-wait: a PR without checks is watched to the deadline", code == 1 and "deadline passed" in out, (code, out, err))
 
-# Approval pending: on main the review bot's verdict is the approval pr-wait waits for; a human one it leaves to the gate.
+# On main pr-wait waits for the review bot's verdict; a human's approval it leaves to the gate.
 store_pr(1, **READY, base="main")
 code, out, err = pr_wait("--until", "ready", minutes=0.05, interval=1)
-check("pr-wait: a PR the review bot has yet to approve is not ready", code == 1 and "deadline passed" in out and "#1 ready on" not in out,
+check("pr-wait: a PR the review bot has yet to review is not ready", code == 1 and "deadline passed" in out and "#1 ready on" not in out,
       (code, out, err))
-store_pr(1, **READY, base="main", reviews=[{"author": "coderabbitai[bot]", "body": "Fine.", "databaseId": 71}])
+store_pr(1, **READY, base="main", reviews=[{"author": "coderabbitai[bot]", "body": "Fine.", "databaseId": 71, "commit": "c" * 40}])
+code, out, err = pr_wait("--until", "ready", minutes=0.05, interval=1)
+check("pr-wait: the bot's review of an older commit is not its verdict", code == 1 and "deadline passed" in out, (code, out, err))
+store_pr(1, **READY, base="main", reviews=[{"author": "coderabbitai[bot]", "body": "Fine.", "databaseId": 71}],
+         threads=[{"path": "a.py", "line": 3, "isResolved": True, "comments": [{"author": "owner", "body": "Why?"}]}])
 code, out, err = pr_wait("--until", "ready")
-check("pr-wait: the bot's review on the head makes it ready", code == 0 and "reviews 71" in out and "#1 ready on" in out, (code, out, err))
+check("pr-wait: the bot's review on the head makes it ready, a resolved thread aside", code == 0 and "reviews 71" in out and "#1 ready on" in out, (code, out, err))
 store_pr(1, **{**READY, "mergeStateStatus": "BLOCKED", "reviewDecision": "REVIEW_REQUIRED"})
 code, out, err = pr_wait("--until", "ready")
 got = gate(1)
 check("approval: pr-wait names the merge state BLOCKED, and the gate reads REVIEW_REQUIRED",
-      "merge state BLOCKED" in out and isinstance(got, dict) and got["reviewDecision"] == "REVIEW_REQUIRED", (code, out, err, got))
+      code == 0 and "#1 ready on" in out and "merge state BLOCKED" in out and isinstance(got, dict) and got["reviewDecision"] == "REVIEW_REQUIRED", (code, out, err, got))
 
-# The base moving under the PR: the overlap is read from origin, from the PR's own files and the base's new commits.
 store_pr(1, **{**READY, "checks": [{"name": "e2e", "bucket": "fail", "link": "https://ci/e2e"}]})
 pr_wait("--until", "green")  # the failed check ends the run, with the base recorded
 git(ws, "app", "checkout", "-q", "-b", "mover", "origin/pre-main")
@@ -422,8 +431,18 @@ check("gh pr checks: exits 8 while one is pending", r.returncode == 8 and "e2e\t
 store_pr(1, checks=[{"name": "e2e", "bucket": "fail", "link": "https://ci/e2e"}])
 r = run(ws, "gh pr checks 1", cwd=ws / "app")
 check("gh pr checks: exits 1 when one failed", r.returncode == 1 and "e2e\tfail" in r.stdout, (r.returncode, r.stdout, r.stderr))
-r = run(ws, "gh api repos/acme/ledger/compare/nowhere...pre-main", cwd=ws / "app")
-check("gh api compare: an unknown commit is a 404", r.returncode != 0 and "HTTP 404" in r.stderr, (r.stdout, r.stderr))
+r = run(ws, "gh pr checks 1 --json name,state --jq '.[] | [.name, .state] | @tsv'", cwd=ws / "app")
+check("gh pr checks --json: a check's state", (r.returncode, r.stdout) == (0, "e2e\tFAILURE\n"), (r.returncode, r.stdout, r.stderr))
+git(ws, "app", "checkout", "-q", "--orphan", "lone")
+git(ws, "app", "commit", "-qm", "lone")
+git(ws, "app", "push", "-q", "origin", "lone")
+store_pr(1, head="lone")
+for cmd in ("gh api repos/acme/ledger/compare/nowhere...pre-main", "gh api repos/acme/ledger/compare/pre-main...lone",
+            "gh pr diff 1 --name-only"):
+    r = run(ws, cmd, cwd=ws / "app")
+    check(f"`{cmd}`: no common history is a 404", r.returncode != 0 and r.stdout == "" and "HTTP 404" in r.stderr, (r.stdout, r.stderr))
+r = run(ws, "gh pr diff 1", cwd=ws / "app")
+check("gh pr diff: without --name-only it fails loud", r.returncode != 0 and "tracker stand-in" in r.stderr, (r.stdout, r.stderr))
 store_pr(1, head="fix/353-never-pushed")
 r = graphql(QUERY)
 check("pr-wait's query: a head that is not on origin fails loud", r.returncode != 0 and "fix/353-never-pushed" in r.stderr,
@@ -681,7 +700,7 @@ for value, text in (("https://github.com/other/repo/issues/372", "Could not reso
         r = run(ws, cmd)
         check(f"ready: `{cmd}` fails as gh does and stores nothing",
               r.returncode != 0 and text in r.stderr and state_file.read_text() == before, (r.returncode, r.stdout, r.stderr))
-r = run(ws, "gh issue create --title T --body B --blocked-by 372,372 --blocked-by https://github.com/Acme/Ledger/issues/372#issuecomment-1")
+r = run(ws, "gh issue create --title T --body B --blocked-by 372,372 --blocked-by https://GitHub.com/Acme/Ledger/issues/372#issuecomment-1")
 new = r.stdout.strip().rsplit("/", 1)[-1]
 check("ready: a repeated number in one call is one edge, this repo's URL included",
       r.returncode == 0 and new.isdigit() and blockers_of(new) == [372], (r.stdout, r.stderr))

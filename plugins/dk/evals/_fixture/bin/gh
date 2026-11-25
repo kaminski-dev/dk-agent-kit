@@ -19,7 +19,7 @@ That read pages at 30 as GitHub does: --paginate prints every page as its own JS
 "other_repos" maps "owner/repo" to {number: state}, for `gh issue view N --repo owner/repo`.
 A PR may hold isDraft, mergeable, mergeStateStatus, reviewDecision and headRefOid (origin's head when it
 holds none), "checks" as rows of `gh pr checks` ({name, bucket, link}), "comments" ({author, body}),
-"reviews" ({author, state, body, commit, databaseId}) and "threads" ({path, line, isResolved, comments}, where
+"reviews" ({author, state, body, commit, databaseId}; without a commit, of whatever the head is) and "threads" ({path, line, isResolved, comments}, where
 a comment's "review" is its review's databaseId). An author ending in [bot] is a bot.
 "new_pr" in the state is stored on each PR `pr create` opens; "required_checks" maps a base to its check names.
 `gh api graphql` answers one query: the one dk:issue-flow's pr-wait sends, field for field.
@@ -141,13 +141,13 @@ def open_blockers(state, num):
 
 
 def blockers_from(flag, o, state):
-    """The issue numbers or URLs of every --blocked-by / --add-blocked-by, each an issue of this repo. gh takes
-    another repo's URL too; that issue is not in this tracker, so it fails as one gh cannot read."""
+    """The numbers of this repo's issues that flag names. gh takes another repo's URL too; that issue is not in
+    this tracker, so it fails as one gh cannot read."""
     nums = []
     for ref in [v.strip() for value in o.get(flag, []) for v in value.split(",") if v.strip()]:
         url = re.match(r"https?://([^/]+)/([^/]+/[^/]+)/(?:issues|pull)/(\d+)", ref)
         host, repo, num = url.groups() if url else ("github.com", state["repo"], ref.removeprefix("#"))
-        if host != "github.com":
+        if host.lower() != "github.com":
             error = f'issue reference "{ref}" belongs to a different host ({host}) than the current repository (github.com)'
         elif repo.lower() != state["repo"].lower():
             error = f"GraphQL: Could not resolve to a Repository with the name '{repo}'. (repository)"
@@ -349,6 +349,13 @@ def origin_oid(rev):
     return origin_git("rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}")
 
 
+def three_dot(base, head):
+    ends = origin_oid(base), origin_oid(head)
+    if None in ends or origin_git("merge-base", *ends) is None:
+        fail("gh: Not Found (HTTP 404)")
+    return "...".join(ends)
+
+
 def spoken(pr_url, node_id, record):
     """What a comment, a review and a thread's comment share."""
     author = record.get("author", "owner")
@@ -399,7 +406,8 @@ def selection(query):
             else:
                 out[t], last = None, t
         return out
-    return fields() if m else None
+    out = fields() if m else None
+    return None if list(tokens) else out
 
 
 def answer(fields, value, path="query"):
@@ -418,10 +426,9 @@ def answer(fields, value, path="query"):
     return {k.partition("(")[0]: answer(fields[k], v, f"{path}.{k}") for k, v in value.items()}
 
 
-def page(records, node, kept):
-    """A connection's page, read by answer(): the records, behind a blank one."""
-    return {"totalCount": len(records),
-            "nodes": [node(0, {})] + [node(i, r) for i, r in enumerate(records, 1)][kept]}
+def page(nodes, blank, kept):
+    """A connection's page as answer() reads it, its nodes behind the blank one."""
+    return {"totalCount": len(nodes), "nodes": [blank, *nodes[kept]]}
 
 
 def pr_graphql(state, pr):
@@ -432,17 +439,18 @@ def pr_graphql(state, pr):
     base = origin_oid(f"refs/heads/{d['baseRefName']}")
     last = slice(-100, None)
 
-    def said(node_id, record):
+    def thread_comment(node_id, record):
         return {"pullRequestReview": {"databaseId": record.get("review")}, **spoken(d["url"], node_id, record)}
 
     def thread(i, r):
         return {"isResolved": r.get("isResolved", False), "path": r.get("path"), "line": r.get("line"),
-                "comments(first: 100)": page(r.get("comments", []), lambda j, c: said(f"PRRC_{i}_{j}", c), slice(100))}
+                "comments(first: 100)": page([thread_comment(f"PRRC_{i}_{j}", c) for j, c in enumerate(r.get("comments", []), 1)],
+                                             thread_comment("", {}), slice(100))}
     return {**{k: d[k] for k in ("url", "state", "headRefOid", "baseRefName", "mergeStateStatus")},
             "author": {"login": pr.get("author", "agent")}, "baseRef": base and {"target": {"oid": base}},
-            "comments(last: 100)": page(pr.get("comments", []), lambda i, c: spoken(d["url"], f"IC_{i}", c), last),
-            "reviews(last: 100)": page(pr.get("reviews", []), lambda i, r: review(d, i, r), last),
-            "reviewThreads(last: 100)": page(pr.get("threads", []), thread, last)}
+            "comments(last: 100)": page(d["comments"], spoken(d["url"], "", {}), last),
+            "reviews(last: 100)": page(d["reviews"], review(d, 0, {}), last),
+            "reviewThreads(last: 100)": page([thread(i, r) for i, r in enumerate(pr.get("threads", []), 1)], thread(0, {}), last)}
 
 
 def api_fields(o):
@@ -476,11 +484,9 @@ def api_rules(base, o, state):
 
 def api_compare(spec, o):
     base, _, head = spec.partition("...")
-    ends = origin_oid(base), origin_oid(head)
-    if None in ends:
-        fail("gh: Not Found (HTTP 404)")
-    behind, ahead = origin_git("rev-list", "--left-right", "--count", "...".join(ends)).split()
-    files = origin_git("diff", "--name-only", "...".join(ends)).splitlines()
+    span = three_dot(base, head)
+    behind, ahead = origin_git("rev-list", "--left-right", "--count", span).split()
+    files = origin_git("diff", "--name-only", span).splitlines()
     emit({"ahead_by": int(ahead), "behind_by": int(behind), "files": [{"filename": f} for f in files]}, o)
 
 
@@ -514,9 +520,7 @@ def cmd_api(args, state):
         blocker = str(int(api_fields(o).get("issue_id", "0")) - 900000)
         if blocker not in state["issues"]:
             fail("gh: Validation Failed (HTTP 422): issue_id names no issue in this repository")
-        blocked_by = state["issues"][num].setdefault("blocked_by", [])
-        if int(blocker) not in blocked_by:
-            blocked_by.append(int(blocker))
+        add_blockers(state["issues"][num], [int(blocker)])
         save(state)
         emit(rest_issue(blocker), o)
     elif method == "POST":
@@ -530,7 +534,8 @@ def cmd_api(args, state):
 
 
 def pr_checks(pr, o):
-    rows = [{"link": "", "description": "", **c} for c in pr.get("checks", [])]
+    rows = [{"link": "", "description": "", "state": next(s for s in reversed(CHECK_RUN[c["bucket"]]) if s), **c}
+            for c in pr.get("checks", [])]
     if not rows:
         fail(f"no checks reported on the '{pr['head']}' branch")
     if "--json" in o:  # gh exits 0 here, whatever the checks say
@@ -543,13 +548,13 @@ def pr_checks(pr, o):
 
 
 def cmd_pr(sub, args, state):
-    pos, o = opts(args, VALUE_FLAGS, MULTI)
+    pos, o = opts(args, VALUE_FLAGS - {"-d"} if sub == "create" else VALUE_FLAGS, MULTI)
     if sub == "create":
         head = o.get("--head") or o.get("-H") or current_branch(os.getcwd())
         base = o.get("--base") or o.get("-B") or "main"
         num = max([p["number"] for p in state["prs"]], default=0) + 1
         pr = {"number": num, "title": o.get("--title") or o.get("-t") or "", "body": body_of(o),
-              "base": base, "head": head, "state": "OPEN", "isDraft": "--draft" in o, "mergeable": "MERGEABLE",
+              "base": base, "head": head, "state": "OPEN", "isDraft": "--draft" in o or "-d" in o, "mergeable": "MERGEABLE",
               "mergeStateStatus": "CLEAN", "reviewDecision": "", **state.get("new_pr", {})}
         state["prs"].append(pr)
         save(state)
@@ -578,10 +583,9 @@ def cmd_pr(sub, args, state):
         elif sub == "checks":
             pr_checks(prs[0], o)
         elif sub == "diff":
-            ends = [origin_oid(f"refs/heads/{prs[0][end]}") for end in ("base", "head")]
-            if None in ends:
-                fail("gh: Not Found (HTTP 404)")
-            print(origin_git("diff", *(["--name-only"] if "--name-only" in o else []), "...".join(ends)))
+            if "--name-only" not in o:
+                fail("gh pr diff without --name-only: not supported by this repo's tracker stand-in")
+            print(origin_git("diff", "--name-only", three_dot(*(f"refs/heads/{prs[0][end]}" for end in ("base", "head")))))
         else:
             want_state = (o.get("--state") or o.get("-s") or "open").upper()
             for flag, key in (("--base", "base"), ("-B", "base"), ("--head", "head"), ("-H", "head")):
