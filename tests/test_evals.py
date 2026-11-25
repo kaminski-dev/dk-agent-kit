@@ -671,6 +671,23 @@ check("ready: a repeated `gh issue create --blocked-by` adds every edge",
       r.returncode == 0 and new.isdigit() and blockers_of(new) == [372, 373], (r.stdout, r.stderr))
 r = run(ws, "gh issue edit 376 --add-blocked-by 999")
 check("ready: `--add-blocked-by` an unknown issue fails", r.returncode != 0, r.stdout)
+before = state_file.read_text()
+for value, text in (("https://github.com/other/repo/issues/372", "Could not resolve to a Repository with the name 'other/repo'"),
+                    ("https://example.com/acme/ledger/issues/372", "different host (example.com)"),
+                    ("other/repo#372", 'invalid issue format: "other/repo#372"'),
+                    ("acme/ledger#372", 'invalid issue format: "acme/ledger#372"')):
+    for cmd in (f"gh issue edit 370 --add-label bug --add-blocked-by {value}",
+                f"gh issue create --title T --body B --blocked-by 373,{value}"):
+        r = run(ws, cmd)
+        check(f"ready: `{cmd}` fails as gh does and stores nothing",
+              r.returncode != 0 and text in r.stderr and state_file.read_text() == before, (r.returncode, r.stdout, r.stderr))
+r = run(ws, "gh issue create --title T --body B --blocked-by 372,372 --blocked-by https://github.com/Acme/Ledger/issues/372#issuecomment-1")
+new = r.stdout.strip().rsplit("/", 1)[-1]
+check("ready: a repeated number in one call is one edge, this repo's URL included",
+      r.returncode == 0 and new.isdigit() and blockers_of(new) == [372], (r.stdout, r.stderr))
+r = run(ws, "gh issue edit 370 --add-blocked-by 372,#372")
+check("ready: `--add-blocked-by` stores a repeated number once", r.returncode == 0 and blockers_of(370) == [372],
+      (r.stderr, blockers_of(370)))
 state_file.write_text(saved)
 
 # Past gh's default page of 30: the docs' first cut, run as written, and ready.py.
