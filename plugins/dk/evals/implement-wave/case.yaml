@@ -6,7 +6,8 @@ description: >
   row LIMIT on the line below it, so any pair of branches that meets both briefs conflicts, while #380
   edits the command line only and merges cleanly with both (tests/test_evals.py checks these facts and
   that the reference fixes behave so). The briefs must name no user-only skill and ask for no harness
-  worktree isolation, the wave stays within the 20-subagent limit, each ticket reaches a PR into pre-main,
+  worktree isolation, no Agent call hits the harness's concurrent-subagent limit (the count of
+  calls includes each implementer's reviewers, so it can pass 20), each ticket reaches a PR into pre-main,
   each PR is handed over in its own message before the dry-merge, and the final message names the
   conflict with its merge order. The tracker is the workspace's gh stand-in, so the PRs are files, never real ones.
 tags: [implement]
@@ -32,12 +33,15 @@ graders:
     min: 0
     max: 0
     arm: both
-  - name: three-to-twenty-subagents
+  - name: three-or-more-subagents
     type: tool_used
     tool: Agent
     min: 3
-    max: 20
     arm: both
+  - name: no-concurrent-subagent-limit
+    type: regex
+    target: trace
+    pattern: '^(?![\s\S]*Concurrent subagent limit reached)'
   - name: dry-merges
     type: tool_used
     tool: Bash
