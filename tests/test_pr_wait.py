@@ -342,11 +342,11 @@ CASES = {
         polls=[READY, READY, READY, pr(state="MERGED")], check_polls=[GREEN, GREEN, FAILED], args=["--until", "merged"]),
         0, ["check failed: test https://ci/test\n#1 merged:"], "deadline"),
     "until merged: its deadline passing exits 3": (dict(polls=[READY], checks=GREEN, args=["--until", "merged", *QUIET]),
-                                                   3, ["deadline passed: no merge of #1 after"], "merged:"),
+                                                   3, ["deadline passed: no merge after"], "merged:"),
     "until merged: a restart keeps the deadline the first run set": (dict(
         polls=[READY], checks=GREEN, args=["--until", "merged"],
-        state={"reported": [], "base_oid": BASE, "merge_state": "CLEAN", "merged_deadline": 1.0}),
-        3, ["deadline passed: no merge of #1 after"], "merged:"),
+        state={"reported": [], "base_oid": BASE, "merge_state": "CLEAN", "merged_since": 1.0}),
+        3, ["deadline passed: no merge after"], "merged:"),
     "a base workflow.md names as having no CI is green without the register wait": (dict(
         polls=[pr()], checkout="no-ci", args=["--until", "green"]),
         0, ["green on 1111111: no checks reported"], "deadline"),
