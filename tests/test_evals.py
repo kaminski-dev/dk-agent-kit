@@ -97,12 +97,12 @@ check("353: a failed extraction leaves no checkout in .tracker", left == [], lef
 
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
-# --- Fan-out fixture: #353 and #376 in one run, their fixes editing the same query --------------
+# --- Fan-out fixture: #353, #376 and #380 in one run; #353 and #376 edit the same query ----------
 
 ws = scaffold("implement-wave")
 ready = json.loads(run(ws, "gh issue list --label ready-for-agent --json number").stdout or "[]")
-check("wave: both tickets are briefed and ready", sorted(i["number"] for i in ready) == [353, 376], ready)
-for num in ("353", "376"):
+check("wave: the three tickets are briefed and ready", sorted(i["number"] for i in ready) == [353, 376, 380], ready)
+for num in ("353", "376", "380"):
     pr = pull_on(ws, num, "origin/pre-main")
     check(f"wave: #{num}'s acceptance fails on the pre-fix state", "acceptance: fail" in pr, pr)
     git(ws, "app", "checkout", "-q", "-b", f"reference-{num}", "origin/pre-main")
@@ -115,6 +115,11 @@ for num in ("353", "376"):
 merge = git(ws, "app", "merge-tree", "--write-tree", "--name-only", "reference-353", "reference-376")
 check("wave: the two reference fixes conflict in a dry merge",
       merge.returncode == 1 and "ledger/audit_store.py" in merge.stdout, (merge.returncode, merge.stdout, merge.stderr))
+# #380 edits the command line only, so its branch merges cleanly with both: the wave has one conflicting pair.
+for other in ("353", "376"):
+    merge = git(ws, "app", "merge-tree", "--write-tree", "--name-only", "reference-380", f"reference-{other}")
+    check(f"wave: #380's reference fix merges cleanly with #{other}'s", merge.returncode == 0,
+          (merge.returncode, merge.stdout, merge.stderr))
 # The conflict is a constraint of the tickets, not of the reference fixes alone: #353 changes the ORDER BY,
 # #376's brief has it drop the row LIMIT on the line below, and git conflicts on edits to adjacent lines.
 # So every pair of branches that meets both briefs conflicts, and the report grader can require it.
