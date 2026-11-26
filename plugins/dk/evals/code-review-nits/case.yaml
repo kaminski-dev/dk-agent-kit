@@ -4,7 +4,8 @@ description: >
   The clean #353 fix (the ORDER BY gains its tie-breakers, with a test that fails before it), reviewed
   by its author: the first round can bring nits alone, so dk:code-review answers them and ends after
   that round, with no second set of reviewers (#172: 100 of 194 re-reviews followed only nits or a
-  small should).
+  small should). The repo keeps no risk-path list, so the tier is standard and Spec, Standards and
+  Correctness run; the diff adds no comment line, so Comments does not (#173).
 tags: [code-review]
 runs: 2
 context:
@@ -20,12 +21,12 @@ graders:
     input_match: '"subagent_type"\s*:\s*"dk:reviewer"'
     min: 3
     max: 3
-  - name: one-comments-reviewer
+  - name: no-comments-reviewer
     type: tool_used
     tool: Agent
     input_match: '"subagent_type"\s*:\s*"dk:comment-reviewer"'
-    min: 1
-    max: 1
+    min: 0
+    max: 0
   - name: reports-one-round
     type: llm
     criteria: >

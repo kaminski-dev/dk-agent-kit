@@ -1,0 +1,35 @@
+schema_version: "1.1"
+name: code-review-risky
+description: >
+  The #353 fix with one comment line added (9 changed lines in 2 files), in a repo whose risk-path
+  list names `ledger/audit_store.py`: small by size, but the tier script prints risky, so
+  dk:code-review runs all four axes: three dk:reviewer calls and one dk:comment-reviewer (#173).
+tags: [code-review]
+runs: 2
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 80
+  timeout_seconds: 1500
+  allowed_tools: [Read, Glob, Grep, Skill, Agent, TodoWrite, Bash, Write, Edit]
+graders:
+  - name: three-reviewers
+    type: tool_used
+    tool: Agent
+    input_match: '"subagent_type"\s*:\s*"dk:reviewer"'
+    min: 3
+  - name: comments-reviewer
+    type: tool_used
+    tool: Agent
+    input_match: '"subagent_type"\s*:\s*"dk:comment-reviewer"'
+    min: 1
+  - name: four-axes
+    type: regex
+    pattern: "## Standards[\\s\\S]*## Spec[\\s\\S]*## Correctness[\\s\\S]*## Comments"
+  - name: reports-risky-tier
+    type: llm
+    criteria: >
+      The final message states the tier as risky because `ledger/audit_store.py` matches a risk
+      path (the tier script's line), and reports all four axes, Standards, Spec, Correctness and
+      Comments, each with findings or as clean. PASS when both hold; FAIL when the tier is missing or
+      not risky, or an axis is missing or reported as skipped.

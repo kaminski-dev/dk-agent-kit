@@ -20,6 +20,7 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 EVALS = ROOT / "plugins" / "dk" / "evals"
 REFERENCE = pathlib.Path(__file__).resolve().parent / "evals"
+TIER = ROOT / "plugins" / "dk" / "skills" / "code-review" / "tier"
 
 failures = []
 
@@ -63,6 +64,17 @@ def pull_on(ws, num, ref):
     r = run(ws, f"gh pr create --base pre-main --head fix/{num}-check --title t --body 'Closes #{num}'", cwd=ws / "app")
     pull = ws / ".tracker" / "pulls" / f"{num}.md"
     return pull.read_text() if pull.exists() else r.stderr
+
+
+def tier(ws):
+    """The tier script's line for the workspace's app branch against origin/pre-main."""
+    r = run(ws, f"python3 -I '{TIER}' origin/pre-main", cwd=ws / "app")
+    return r.stdout.strip() or r.stderr.strip()
+
+
+def comment_lines(ws):
+    diff = git(ws, "app", "diff", "origin/pre-main...HEAD").stdout
+    return [l for l in diff.splitlines() if re.match(r'\+\s*(#|"""|--|//)', l) and not l.startswith("+++")]
 
 
 # --- #353 fixture: Customer History order -------------------------------------------------------
@@ -208,6 +220,8 @@ diff = git(ws, "app", "diff", "origin/pre-main...HEAD").stdout
 check("353 review: the diff seeds a value interpolated into SQL", "entity_type = '{entity_type}'" in diff, diff[:300])
 pr = pull_on(ws, "353", "HEAD")
 check("353 review: the seeded branch still meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr)
+check("353 review: the diff adds no comment line, so Comments does not run (#173)", not comment_lines(ws),
+      comment_lines(ws))
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
 # The ready gate's reads (#134): dk:issue-flow step 6 reads the PR through gh pr view.
@@ -568,9 +582,39 @@ check("nit-only review: the branch meets #353's acceptance", "acceptance: pass" 
 stat = git(ws, "app", "diff", "--numstat", "origin/pre-main...HEAD").stdout.split()
 check("nit-only review: the diff is under the smell baseline's 200 lines",
       stat and sum(int(n) for n in stat[0::3] + stat[1::3]) <= 200, stat)
+check("nit-only review: a repo with no risk-path list is standard, so all three dk:reviewer axes run",
+      tier(ws).startswith("standard:"), tier(ws))
+check("nit-only review: the diff adds no comment line", not comment_lines(ws), comment_lines(ws))
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
-check("nit-only review: one round is three dk:reviewer calls and one dk:comment-reviewer call",
-      reviewer_counts("code-review-nits") == {"three-reviewers-one-round": (3, 3), "one-comments-reviewer": (1, 1)},
+
+# The tier (#173): the same small fix gets one reviewer in a repo with a risk-path list, and all four axes when
+# it touches a risk path and adds a comment.
+ws = scaffold("code-review-small")
+check("small review: the clean #353 fix is checked out",
+      git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == "fix/353-ordered")
+check("small review: the repo keeps a risk-path list, and the fix is small", tier(ws).startswith("small:"), tier(ws))
+check("small review: the diff adds no comment line", not comment_lines(ws), comment_lines(ws))
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+check("small review: one dk:reviewer call and no dk:comment-reviewer",
+      reviewer_counts("code-review-small") == {"one-reviewer": (1, 1), "no-comments-reviewer": (0, 0)},
+      reviewer_counts("code-review-small"))
+ws = scaffold("code-review-risky")
+check("risky review: the commented #353 fix is checked out",
+      git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == "fix/353-commented")
+stat = git(ws, "app", "diff", "--numstat", "origin/pre-main...HEAD").stdout.split()
+check("risky review: the diff is small by size: 60 lines or fewer in 3 files or fewer",
+      stat and sum(int(n) for n in stat[0::3] + stat[1::3]) <= 60 and len(stat) // 3 <= 3, stat)
+check("risky review: it touches the repo's risk path, so it is risky",
+      tier(ws).startswith("risky: ledger/audit_store.py matches"), tier(ws))
+check("risky review: the diff adds a comment line", comment_lines(ws), comment_lines(ws))
+pr = pull_on(ws, "353", "HEAD")
+check("risky review: the branch meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr)
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+check("risky review: all four axes, three dk:reviewer calls and one dk:comment-reviewer",
+      reviewer_counts("code-review-risky") == {"three-reviewers": (3, None), "comments-reviewer": (1, None)},
+      reviewer_counts("code-review-risky"))
+check("nit-only review: one round is three dk:reviewer calls, and no dk:comment-reviewer for a diff with no comment",
+      reviewer_counts("code-review-nits") == {"three-reviewers-one-round": (3, 3), "no-comments-reviewer": (0, 0)},
       reviewer_counts("code-review-nits"))
 for case in ("code-review-nits", "code-review-rereview"):
     prompt = (EVALS / case / "prompt.md").read_text()
