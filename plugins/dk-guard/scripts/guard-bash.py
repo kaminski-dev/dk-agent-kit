@@ -1843,7 +1843,8 @@ def discardable(path, run, recursive):
     rest = path[run.end():]
     # what follows base/ must name something past a word that may be empty, or the rm may take the checkout itself
     inside = re.sub(r"\$(?:\{\w+\}|\w+)", "", rest[len("base/"):]).strip("/")
-    return (rest.startswith("base/") and bool(inside)) or (not recursive and cookie_jar(os.path.basename(path)))
+    # a path the walk could not resolve keeps its `..`, which may lead out of base/
+    return (rest.startswith("base/") and bool(inside) and ".." not in rest.split("/")) or (not recursive and cookie_jar(os.path.basename(path)))
 
 
 def operands(words):
