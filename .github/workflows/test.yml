@@ -1,6 +1,7 @@
 name: test
 on:
   push:
+    branches: [main]
   pull_request:
 permissions:
   contents: read
@@ -9,42 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: guard-bash fixture matrix
-        run: python3 -I tests/hooks/test_guard_bash.py
-      - name: push gate fixtures
-        run: python3 -I tests/hooks/test_push_gate.py
-      - name: require-worktree fixtures
-        run: python3 -I tests/hooks/test_require_worktree.py
-      - name: session baseline fixtures
-        run: python3 -I tests/hooks/test_session_baseline.py
-      - name: fork-guard fixtures
-        run: python3 -I tests/hooks/test_fork_guard.py
-      - name: skills frontmatter, references, provenance
-        run: python3 -I tests/test_skills.py
-      - name: skill-eval fixtures
-        run: python3 -I tests/test_evals.py
-      - name: retro extraction against fixture transcripts
-        run: python3 -I tests/test_retro_extract.py
-      - name: pr-wait watcher against a stubbed gh
-        run: python3 -I tests/test_pr_wait.py
-      - name: batch-pr collection and review against a fixture repo
-        run: python3 -I tests/test_batch_pr.py
-      - name: bootstrap merge
-        run: bash tests/test_bootstrap.sh
-      - name: dk-pg against Docker
-        run: bash tests/test_dk_pg.sh
-      - name: dk-gc against fixture repos
-        run: bash tests/test_dk_gc.sh
-      - name: dk-gate against fixture repos
-        run: python3 -I tests/test_dk_gate.py
-      - name: dk-assets against a local origin
-        run: bash tests/test_dk_assets.sh
-      - name: upstream sync against fixture repos
-        run: bash tests/test_sync.sh
+      - name: claude CLI for plugin validate
+        run: npm install -g @anthropic-ai/claude-code@2.1.283
       - name: manifests parse
         run: |
           for f in .claude-plugin/marketplace.json plugins/*/.claude-plugin/plugin.json plugins/*/hooks/hooks.json settings/*.json; do
             jq empty "$f" || exit 1
           done
-      - name: plugin validate
-        run: npx --yes @anthropic-ai/claude-code@2.1.283 plugin validate .
+      - name: every check, each with its seconds
+        run: python3 -I tests/run.py
