@@ -575,10 +575,13 @@ check("nit-only review: one round is three dk:reviewer calls and one dk:comment-
 for case in ("code-review-nits", "code-review-rereview"):
     prompt = (EVALS / case / "prompt.md").read_text()
     check(f"{case}: the prompt has the author answer the findings", "Answer findings" in prompt, prompt)
+ids = criteria("code-review-correctness").get("findings-carry-id-and-severity", "")
+check("388 review: the id grader exempts the id-less also and PR must carry lines (#172)",
+      "`also:`" in ids and "`PR must carry:`" in ids, ids)
 check("re-review: it replays the #388 correctness fixture",
       (EVALS / "code-review-rereview" / "scaffold.sh").read_text() == (EVALS / "code-review-correctness" / "scaffold.sh").read_text())
-check("re-review: round 2 is one more dk:reviewer call, and Comments does not rerun",
-      reviewer_counts("code-review-rereview") == {"four-reviewers-two-rounds": (4, 4), "one-comments-reviewer": (1, 1),
+check("re-review: round 2 is Correctness and at most Spec, and Comments does not rerun",
+      reviewer_counts("code-review-rereview") == {"second-round-at-most-two-reviewers": (4, 5), "one-comments-reviewer": (1, 1),
                                                   "second-round-on-fix-diff": (1, None)},
       reviewer_counts("code-review-rereview"))
 fix_diff = input_matches("code-review-rereview").get("second-round-on-fix-diff", "(?!)")
