@@ -329,7 +329,7 @@ class Splitter:
             elif REDIRECT.match(self.s, self.i):
                 op = REDIRECT.match(self.s, self.i).group()
                 self.i += len(op)
-                self.redirect(seg, op.lstrip("0123456789"))
+                self.redirect(seg, op.lstrip("0123456789"), op[:len(op) - len(op.lstrip("0123456789"))])
             elif OPERATOR.match(self.s, self.i):
                 op = OPERATOR.match(self.s, self.i).group()
                 self.i += len(op)
@@ -452,12 +452,13 @@ class Splitter:
                 j += 2 if words[j] in ("-o", "+o") else 1
             if has_c and j < len(words):
                 seg.scripts.add(j)
-                inner = self.inherit(Splitter(words[j], shell, seg.substituted, self.depth + 1), seg.piped_in).run()
+                fed = seg.piped_in or any(op in INPUT_REDIRECTS for op, _ in seg.redirects)
+                inner = self.inherit(Splitter(words[j], shell, seg.substituted, self.depth + 1), fed).run()
                 if inner:
-                    inner[0].piped_in = seg.piped_in
+                    inner[0].piped_in = fed
                 self.out += inner
 
-    def redirect(self, seg, op):
+    def redirect(self, seg, op, fd=""):
         while self.peek() in (" ", "\t"):
             self.i += 1
         if self.peek() in ("<", ">") and self.peek(1) == "(":
@@ -471,7 +472,8 @@ class Splitter:
             target, quoted, subs = self.word()
             seg.subs += subs
             self.take_modifiers(seg, mark)
-        seg.redirects.append((op, target))
+        # `3< file` feeds descriptor 3, not stdin, so it keeps its number and counts as no input redirect
+        seg.redirects.append((fd + op if op.startswith("<") and fd not in ("", "0") else op, target))
         if op in ("<<", "<<-"):
             self.heredocs.append((seg, target, op == "<<-", not quoted))
 
