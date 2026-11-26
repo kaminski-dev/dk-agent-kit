@@ -25,6 +25,10 @@ holds none), "checks" as rows of `gh pr checks` ({name, bucket, link}), "comment
 a comment's "review" is its review's databaseId). An author ending in [bot] is a bot.
 "new_pr" in the state is stored on each PR `pr create` opens; "required_checks" maps a base to its check names.
 `gh api graphql` answers one query: the one dk:issue-flow's pr-wait sends, field for field.
+"viewer" is the gh user (`gh api user`), "agent" when unset; `{owner}/{repo}` in an api path is "repo". A comment
+with an "id" (an issue's or a PR's comment, or a thread's) is read and replaced by REST under issues/comments/<id>,
+or pulls/comments/<id> for a thread's. "repos" maps "owner/repo" to {"parent": "owner/repo"} for a fork, read by
+`gh api repos/<owner>/<repo>`.
 """
 import fcntl
 import json
@@ -457,8 +461,10 @@ def pr_graphql(state, pr):
 def api_fields(o):
     """gh api's fields: each -f, and the last -F, which every other command takes for a body file."""
     values = [o["-F"]] if isinstance(o.get("-F"), str) else []
-    values += [v for flag in ("--field", "-f", "--raw-field") for v in o.get(flag, [])]
-    return dict(v.partition("=")[::2] for v in values)
+    fields = dict(v.partition("=")[::2] for v in values)
+    fields = {k: pathlib.Path(v[1:]).read_text() if v.startswith("@") else v for k, v in fields.items()}
+    values = [v for flag in ("--field", "-f", "--raw-field") for v in o.get(flag, [])]
+    return {**fields, **dict(v.partition("=")[::2] for v in values)}
 
 
 def api_graphql(o, state):
@@ -472,7 +478,7 @@ def api_graphql(o, state):
     prs = [p for p in state["prs"] if str(p["number"]) == sent.get("number")]
     if not prs:
         fail(f"gh: Could not resolve to a PullRequest with the number of {sent.get('number')}.")
-    data = {"viewer": {"login": "agent"},
+    data = {"viewer": {"login": state.get("viewer", "agent")},
             "repository(owner: $owner, name: $name)": {"pullRequest(number: $number)": pr_graphql(state, prs[0])}}
     emit({"data": answer(asked, data)}, o)
 
@@ -491,12 +497,54 @@ def api_compare(spec, o):
     emit({"ahead_by": int(ahead), "behind_by": int(behind), "files": [{"filename": f} for f in files]}, o)
 
 
+def api_comment(kind, cid, method, o, state):
+    """An issue or PR comment by its REST id (kind "issues"), or a review thread's (kind "pulls")."""
+    if kind == "issues":
+        held = [(f"issues/{n}", c) for n, i in state["issues"].items() for c in i["comments"]]
+        held += [(f"pull/{p['number']}", c) for p in state["prs"] for c in p.get("comments", [])]
+    else:
+        held = [(f"pull/{p['number']}", c) for p in state["prs"] for t in p.get("threads", [])
+                for c in t.get("comments", [])]
+    found = [(where, c) for where, c in held if str(c.get("id")) == cid]
+    if not found:
+        fail("gh: Not Found (HTTP 404)")
+    where, c = found[0]
+    if method == "PATCH":
+        body = api_fields(o).get("body", "")
+        if not body.strip():
+            fail("gh: Validation Failed (HTTP 422): body cannot be blank")
+        c["body"] = body
+        save(state)
+    anchor = "issuecomment-" if kind == "issues" else "discussion_r"
+    emit({"id": int(cid), "user": {"login": c["author"]}, "body": c["body"],
+          "html_url": f"https://github.com/{state['repo']}/{where}#{anchor}{cid}"}, o)
+
+
+def api_repo(slug, o, state):
+    owner, _, name = slug.partition("/")
+    held = state.get("repos", {}).get(slug)
+    if held is None and slug != state["repo"]:
+        fail("gh: Not Found (HTTP 404)")
+    parent = (held or {}).get("parent")
+    emit({"full_name": slug, "name": name, "owner": {"login": owner}, "fork": bool(parent),
+          **({"parent": {"full_name": parent, "owner": {"login": parent.partition("/")[0]}}} if parent else {})}, o)
+
+
 def cmd_api(args, state):
     pos, o = opts(args, VALUE_FLAGS, MULTI)
     if pos == ["graphql"]:
         return api_graphql(o, state)
     method = (o.get("--method") or o.get("-X") or "GET").upper()
-    parts = pos[0].strip("/").split("/") if pos else []
+    owner, _, name = state["repo"].partition("/")
+    path = pos[0].replace("{owner}", owner).replace("{repo}", name) if pos else ""
+    parts = path.strip("/").split("/") if path else []
+    if method == "GET" and parts == ["user"]:
+        return emit({"login": state.get("viewer", "agent")}, o)
+    if method == "GET" and len(parts) == 3 and parts[0] == "repos":
+        return api_repo("/".join(parts[1:]), o, state)
+    if method in ("GET", "PATCH") and len(parts) == 6 and parts[:3] == ["repos", owner, name] \
+            and parts[3] in ("issues", "pulls") and parts[4] == "comments" and parts[5].isdigit():
+        return api_comment(parts[3], parts[5], method, o, state)
     if method == "GET" and parts[:3] == ["repos", *state["repo"].split("/")]:
         if parts[3:5] == ["rules", "branches"]:
             return api_rules("/".join(parts[5:]), o, state)

@@ -84,6 +84,8 @@ CHECKS = [
     Check("tests/test_dk_pg.sh", [BIN + "dk-pg"]),
     Check("tests/test_dk_gc.sh", [BIN + "dk-gc"]),
     Check("tests/test_dk_assets.sh", [BIN + "dk-assets"], fast=True),
+    Check("tests/test_dk_comment_edit.py", [BIN + "dk-comment-edit", "plugins/dk/evals/_fixture/bin/gh",
+                                            SKILLS + "issue-flow/pr-wait", "tests/fixtures/product_ask_rules.json"]),
     Check("tests/test_sync.sh", ["upstream/sync.sh"]),
     # The only expected warning is the missing `version`, once per plugin, left out so installs track commits.
     Check("claude plugin validate .", [".claude-plugin/*", "plugins/*/.claude-plugin/*", "plugins/*/hooks/*",
