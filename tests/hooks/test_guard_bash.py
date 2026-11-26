@@ -1,21 +1,28 @@
 #!/usr/bin/env python3
-"""Replays guard_bash_cases.json through guard-bash.py as real hook calls.
+"""Replays guard_bash_cases.json through guard-bash.py's decide(), in this process.
 
 Each case runs in a throwaway git repo checked out on `main` or on a feature
 branch, so implicit pushes resolve the way they would in a session (`"repo":
 "verify"`: in a dk:verify run directory, `<scratch>/50/verify.Ab3dE9`; the `main` one holds `linked`, a link into the feature repo), and with a
 throwaway HOME whose zsh alias list holds ALIASES (`"aliases": false`: a HOME
-without the list). A case with `max_seconds` fails when the hook takes longer.
+without the list). A case with `"process": true` or `max_seconds` runs as a real
+hook call instead, JSON on stdin to the answer on stdout, so the wiring stays
+covered; a `max_seconds` case fails when the hook takes longer. The process cases
+must hold an allow, a deny, an ask, a hint and a `max_seconds` case.
 """
+import importlib.util
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GUARD = os.path.join(HERE, "..", "..", "plugins", "dk-guard", "scripts", "guard-bash.py")
 ALIASES = ["g", "gs", "gst", "ll"]
+LEVELS = ("allow", "deny", "ask", "hint")
+PATH = os.environ["PATH"]
 
 
 def make_home(root, name, aliases):
@@ -37,6 +44,26 @@ def make_repo(root, name, branch):
     return path
 
 
+def load_guard():
+    spec = importlib.util.spec_from_file_location("guard_bash", GUARD)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def by_process(case):
+    return case.get("process", False) or "max_seconds" in case
+
+
+def decide(guard, cmd, cwd, home, background=False):
+    os.environ.clear()  # the environment a hook process gets in run(): the git calls inside decide() inherit it
+    os.environ.update({"PATH": PATH, "HOME": home})
+    try:
+        return guard.decide(cmd, cwd, background)
+    except Exception as e:  # what the hook process exits nonzero on
+        return "crash", f"{type(e).__name__}: {e}"
+
+
 def run(cmd, cwd, home, background=False, max_seconds=None):
     tool_input = {"command": cmd}
     if background:  # the harness sends the key only when the call sets it
@@ -45,7 +72,7 @@ def run(cmd, cwd, home, background=False, max_seconds=None):
                "tool_name": "Bash", "tool_input": tool_input}
     try:
         out = subprocess.run([sys.executable, "-I", GUARD], input=json.dumps(payload), timeout=max_seconds,
-                             capture_output=True, text=True, env={"PATH": os.environ["PATH"], "HOME": home})
+                             capture_output=True, text=True, env={"PATH": PATH, "HOME": home})
     except subprocess.TimeoutExpired:
         return "slow", f"took over {max_seconds} s"
     if out.returncode != 0:
@@ -60,7 +87,12 @@ def run(cmd, cwd, home, background=False, max_seconds=None):
 
 def main():
     cases = json.load(open(os.path.join(HERE, "guard_bash_cases.json")))
+    process = [c for c in cases if by_process(c)]
+    missing = [l for l in LEVELS if not any(c["expect"] == l for c in process)] \
+        + ["max_seconds"] * (not any("max_seconds" in c for c in process))
+    guard = load_guard()
     failed = 0
+    start = time.monotonic()
     with tempfile.TemporaryDirectory() as root:
         repos = {"main": make_repo(root, "main-checkout", "main"),
                  "feature": make_repo(root, "feature", "feat/x"),
@@ -70,18 +102,24 @@ def main():
         os.symlink(os.path.join(repos["feature"], ".git"), os.path.join(repos["main"], "linked"))
         homes = {True: make_home(root, "home", ALIASES), False: make_home(root, "home-no-aliases", None)}
         for case in cases:
-            cwd = repos[case.get("repo", "none")]
-            got, reason = run(case["cmd"], cwd, homes[case.get("aliases", True)], case.get("background", False),
-                              case.get("max_seconds"))
+            cwd, home = repos[case.get("repo", "none")], homes[case.get("aliases", True)]
+            background = case.get("background", False)
+            if by_process(case):
+                got, reason = run(case["cmd"], cwd, home, background, case.get("max_seconds"))
+            else:
+                got, reason = decide(guard, case["cmd"], cwd, home, background)
             ok = got == case["expect"]
             failed += not ok
             mark = "ok  " if ok else "FAIL"
-            bg = " [bg]" if case.get("background") else ""
-            print(f"{mark} {case['expect']:5} got {got:5} | {case['cmd'].splitlines()[0][:90]}{bg}")
+            tags = (" [bg]" if background else "") + (" [process]" if by_process(case) else "")
+            print(f"{mark} {case['expect']:5} got {got:5} | {case['cmd'].splitlines()[0][:90]}{tags}")
             if not ok and reason:
                 print(f"       reason: {reason}")
-    print(f"\n{len(cases) - failed}/{len(cases)} passed")
-    sys.exit(1 if failed else 0)
+    print(f"\n{len(cases) - failed}/{len(cases)} passed ({len(process)} as hook processes) "
+          f"in {time.monotonic() - start:.1f} s")
+    if missing:
+        print("FAIL the process cases lack: " + ", ".join(missing) + " (mark one with \"process\": true)")
+    sys.exit(1 if failed or missing else 0)
 
 
 if __name__ == "__main__":
