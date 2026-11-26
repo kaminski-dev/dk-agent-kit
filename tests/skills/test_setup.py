@@ -29,4 +29,13 @@ if not no_ci or "backticks" not in no_ci.group(0) or "watcher" not in no_ci.grou
 if r"\*\*No CI\*\*" not in (DK / "skills/issue-flow/pr-wait").read_text():
     errors.append("skills/issue-flow/pr-wait: the watcher does not read workflow.md's **No CI** line")
 
+# The tier script reads the repo's risk paths; a repo without them never gets the small tier (#173).
+setup = (DK / "skills/setup/SKILL.md").read_text()
+if not re.search(r"^- \*\*Risk paths\*\*: [^\n]*`tier`[^\n]*never gets the small tier", params, re.M):
+    errors.append("skills/setup: workflow-parameters.md has no **Risk paths** slot naming the tier script")
+if not re.search(r"^## Risk paths\n", params, re.M):
+    errors.append("skills/setup: workflow-parameters.md carries no ## Risk paths template with the default globs")
+if not re.search(r"Add its `## Risk paths` section when the repo has none", setup):
+    errors.append("skills/setup: its Workflow step does not add the ## Risk paths section")
+
 lib.finish("dk:setup")

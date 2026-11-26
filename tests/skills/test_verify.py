@@ -45,4 +45,17 @@ for what, pattern in (
     if perf and not re.search(pattern, perf):
         errors.append(f"skills/verify: step 1's Performance claim row does not name {what}")
 
+# Verify was 25% of a small PR's time; a small change owes a red/green test or one phone-width screenshot (#173).
+tier = re.search(r"^\*\*Tier\.\*\*.*$", owe.group(0) if owe else "", re.M)
+tier = tier.group(0) if tier else ""
+for what, pattern in (
+    ("the tier script, run from dk:code-review", r"`python3 -I <base directory>/\.\./code-review/tier <base>`"),
+    ("the small tier's red/green test", r"`small` tier[^\n]*regression test seen red, then green"),
+    ("the small tier's one phone-width screenshot for a visible change", r"visible change[^\n]*one screenshot at 390 × 844"),
+    ("the small tier skipping the stack and the control run", r"no rest of the stack \(steps 2 and 3\) and no control run \(step 4\)"),
+    ("the other tiers owing the table in full", r"`standard` and `risky` tiers owe[^\n]*in full"),
+):
+    if not re.search(pattern, tier):
+        errors.append(f"skills/verify: step 1's **Tier.** paragraph does not name {what}")
+
 lib.finish("dk:verify")

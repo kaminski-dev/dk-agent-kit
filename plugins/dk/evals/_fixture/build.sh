@@ -12,6 +12,8 @@
 # With a slug, branch fix/<N>-<slug> carrying patches/<N>-<slug>.patch is checked out and
 # pushed. With a wip slug, patches/<N>-<wip>.patch is applied on top and left uncommitted:
 # its edits stay unstaged and its new files untracked.
+# With RISK_PATHS set, even empty, docs/agents/workflow.md gains risk-paths.md's ## Risk paths section, plus a
+# bullet for each glob RISK_PATHS lists, space-separated.
 set -euo pipefail
 F=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WS=$PWD
@@ -46,6 +48,12 @@ done
 gh_repo=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["repo"])' .tracker/state.json)
 git init -q --bare origin.git
 cp -R "$F/$repo" "$repo"
+if [ -n "${RISK_PATHS+set}" ]; then
+  cat "$F/risk-paths.md" >> "$repo/docs/agents/workflow.md"
+  set -f
+  for glob in $RISK_PATHS; do printf -- '- This repo: `%s`\n' "$glob" >> "$repo/docs/agents/workflow.md"; done
+  set +f
+fi
 cd "$repo"
 git init -q -b main
 git config user.name "Eval Agent"

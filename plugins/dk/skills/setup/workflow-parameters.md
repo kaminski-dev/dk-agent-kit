@@ -11,5 +11,18 @@ The `dk:issue-flow` skill holds the shared sequence. A repo's `workflow.md` keep
 - **Post-deploy checks**: which log or error source the `awaiting-verification` query runs against.
 - **Customer reply**: language, form of address, headers, tone.
 - **Production data**: how one-off data fixes and backfills are delivered.
+- **Risk paths**: the section below, copied in and trimmed or extended to the repo's own paths. `dk:code-review`'s `tier` script reads it, so a repo without it never gets the small tier.
 
 A line `dk:issue-flow` states equally goes; a line that sharpens it for this repo stays.
+
+## Risk paths
+
+A change that touches one of these paths is risky at any size. Each bullet's backticked globs match the repo-relative path without regard to case, and `*` crosses `/`.
+
+- Migrations and schema: `*migrations/*`, `*migrate*`, `*schema*`
+- Auth: `*auth*`, `*login*`, `*permission*`, `*password*`
+- Money: `*billing*`, `*payment*`, `*invoice*`, `*stripe*`, `*checkout*`
+- Routes and API contracts: `*routes*`, `*router*`, `api/*`, `*/api/*`, `*openapi*`, `*swagger*`, `*.proto`, `*graphql*`
+- Mail, SMS and push: `*mail*`, `*sms*`, `*push*`, `*notif*`
+- CI and Dockerfiles: `.github/workflows/*`, `.gitlab-ci*`, `*dockerfile*`, `*compose.y*ml`
+- Lockfiles: `*.lock`, `*-lock.json`, `*-lock.yaml`, `go.sum`

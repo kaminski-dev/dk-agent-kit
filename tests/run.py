@@ -74,6 +74,7 @@ CHECKS = [
     Check("tests/test_evals.py", ["tests/evals/*", "plugins/dk/evals/*", SKILLS + "issue-flow/*",
                                   SKILLS + "triage/ready.py", SKILLS + "setup/issue-tracker.md",
                                   "docs/agents/issue-tracker.md"]),
+    Check("tests/test_tier.py", [SKILLS + "code-review/tier", SKILLS + "setup/workflow-parameters.md"]),
     Check("tests/test_retro_extract.py", [SKILLS + "retro/extract.py"], fast=True),
     Check("tests/test_pr_wait.py", [SKILLS + "issue-flow/pr-wait"]),
     Check("tests/test_repo_owner.py", [SKILLS + "issue-flow/repo-owner", "plugins/dk/evals/_fixture/bin/gh"]),

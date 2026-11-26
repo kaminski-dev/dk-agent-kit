@@ -20,6 +20,7 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 EVALS = ROOT / "plugins" / "dk" / "evals"
 REFERENCE = pathlib.Path(__file__).resolve().parent / "evals"
+TIER = ROOT / "plugins" / "dk" / "skills" / "code-review" / "tier"
 
 failures = []
 
@@ -63,6 +64,17 @@ def pull_on(ws, num, ref):
     r = run(ws, f"gh pr create --base pre-main --head fix/{num}-check --title t --body 'Closes #{num}'", cwd=ws / "app")
     pull = ws / ".tracker" / "pulls" / f"{num}.md"
     return pull.read_text() if pull.exists() else r.stderr
+
+
+def tier(ws):
+    """The tier script's line for the workspace's app branch against origin/pre-main."""
+    r = run(ws, f"python3 -I '{TIER}' origin/pre-main", cwd=ws / "app")
+    return r.stdout.strip() or r.stderr.strip()
+
+
+def comment_lines(ws):
+    diff = git(ws, "app", "diff", "origin/pre-main...HEAD").stdout
+    return [l for l in diff.splitlines() if re.match(r'\+\s*(#|"""|--|//)', l) and not l.startswith("+++")]
 
 
 # --- #353 fixture: Customer History order -------------------------------------------------------
@@ -249,6 +261,8 @@ diff = git(ws, "app", "diff", "origin/pre-main...HEAD").stdout
 check("353 review: the diff seeds a value interpolated into SQL", "entity_type = '{entity_type}'" in diff, diff[:300])
 pr = pull_on(ws, "353", "HEAD")
 check("353 review: the seeded branch still meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr)
+check("353 review: the diff adds no comment line, so Comments does not run (#173)", not comment_lines(ws),
+      comment_lines(ws))
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
 # The ready gate's reads (#134): dk:issue-flow step 6 reads the PR through gh pr view.
@@ -587,6 +601,82 @@ check("388 review: on the reference fix the Outbox tab's test fails when renderi
       empty.returncode != 0 and "test_lists_each_message_and_whether_it_went_out" in empty.stderr
       and "TypeError" in empty.stderr, empty.stderr[-500:])
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
+# The review loop's stop condition (#172): the author answering a nit-only first round runs no second, and a
+# behaviour fix to a Correctness should runs Correctness alone on the fix diff.
+def reviewer_counts(case):
+    """{grader name: (min, max)} for a case's tool_used graders on Agent calls."""
+    text = (EVALS / case / "case.yaml").read_text()
+    out = {}
+    for block in re.split(r"\n  - ", text)[1:]:
+        name, lo, hi = (re.search(p, block) for p in (r"name: (\S+)", r"\bmin: (\d+)", r"\bmax: (\d+)"))
+        if name and "tool: Agent" in block:
+            out[name.group(1)] = (int(lo.group(1)) if lo else 1, int(hi.group(1)) if hi else None)
+    return out
+
+
+ws = scaffold("code-review-nits")
+branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+check("nit-only review: the clean #353 fix is checked out", branch == "fix/353-ordered", branch)
+pr = pull_on(ws, "353", "HEAD")
+check("nit-only review: the branch meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr)
+stat = git(ws, "app", "diff", "--numstat", "origin/pre-main...HEAD").stdout.split()
+check("nit-only review: the diff is under the smell baseline's 200 lines",
+      stat and sum(int(n) for n in stat[0::3] + stat[1::3]) <= 200, stat)
+check("nit-only review: a repo with no risk-path list is standard, so all three dk:reviewer axes run",
+      tier(ws).startswith("standard:"), tier(ws))
+check("nit-only review: the diff adds no comment line", not comment_lines(ws), comment_lines(ws))
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
+# The tier (#173): the same small fix gets one reviewer in a repo with a risk-path list, and all four axes when
+# it touches a risk path and adds a comment.
+ws = scaffold("code-review-small")
+check("small review: the clean #353 fix is checked out",
+      git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == "fix/353-ordered")
+check("small review: the repo keeps a risk-path list, and the fix is small", tier(ws).startswith("small:"), tier(ws))
+check("small review: the diff adds no comment line", not comment_lines(ws), comment_lines(ws))
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+check("small review: one dk:reviewer call and no dk:comment-reviewer",
+      reviewer_counts("code-review-small") == {"one-reviewer": (1, 1), "no-comments-reviewer": (0, 0)},
+      reviewer_counts("code-review-small"))
+ws = scaffold("code-review-risky")
+check("risky review: the commented #353 fix is checked out",
+      git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == "fix/353-commented")
+stat = git(ws, "app", "diff", "--numstat", "origin/pre-main...HEAD").stdout.split()
+check("risky review: the diff is small by size: 60 lines or fewer in 3 files or fewer",
+      stat and sum(int(n) for n in stat[0::3] + stat[1::3]) <= 60 and len(stat) // 3 <= 3, stat)
+check("risky review: it touches the repo's risk path, so it is risky",
+      tier(ws).startswith("risky: ledger/audit_store.py matches"), tier(ws))
+check("risky review: the diff adds a comment line", comment_lines(ws), comment_lines(ws))
+pr = pull_on(ws, "353", "HEAD")
+check("risky review: the branch meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr)
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+check("risky review: all four axes, three dk:reviewer calls and one dk:comment-reviewer",
+      reviewer_counts("code-review-risky") == {"three-reviewers": (3, None), "comments-reviewer": (1, None)},
+      reviewer_counts("code-review-risky"))
+check("nit-only review: one round is three dk:reviewer calls, and no dk:comment-reviewer for a diff with no comment",
+      reviewer_counts("code-review-nits") == {"three-reviewers-one-round": (3, 3), "no-comments-reviewer": (0, 0)},
+      reviewer_counts("code-review-nits"))
+for case in ("code-review-nits", "code-review-rereview"):
+    prompt = (EVALS / case / "prompt.md").read_text()
+    check(f"{case}: the prompt has the author answer the findings", "Answer findings" in prompt, prompt)
+ids = criteria("code-review-correctness").get("findings-carry-id-and-severity", "")
+check("388 review: the id grader exempts the id-less also and PR must carry lines (#172)",
+      "`also:`" in ids and "`PR must carry:`" in ids, ids)
+check("re-review: it replays the #388 correctness fixture",
+      (EVALS / "code-review-rereview" / "scaffold.sh").read_text() == (EVALS / "code-review-correctness" / "scaffold.sh").read_text())
+check("re-review: a second round runs, and Comments does not rerun",
+      reviewer_counts("code-review-rereview") == {"a-second-round": (4, None), "one-comments-reviewer": (1, 1),
+                                                  "second-round-on-fix-diff": (1, None)},
+      reviewer_counts("code-review-rereview"))
+fix_diff = input_matches("code-review-rereview").get("second-round-on-fix-diff", "(?!)")
+for prompt, want in (("Correctness. Diff: `git diff 1a2b3c4`; open ids CO1.", True),
+                     ("Correctness. Diff: `git diff 1a2b3c4d5e6f..HEAD`; open ids CO1.", True),
+                     ("Correctness. Diff: `git diff origin/pre-main...HEAD`.", False)):
+    got = re.search(fix_diff, brief(prompt, subagent_type="dk:reviewer")) is not None
+    check(f"re-review: the fix-diff grader {'matches' if want else 'passes over'} {prompt!r}", got == want, fix_diff)
+check("re-review: the fix-diff grader passes over a Comments call on the fix diff",
+      re.search(fix_diff, brief("`git diff 1a2b3c4`", subagent_type="dk:comment-reviewer")) is None, fix_diff)
 
 # The verify fixture: a clean #353 fix in a repo whose verify doc says there is no database to start.
 ws = scaffold("verify-no-db")

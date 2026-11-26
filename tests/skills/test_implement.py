@@ -14,6 +14,16 @@ if "fix what it finds" in implement or not re.search(r"\*\*Answer findings\*\*.*
     errors.append("skills/implement: must answer review findings through dk:code-review's **Answer findings** "
                   "ledger, not fix what the review finds")
 
+# The implementer settles the repeating small findings before the review sees them (#172: 588 restating comments,
+# 239 renames, 178 drifted doc lines among 3,923 findings).
+self_pass = re.search(r"\*\*[Ss]elf-pass\*\*.*?(?=call the Skill tool with `dk:code-review`)", implement, re.S)
+self_pass = self_pass.group(0) if self_pass else ""
+for what, pattern in (("removing comments that restate the code", r"comment[^.;]*restate"),
+                      ("renaming in place of commenting", r"renam"),
+                      ("updating doc lines that name a changed symbol", r"doc line[^.;]*name[^.;]*symbol")):
+    if not re.search(pattern, self_pass):
+        errors.append(f"skills/implement: its **Self-pass** before the dk:code-review call does not name {what}")
+
 # An unattended run asks only for a closed list of reasons, through the question tool, and lists the rest as
 # decisions it took (#126, tstack full-send's "Asking the user").
 asking = re.search(r"^## Asking\n.*?(?=^## |\Z)", implement, re.M | re.S)
@@ -69,5 +79,18 @@ for what, pattern in (
 ):
     if not re.search(pattern, several, re.S):
         errors.append(f"skills/implement: its ## Several tickets section does not name {what}")
+
+# The tier sizes verify, review and the PR body; the report states it, so the maintainer sees which path ran (#173).
+tier = re.search(r"^\*\*Tier\.\*\*.*$", implement, re.M)
+tier = tier.group(0) if tier else ""
+for what, pattern in (
+    ("the tier script, run from dk:code-review", r"`python3 -I <base directory>/\.\./code-review/tier <base>`"),
+    ("the skills that read it", r"`dk:verify`, `dk:code-review` and `dk:pr` each read it"),
+    ("what the small tier changes", r"[Ss]mall[^.]*red/green test[^.]*one reviewer[^.]*one round[^.]*short PR body"),
+):
+    if not re.search(pattern, tier):
+        errors.append(f"skills/implement: its **Tier.** paragraph does not name {what}")
+if not re.search(r"report carries the PR link and its head, the tier line", report):
+    errors.append("skills/implement: its ## Report does not state the tier line")
 
 lib.finish("dk:implement")

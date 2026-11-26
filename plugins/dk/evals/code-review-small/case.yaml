@@ -1,0 +1,36 @@
+schema_version: "1.1"
+name: code-review-small
+description: >
+  The clean #353 fix (8 changed lines in 2 files, no comment added) in a repo whose workflow.md keeps a
+  risk-path list the fix does not touch: the tier script prints small, so dk:code-review runs one
+  dk:reviewer call for Spec and Correctness, no Standards and no Comments, for one round (#173: a
+  3-line PR got four reviewers and 73k output tokens).
+tags: [code-review]
+runs: 2
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 60
+  timeout_seconds: 1200
+  allowed_tools: [Read, Glob, Grep, Skill, Agent, TodoWrite, Bash, Write, Edit]
+graders:
+  - name: one-reviewer
+    type: tool_used
+    tool: Agent
+    input_match: '"subagent_type"\s*:\s*"dk:reviewer"'
+    min: 1
+    max: 1
+  - name: no-comments-reviewer
+    type: tool_used
+    tool: Agent
+    input_match: '"subagent_type"\s*:\s*"dk:comment-reviewer"'
+    min: 0
+    max: 0
+  - name: reports-small-tier
+    type: llm
+    criteria: >
+      The final message states the tier as small (the tier script's line, such as "small: 8 changed
+      lines in 2 files, no risk path"), reports Spec and Correctness findings or each axis as clean,
+      says Standards did not run for the small tier and Comments did not run because the diff adds no
+      comment line, and reports one review round. PASS when all of that holds; FAIL when the tier is
+      missing or not small, when it reports Standards or Comments findings, or a second round.

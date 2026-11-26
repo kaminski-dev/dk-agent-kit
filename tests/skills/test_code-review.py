@@ -33,6 +33,21 @@ if not re.search(r"Whether a test can fail is the Correctness axis's question un
                  standards_brief.group(0) if standards_brief else ""):
     errors.append("skills/code-review: the Standards brief must hand whether a test can fail to the Correctness axis, "
                   "keeping documented test rules")
+# The baseline's 713 findings were about 30% fixed, and 190 of 472 Duplicated Code findings sat in test files (#172).
+for what, pattern in (("its scope: diffs over 200 changed lines", r"over 200 changed lines"),
+                      ("test files left out", r"never (to|in) test files"),
+                      ("at most two findings", r"at most two (baseline )?findings")):
+    if not re.search(pattern, baseline.group(0) if baseline else ""):
+        errors.append(f"skills/code-review: the smell baseline does not name {what}")
+if not re.search(r"over 200 changed lines[^\n]*smell baseline", standards_brief.group(0) if standards_brief else ""):
+    errors.append("skills/code-review: the Standards prompt must carry the smell baseline only for a diff over 200 changed lines")
+if not re.search(r"Comment wording is the Comments axis's", standards_brief.group(0) if standards_brief else ""):
+    errors.append("skills/code-review: the Standards brief must leave comment wording to the Comments axis (#172)")
+spec_brief = re.search(r"^\*\*Spec sub-agent prompt\*\*.*?(?=^\*\*Correctness sub-agent prompt\*\*)", review, re.M | re.S)
+spec_brief = spec_brief.group(0) if spec_brief else ""
+if not re.search(r"PR-body evidence, screenshots[^.]*is no finding[^.]*`PR must carry: …`", spec_brief):
+    errors.append("skills/code-review: the Spec brief must put criteria that need a PR (PR-body evidence, screenshots, "
+                  "a test seen red) in one closing `PR must carry: …` line, not in findings (#172: 328 such findings)")
 test_question = re.search(r"^  - \*\*Test\*\*:.*$", review, re.M)
 test_question = test_question.group(0) if test_question else ""
 for what, pattern in (
@@ -91,12 +106,23 @@ comment_reviewer = agents["comment-reviewer"].read_text()
 if "<!-- Adapted from cursor/plugins pstack@" not in comment_reviewer:
     errors.append("agents/comment-reviewer: lost its pstack provenance marker")
 for what, pattern in (
-    ("the finding line", r"`<id> \[should\|nit\] <file>:<line> "),
-    ("findings as nits unless the comment states something false", r"`nit` unless the comment states something false"),
-    ("Stale as a should", r"^- \*\*Stale\*\*:[^\n]*`should`"),
+    ("the finding line", r"`<id> \[nit\] <file>:<line> "),
+    ("every finding as a nit", r"^Each finding is a `nit`"),
+    ("Stale as a nit", r"^- \*\*Stale\*\*:[^\n]*`nit`"),
 ):
     if not re.search(pattern, comment_reviewer, re.M):
         errors.append(f"agents/comment-reviewer: does not name {what}")
+# 38 stale comments labelled should forced a round each (#172); the stop condition reopens only for Correctness or Spec.
+if re.search(r"`should`", comment_reviewer):
+    errors.append("agents/comment-reviewer: still labels a finding `should`; every Comments finding is a nit (#172)")
+# A report carries every blocker and should, at most three nits, and the rest in one "also" line (#172: 90% of
+# 3,923 findings were nits, each a ledger row).
+ALSO = re.escape("`also: <file>:<line> <fix>; …`")
+for name, text, cap in (("agents/reviewer", reviewer, r"[Ee]very blocker and should[^.]*at most three nits"),
+                        ("agents/comment-reviewer", comment_reviewer, r"at most three findings")):
+    for what, pattern in (("the cap on nits", cap), ("the closing also line", ALSO)):
+        if not re.search(pattern, text):
+            errors.append(f"{name}: does not name {what}")
 for name, text in (("agents/reviewer", reviewer), ("agents/comment-reviewer", comment_reviewer),
                    ("skills/code-review", review)):
     if re.search(r"hard violation|judgement call|\bHard\.|hard or judgement", text, re.I):
@@ -116,9 +142,8 @@ for what, pattern in (
     ("the disagree outcome with evidence", r"`disagree: [^`]+`"),
     ("the declined outcome", r"`declined: [^`]+`"),
     ("later rounds on the open ids and the code changed since", r"only the open ids and the code changed since"),
-    ("3 rounds by default", r"\b3 rounds\b"),
+    ("2 rounds by default", r"\b2 rounds\b"),
     ("5 rounds for the named risk classes", r"\b5\b[^.]*security, permissions, auth, data loss or concurrency"),
-    ("stopping early on a round that brings only nits", r"round brings only nits"),
     ("the diff size after each round", r"`git diff --shortstat <fixed-point>`"),
     ("growth cut first", r"cut first"),
     ("declined findings worth doing through scope intake", r"`dk:issue-flow` step 3"),
@@ -127,13 +152,61 @@ for what, pattern in (
     ("each next-round prompt carrying its own axis's ledger rows", r"its own axis's ledger rows"),
     ("each open id reaching the next round with its claim and location",
      r"\*\*Next round\*\*[^\n]*each open id's original claim and `file:line` from the report that raised it"),
-    ("the nits-only stop only when no nit's fix changed behaviour code", r"round brings only nits[^.]*no behaviour code"),
     # CodeRabbit on #136, round 2 (#112): a declined nit has no issue, so the report names one only when filed.
     ("an issue number reported only for a declined finding scope intake filed",
      r"issue number of each declined finding that scope intake filed"),
 ):
     if not re.search(pattern, answer, re.S):
         errors.append(f"skills/code-review: its Answer findings step does not name {what}")
+# Review reopens only for a behaviour fix to a Correctness or Spec blocker or should, and that round runs the raising
+# axis plus Correctness on the fix diff; a nit, the "also" line or any other fix ends the loop (#172: 100 of 194
+# re-reviews followed only nits or a small should, and the clause that reopened on any behaviour change caused them).
+next_round = re.search(r"^\d\. \*\*Next round\*\*.*$", answer, re.M)
+next_round = next_round.group(0) if next_round else ""
+for what, pattern in (
+    ("the stop condition: a fix for a Correctness or Spec blocker or should that changed behaviour code",
+     r"only while budget remains and a fix for a Correctness or Spec blocker or `should` changed behaviour code"),
+    ("the round's axes: the one that raised the finding plus Correctness", r"the axis that raised [^.]*plus Correctness"),
+    ("the round's diff: the fix diff", r"on the fix diff \(`git diff <last round's HEAD>`\)"),
+    ("every other fix ending the loop", r"[Ee]very other fix ends the loop"),
+):
+    if not re.search(pattern, next_round):
+        errors.append(f"skills/code-review: its **Next round** step does not name {what}")
+if re.search(r"behaviour code changed since the last round|round brings only nits", answer):
+    errors.append("skills/code-review: its Answer findings step still reopens review whenever behaviour code changed "
+                  "since the last round; only a behaviour fix to a Correctness or Spec blocker or should does (#172)")
+if not re.search(r"the rounds run, the axes each round ran", answer):
+    errors.append("skills/code-review: its Answer findings report must name the axes each round ran, "
+                  "so the stop condition can be checked from the report (#172)")
+if not re.search(r"\*\*Also line\.\*\*[^\n]*without ledger rows", answer):
+    errors.append("skills/code-review: its Answer findings step must apply each report's \"also\" line without ledger rows")
+
+# The tier sets the review's size: PRs of 60 lines or fewer brought 0 blocking findings out of 167, and a 3-line PR
+# got four reviewers and 73k output tokens (#173).
+pin = re.search(r"^### 1\. Pin the fixed point\n.*?(?=^### 2)", review, re.M | re.S)
+pin = pin.group(0) if pin else ""
+if not re.search(r"`python3 -I <base directory>/tier <fixed-point>`", pin):
+    errors.append("skills/code-review: step 1 does not run the tier script on the fixed point")
+spawn = re.search(r"^### 4\. Spawn the sub-agents.*?(?=^\*\*Standards sub-agent prompt\*\*)", review, re.M | re.S)
+spawn = spawn.group(0) if spawn else ""
+for what, pattern in (
+    ("the small tier's one dk:reviewer call for Spec and Correctness",
+     r"^- \*\*Small\*\*: one `dk:reviewer` call carrying the Spec and Correctness prompts"),
+    ("Standards left out of the small tier", r"^- \*\*Small\*\*:[^\n]*Standards does not run"),
+    ("the standard and risky tiers' three dk:reviewer calls",
+     r"^- \*\*Standard\*\* and \*\*risky\*\*: Standards, Spec and Correctness, each its own `dk:reviewer` call"),
+    ("the Comments axis running, in every tier, only when the diff adds a comment line",
+     r"^- \*\*Comments\*\*, in every tier: [^\n]*only when the diff adds a comment line"),
+):
+    if not re.search(pattern, spawn, re.M):
+        errors.append(f"skills/code-review: step 4 does not name {what}")
+if not re.search(r"\*\*Budget\.\*\*[^\n]*1 round in the small tier", answer):
+    errors.append("skills/code-review: its budget does not give the small tier one round")
+if not re.search(r"Report the tier line, the rounds run", answer):
+    errors.append("skills/code-review: its Answer findings report does not state the tier")
+aggregate = re.search(r"^### 5\. Aggregate\n.*?(?=^### 6)", review, re.M | re.S)
+if not re.search(r"left out[^.]*heading[^.]*why", aggregate.group(0) if aggregate else ""):
+    errors.append("skills/code-review: step 5 does not give an axis left out its heading and the reason")
 
 if FRESH in review:
     errors.append(f"skills/code-review: launches named agent types, which never fork; it skips the {FRESH} line")

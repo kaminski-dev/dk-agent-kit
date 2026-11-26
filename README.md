@@ -18,7 +18,7 @@ Claude Code only for now. Codex and other hosts will follow.
 | `upstream/` | `UPSTREAM.md` records the commit and changes for every adapted file; `sync.sh` shows what mattpocock/skills, pstack, HumanLayer and tstack changed since in those files. |
 | `settings/user.fragment.json` | What a plugin cannot ship: permission allow (the sanctioned pushes, `dk-assets push` and `dk-comment-edit`), deny and ask rules, an `autoMode.allow` line that lets comment and label writes on issues and PRs in the maintainer's own repos past the auto-mode classifier, loops included, and `autoMode.hard_deny` lines. Merged into `~/.claude/settings.json` by `bootstrap.sh`. |
 | `bootstrap.sh` | Shows the settings diff, the zsh options block for `~/.zshenv`, the zsh alias-name list for `dk-guard` and the `--isolated` change to the `playwright` MCP server; `--apply` backs both files up, writes them and the list, installs the plugins from this checkout and re-registers the server. |
-| `tests/` | The guard's case matrix (taken from real incidents), fixture repos for `dk-gate`, the push gate and the session hooks, a `dk-pg` run against Docker, a `dk-gc` run against fixture repos with stubbed `gh` and `docker`, a `dk-assets` run against a local origin, a `dk-comment-edit` run against the stubbed `gh` and the product repos' ask rules, a bootstrap test with a stubbed `claude` and `zsh`, an `upstream/sync.sh` run against fixture upstream repos, a check of the skill-eval fixtures, a run of the `dk:retro` extraction script against fixture transcripts, runs of the `dk:batch-pr` collection and review scripts against a fixture repo with the stubbed `gh` and `coderabbit`, a run of `dk:issue-flow`'s `pr-wait` watcher against a stubbed `gh`, a run of `dk:issue-flow`'s `repo-owner` check against the stubbed `gh` and fixture remotes (forks and upstreams of another owner), fixtures for the fork guard, `run.py`, the runner that picks the checks a change needs, and `replay_history.py` for checking the guard against past transcripts. |
+| `tests/` | The guard's case matrix (taken from real incidents), fixture repos for `dk-gate`, the push gate and the session hooks, a `dk-pg` run against Docker, a `dk-gc` run against fixture repos with stubbed `gh` and `docker`, a `dk-assets` run against a local origin, a `dk-comment-edit` run against the stubbed `gh` and the product repos' ask rules, a bootstrap test with a stubbed `claude` and `zsh`, an `upstream/sync.sh` run against fixture upstream repos, a check of the skill-eval fixtures, a run of the `dk:retro` extraction script against fixture transcripts, runs of the `dk:batch-pr` collection and review scripts against a fixture repo with the stubbed `gh` and `coderabbit`, a run of `dk:issue-flow`'s `pr-wait` watcher against a stubbed `gh`, a run of `dk:issue-flow`'s `repo-owner` check against the stubbed `gh` and fixture remotes (forks and upstreams of another owner), a run of `dk:code-review`'s `tier` script against fixture repos, fixtures for the fork guard, `run.py`, the runner that picks the checks a change needs, and `replay_history.py` for checking the guard against past transcripts. |
 | `THIRD_PARTY/` | Licenses and commits of the projects material is adapted from. |
 
 Every rule traces back to something that went wrong in a real session: a
@@ -56,8 +56,8 @@ solution.
 flowchart LR
   ready(["ready-for-agent"]) --> implement["dk:implement<br/>worktree off pre-main"]
   implement --> verify["dk:verify<br/>control run, teardown"]
-  verify --> review["dk:code-review<br/>four axes, findings answered"]
-  review -- "blocker or should open, up to 3 rounds" --> review
+  verify --> review["dk:code-review<br/>axes by tier, findings answered"]
+  review -- "behaviour fix to a Correctness or Spec blocker or should, up to 2 rounds" --> review
   review --> pr["dk:pr<br/>PR into pre-main"]
   implement -. "side finding" .-> intake{"scope<br/>intake"}
   intake -- "small, same place" --> implement
@@ -242,7 +242,7 @@ daemon. CI runs every check once per push to a PR branch and once per push to
 `main`.
 
 The evals for `dk:implement`, `dk:triage`, `dk:code-review` (a report on all four axes, with
-seeded Standards and Correctness defects) and `dk:verify` live in
+seeded Standards and Correctness defects, and one reviewer for a small change) and `dk:verify` live in
 `plugins/dk/evals/` and need a model, so they run by hand (the command is in
 `docs/agents/workflow.md`), not in CI.
 
