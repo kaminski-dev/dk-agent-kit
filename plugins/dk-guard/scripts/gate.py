@@ -23,10 +23,11 @@ $CLAUDE_CONFIG_DIR when set). A hand run does not get the hooks'
 CLAUDE_PLUGIN_DATA, so both sides use this fixed path.
 
 At most DK_GATE_SLOTS gates (default 2) run at once on the machine, hand
-runs and push runs alike; sessions with another CLAUDE_CONFIG_DIR have their
-own cache and so their own slots. A run that needs the gate takes a slot first: an
-exclusive flock on one of the files slot-0.lock, slot-1.lock, ... in the
-cache's slots/ directory, which the kernel releases when the holder dies, so
+runs and push runs alike, sessions with another CLAUDE_CONFIG_DIR included. A
+run that needs the gate takes a slot first: an exclusive flock on one of the
+files slot-0.lock, slot-1.lock, ... in
+~/.claude/plugins/data/dk-guard-dk-agent-kit/gate-slots/ (whatever
+CLAUDE_CONFIG_DIR says; $DK_GATE_CACHE/slots/ in tests), which the kernel releases when the holder dies, so
 a killed run leaves no stale slot. With every slot held it waits up to
 DK_GATE_WAIT seconds (default 240), then gives up and says the gates are busy;
 the gate does not run, and nothing counts as passed. A cached pass takes no
@@ -93,7 +94,10 @@ def cache_dir():
 
 
 def slots_dir():
-    return os.path.join(cache_dir(), "slots")
+    """The cap is the machine's, so the slots sit at one path whatever CLAUDE_CONFIG_DIR says."""
+    if os.environ.get("DK_GATE_CACHE"):
+        return os.path.join(os.environ["DK_GATE_CACHE"], "slots")
+    return os.path.join(os.path.expanduser("~"), ".claude", "plugins", "data", "dk-guard-dk-agent-kit", "gate-slots")
 
 
 def take_slot(root, wait, on_wait=None):
