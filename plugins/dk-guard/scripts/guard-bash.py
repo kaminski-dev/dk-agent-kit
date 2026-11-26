@@ -1837,10 +1837,11 @@ def cookie_jar(name):
     return any(EXTENSION.search(end) and not IMAGE.search(end) for end in ends)
 
 
-def discardable(path, run):
-    """Inside the control checkout (`$RUN/base/...`, code rather than evidence) or a cookie jar."""
+def discardable(path, run, recursive):
+    """Inside the control checkout (`$RUN/base/...`, code rather than evidence) or a cookie jar, which is a file, so
+    a recursive rm of a cookie-named path may be a directory of evidence."""
     rest = path[run.end():]
-    return (rest.startswith("base/") and len(rest) > len("base/")) or cookie_jar(os.path.basename(path))
+    return (rest.startswith("base/") and len(rest) > len("base/")) or (not recursive and cookie_jar(os.path.basename(path)))
 
 
 def operands(words):
@@ -1853,9 +1854,12 @@ def operands(words):
 
 
 def removes_run(words, walk, seg):
-    return bool(words) and os.path.basename(words[0]) == "rm" \
-        and any((run := RUN_DIR.search(path)) and not discardable(path, run)
-                for path in (walk.guess(t, seg) for t in operands(words)))
+    if not (words and os.path.basename(words[0]) == "rm"):
+        return False
+    opts = list(itertools.takewhile(lambda w: w != "--", (w for w in words[1:] if w.startswith("-") and len(w) > 1)))
+    recursive = any(w in ("--recursive",) or (not w.startswith("--") and set(w[1:]) & {"r", "R"}) for w in opts)
+    return any((run := RUN_DIR.search(path)) and not discardable(path, run, recursive)
+               for path in (walk.guess(t, seg) for t in operands(words)))
 
 
 def verify_rm_words(segs, cwd):
