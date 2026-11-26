@@ -24,52 +24,20 @@ Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so th
 
 Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and there is something to review: a non-empty branch diff, a non-empty `git diff HEAD`, or untracked files. A bad ref or an empty change should fail here, not inside four parallel sub-agents.
 
-**Tier.** Run `python3 -I <base directory>/tier <fixed-point>`, with `<base directory>` the one this skill's header names, written out literally. Its one line starts with the tier, `small`, `standard` or `risky`, and says why (its `--help` gives the thresholds). The tier sets which sub-agents run (step 4) and the round budget (step 6); keep the line for the report.
+**Tier.** Run `python3 -I <base directory>/tier <fixed-point>`, with `<base directory>` the one this skill's header names, written out literally. Its one line starts with the tier, `small`, `standard` or `risky`, and says why (its `--help` gives the thresholds). The tier sets which sub-agents run (step 3) and the round budget (step 5); keep the line for the report.
 
 ### 2. Identify the spec source
 
 Look for the originating spec, in this order:
 
-1. Issue references in the branch name, the commit messages or the open PR (`#123`, `Closes #45`), fetched via the workflow in the tracker doc, comments included. Comments starting `Scope amendment:` and the PR body's "Also in this PR" list extend the spec: that work counts as requested.
+1. Issue references in the branch name, the commit messages or the open PR (`#123`, `Closes #45`).
 2. A path the user passed as an argument.
 3. A spec file under `docs/`, `specs/`, or `.scratch/` matching the branch name or feature.
 4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
 
-### 3. Identify the standards sources
+The reference is enough: the Spec reviewer reads the spec, its comments and scope amendments itself.
 
-Read `CODING_STANDARDS.md` first (at the root and nearest to the changed files), then every doc it links or names. Then add `CONTRIBUTING.md`, the `AGENTS.md` sections that set rules for code, and any other doc in the repo on how code should be written, such as a skill `AGENTS.md` requires for edits. Those paths are the list the Standards sub-agent gets, so it reads them instead of guessing where standards live.
-
-On top of whatever the repo documents, the Standards axis always carries the **smell baseline** below: a fixed set of Fowler code smells (_Refactoring_, ch.3) that applies even when a repo documents nothing. Three rules bind it:
-
-- **Large diffs only.** It applies only to a diff over 200 changed lines, never to test files, and yields at most two findings.
-- **The repo overrides.** A documented repo standard always wins; where it endorses something the baseline would flag, suppress the smell.
-- **Always a nit.** Each smell is a labelled heuristic ("possible Feature Envy"), never a `should` or a `blocker`. Like any standard here, skip anything tooling already enforces.
-
-Each smell reads *what it is* → *how to fix*; match it against the diff:
-
-- **Mysterious Name**: a function, variable, or type whose name doesn't reveal what it does or holds. → rename it; if no honest name comes, the design's murky.
-- **Duplicated Code**: the same logic shape appears in more than one hunk or file in the change. → extract the shared shape, call it from both.
-- **Feature Envy**: a method that reaches into another object's data more than its own. → move the method onto the data it envies.
-- **Data Clumps**: the same few fields or params keep travelling together (a type wanting to be born). → bundle them into one type, pass that.
-- **Primitive Obsession**: a primitive or string standing in for a domain concept that deserves its own type. → give the concept its own small type.
-- **Repeated Switches**: the same `switch`/`if`-cascade on the same type recurs across the change. → replace with polymorphism, or one map both sites share.
-- **Shotgun Surgery**: one logical change forces scattered edits across many files in the diff. → gather what changes together into one module.
-- **Divergent Change**: one file or module is edited for several unrelated reasons. → split so each module changes for one reason.
-- **Speculative Generality**: abstraction, parameters, or hooks added for needs the spec doesn't have. → delete it; inline back until a real need shows.
-- **Message Chains**: long `a.b().c().d()` navigation the caller shouldn't depend on. → hide the walk behind one method on the first object.
-- **Middle Man**: a class or function that mostly just delegates onward. → cut it, call the real target direct.
-- **Refused Bequest**: a subclass or implementer that ignores or overrides most of what it inherits. → drop the inheritance, use composition.
-
-The baseline also covers what agents add that Fowler's list misses. The same rules apply:
-
-- **Defensive Interior**: `try/catch`, nil checks, retries or re-validation deep inside internal code whose inputs a boundary (handler, CLI, config, external API) already validated. A guard is right only when the state it handles is legitimate, one the system may really be in; a guard against a state that should never exist hides the bug where it surfaced. → find what produced the state and fix it there; handle errors at the boundary; let internal code trust its types.
-- **Swallowed Error**: a catch or error branch that logs-and-continues, returns a default, clamps a value, or drops the error without a reason the caller can see. → when the state it handles is legitimate, handle it there and name why; otherwise propagate it and fix what produced it.
-- **Dead Code**: unused functions, exports, parameters or branches the change leaves behind (commented-out code is the Comments axis's). → delete it; history keeps it.
-- **Deprecated API**: a call the library or this repo marks deprecated, where the replacement is available. → use the replacement.
-
-The **comment policy** is the part of `AGENTS.md` or `CODING_STANDARDS.md` (root or nearest to the changed files) that says which comments to write or keep. Note the file and heading when one exists; it goes to the Comments sub-agent, which applies it over its default keep list.
-
-### 4. Spawn the sub-agents in parallel
+### 3. Spawn the sub-agents in parallel
 
 The tier from step 1 sets the calls:
 
@@ -77,52 +45,31 @@ The tier from step 1 sets the calls:
 - **Standard** and **risky**: Standards, Spec and Correctness, each its own `dk:reviewer` call.
 - **Comments**, in every tier: one `dk:comment-reviewer` call, only when the diff adds a comment line (an added line holding a comment or docstring).
 
-Issue the calls together, in the foreground, and aggregate the reports they return. Both agent types are read-only, so the reviewers can share one worktree. They give each finding its id and severity; each prompt hands its axis the id prefix, so ids stay unique across the reports: `ST` for Standards, `SP` for Spec, `CO` for Correctness, `CM` for Comments.
+Issue the calls together, in the foreground, and aggregate the reports they return. Both agent types are read-only, so the reviewers can share one worktree. Each agent carries its axis's brief, finds the repo's standards and comment policy, and gives each finding its id and severity; the prompt hands its axis the id prefix, so ids stay unique across the reports: `ST` for Standards, `SP` for Spec, `CO` for Correctness, `CM` for Comments.
 
-**Standards sub-agent prompt** should include:
+**Prompt.** Each call's prompt is this template, filled in, and nothing more:
 
-- The full diff command and commit list.
-- The list of standards-source files you found in step 3, plus, when `git diff --shortstat` counts over 200 changed lines, **the smell baseline from step 3** pasted in full (the sub-agent has no other access to it).
-- The brief: "Report, per file/hunk where relevant, (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. A clear breach of a documented standard is at least a `should`, one whose rule needs judgement to apply is a `nit`, and a baseline smell is always a `nit`; a documented repo standard overrides the baseline. Skip anything tooling enforces. Whether a test can fail is the Correctness axis's question unless a documented standard rules on it. Comment wording is the Comments axis's. Under 400 words."
+```text
+Axis: <axis>, ids <prefix>.
+Fixed point: <fixed-point>. Diff: `git diff <fixed-point>...HEAD`.
+Uncommitted: `git diff HEAD`; untracked files: <paths>.
+Tier: <tier line>.
+Spec: <issue number or path>.
+```
 
-**Spec sub-agent prompt** should include:
+Drop the `Uncommitted` line when step 1 found none, and the `Spec` line from every call that does not run Spec. The small tier's call names both axes: `Axis: Spec, ids SP; Correctness, ids CO.` If the spec is missing, skip the Spec sub-agent and note this in the final report.
 
-- The diff command and commit list.
-- The path or fetched contents of the spec.
-- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep), where recorded scope amendments count as asked for; (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. A criterion only a PR can meet (PR-body evidence, screenshots, a test seen red before the fix) is no finding: name each in one closing line, `PR must carry: …`. Under 400 words."
-
-**Correctness sub-agent prompt** should include:
-
-- The diff command and commit list, plus the untracked files from step 1, which it reads in full.
-- The brief: "Report what breaks at runtime. Walk every item of these kinds the diff adds or changes, and answer each question for it:
-  - **Side effect** (provider call, mail, webhook): what happens if the process dies between the effect and its commit? Does a retry past the lease repeat it? Does one tenant's or runner's failure block the others? Can a reader run before the lock?
-  - **Query a UI renders**: does a failed load look different from an empty one? Does a failed refresh still report success?
-  - **Form**: does Enter submit it before it is ready? Does a disabled control show why? Does the unsaved-changes check compare values, so an edit undone by hand reads as clean?
-  - **Boundary value**: does it hold at zero, empty and nil? Are protocol tokens compared case-insensitively where the protocol says so? Does each `ORDER BY … LIMIT` have a tie-breaker? Does the server repeat the client's validation? Do a write and its audit row share a transaction?
-  - **Test**: does it run the mechanism its name claims? Judge it by two imagined edits. **Break the behaviour** (the code under test returns nothing or a wrong value, skips an effect or does it twice): if the test still passes, it proves nothing. **Change the internals** (every observable result kept, the code underneath restructured): if the test now fails, it is pinned to the implementation, such as a call to an internal helper or an exact error message no caller reads; the error type callers branch on is the contract. An empty test passes the first edit: it asserts loosely or not at all (`toBeDefined`, `toBeTruthy`, `not.toThrow`); asserts only a call (`toHaveBeenCalled` without its payload), or only an empty result (`toEqual([])`) when a subject that does nothing still returns it, such as a default or initial value (a function that does nothing returns `undefined` or `None`, which fails `toEqual([])`); expects a value computed by the code under test; restates a constant, config default or prompt string; or asserts on data the test built, with no call to the subject. An absence assertion (`not.toHaveBeenCalled`, an empty result) counts when the contract promises the absence and it is paired with a presence case on another input. Fix: call the subject with one concrete input and assert the literal output or effect (for a mock, the payload it received); delete the test when no such assertion exists. Cross-row relations between tables and compile-time type tests stay.
-  - **Changed doc line** (ADR, glossary, AGENTS.md): does the code it describes back it?
-  For each finding, name the trigger (the crash point, the value, the order of events) and what the user or the data ends up with. Under 400 words."
-
-**Comments sub-agent prompt** should include:
-
-- The diff command and commit list, plus the untracked files from step 1, which it reads in full.
-- The comment policy from step 3 (file and heading), or "no comment policy: use your default keep list".
-
-Its rules live in the agent, so the prompt carries nothing more than its id prefix.
-
-If the spec is missing, skip the Spec sub-agent and note this in the final report.
-
-### 5. Aggregate
+### 4. Aggregate
 
 Present the reports under `## Standards`, `## Spec`, `## Correctness` and `## Comments` headings, verbatim or lightly cleaned; an axis left out, by the tier or by a diff that adds no comment, keeps its heading, with one line on why. Do **not** merge or rerank findings, because the axes are deliberately separate (see _Why separate axes_).
 
 End with the tier line and a one-line summary: findings per axis and severity, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes: that's the reranking the separation exists to prevent.
 
-### 6. Answer findings
+### 5. Answer findings
 
-When you wrote the change (`dk:implement` sends you here), or the user asks you to fix what the review found, answer every finding; otherwise step 5's report ends the review.
+When you wrote the change (`dk:implement` sends you here), or the user asks you to fix what the review found, answer every finding; otherwise step 4's report ends the review.
 
-**Budget.** 2 rounds, steps 4 and 5 being round 1; 1 round in the small tier. Outside it, extend to 5 only when the change touches security, permissions, auth, data loss or concurrency and a blocker or should stays open with evidence, or when the user asks.
+**Budget.** 2 rounds, steps 3 and 4 being round 1; 1 round in the small tier. Outside it, extend to 5 only when the change touches security, permissions, auth, data loss or concurrency and a blocker or should stays open with evidence, or when the user asks.
 
 **Also line.** Apply the nits in each report's closing "also" line without ledger rows, skipping any you judge wrong.
 
@@ -134,7 +81,7 @@ When you wrote the change (`dk:implement` sends you here), or the user asks you 
 
    Agree on the evidence alone, never to end the loop.
 3. **Measure.** Run `git diff --shortstat <fixed-point>` before the first fix and after each round's fixes, once the checks they touch pass and the fixes are committed. When review fixes grew the diff, cut first: undo or narrow what no blocker or should needs, before another round.
-4. **Next round**, only while budget remains and a fix for a Correctness or Spec blocker or `should` changed behaviour code. Every other fix ends the loop: a nit, the "also" line, a Standards or Comments finding, a declined or disputed id, and a fix that touches only tests, comments, docs or formatting. The round runs step 4 for the axis that raised each such finding plus Correctness, on the fix diff (`git diff <last round's HEAD>`), and step 5 for those axes; each prompt adds its own axis's ledger rows, each open id's original claim and `file:line` from the report that raised it, and asks for only the open ids and the code changed since. An open id is a blocker or should no reviewer has marked `resolved` yet.
+4. **Next round**, only while budget remains and a fix for a Correctness or Spec blocker or `should` changed behaviour code. Every other fix ends the loop: a nit, the "also" line, a Standards or Comments finding, a declined or disputed id, and a fix that touches only tests, comments, docs or formatting. The round runs step 3 for the axis that raised each such finding plus Correctness, on the fix diff (`git diff <last round's HEAD>`, in the prompt's `Diff`), and step 4 for those axes; each prompt adds its own axis's ledger rows, each open id's original claim and `file:line` from the report that raised it, and asks for only the open ids and the code changed since. An open id is a blocker or should no reviewer has marked `resolved` yet.
 
 Done when every id has its ledger outcome and no round the stop condition opens is left to run. Stuck when an id stays disputed after two replies, or the budget ends with a blocker or should open: show both sides in 2-3 lines each, and the user decides. Budget end is not approval.
 
