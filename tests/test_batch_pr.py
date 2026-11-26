@@ -503,5 +503,25 @@ check("a prose setup line: exits 1 and names the line, before any branch moves",
       and not (ws.repo / "installed").exists() and gc == [], (r.returncode, r.stdout, r.stderr, refs(ws), before))
 ws.remove()
 
+# A repo whose origin has no pre-main (batch.py's exit 4 sends it here): main still moves, and no pre-main is pushed.
+ws = finish_ws()
+ws.git_in(ws.root / "github", "push", "-q", "origin", "--delete", "pre-main")
+r, gc = run_finish(ws)
+remote = ws.git_in(ws.root / "origin.git", "for-each-ref", "--format=%(refname)", "refs/heads")
+check("no pre-main on origin: exits 0, moves the local main, and pushes no pre-main",
+      r.returncode == 0 and ws.git("rev-parse", "main").strip() == ws.merged and remote == "refs/heads/main\n"
+      and (ws.repo / "installed").exists() and len(gc) == 1, (r.returncode, r.stdout, r.stderr, remote, gc))
+ws.remove()
+
+# An untracked file in the checked-out main that the merge adds: the merge there would refuse after origin moved.
+ws = finish_ws()
+(ws.repo / "first").write_text("mine\n")
+before = refs(ws)
+r, gc = run_finish(ws)
+check("untracked file the merge would overwrite: exits 1 and names it, nothing moves, the file stays",
+      r.returncode == 1 and "first" in r.stderr and refs(ws) == before
+      and (ws.repo / "first").read_text() == "mine\n", (r.returncode, r.stderr, refs(ws), before))
+ws.remove()
+
 print(f"{len(failures)} failures")
 sys.exit(1 if failures else 0)
