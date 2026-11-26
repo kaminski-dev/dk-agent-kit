@@ -197,6 +197,42 @@ def case_fresh_runs_the_gate_whatever_the_cache_holds(root):
     assert code == 0 and CACHED not in out and runs(repo) == 2, (code, out)
 
 
+def case_a_gate_linked_to_an_ignored_script_is_keyed_on_the_script(root):
+    repo, cache = make_repo(root, "linked"), os.path.join(root, "cache-linked")
+    with open(os.path.join(repo, ".gitignore"), "a") as f:
+        f.write("gate.local\n")
+    write(repo, "gate.local", PASS, executable=True)
+    git(repo, "rm", "-q", ".claude/gate.sh")
+    os.makedirs(os.path.join(repo, ".claude"), exist_ok=True)
+    os.symlink("../gate.local", os.path.join(repo, ".claude/gate.sh"))
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "link the gate")
+    assert run(repo, cache=cache)[0] == 0 and runs(repo) == 1
+    write(repo, "gate.local", PASS + "echo 'one more check'\n", executable=True)
+    code, out = run(repo, cache=cache)
+    assert code == 0 and CACHED not in out and runs(repo) == 2, (code, out)
+
+
+def case_a_fresh_run_that_fails_drops_the_older_pass(root):
+    repo, cache = make_repo(root, "fresh-fails"), os.path.join(root, "cache-fresh-fails")
+    assert run(repo, cache=cache)[0] == 0 and runs(repo) == 1
+    with open(os.path.join(repo, ".gitignore"), "a") as f:
+        f.write("gate.conf\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "ignore the gate's config")
+    assert run(repo, cache=cache)[0] == 0 and runs(repo) == 2
+    write(repo, ".claude/gate.sh", PASS + "test -e gate.conf || exit 1\n", executable=True)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "gate reads an ignored config")
+    write(repo, "gate.conf", "ok\n")
+    assert run(repo, cache=cache)[0] == 0 and runs(repo) == 3
+    os.remove(os.path.join(repo, "gate.conf"))  # an input the key cannot see
+    code, out = run(repo, "--fresh", cache=cache)
+    assert code == 1 and runs(repo) == 4, (code, out)
+    code, out = run(repo, cache=cache)
+    assert code == 1 and CACHED not in out and runs(repo) == 5, (code, out)
+
+
 def case_a_tree_that_changes_while_the_gate_runs_is_not_cached(root):
     repo, cache = make_repo(root, "racing", PASS + "echo x > src/generated.ts\n"), os.path.join(root, "cache-racing")
     code, out = run(repo, cache=cache)
