@@ -175,6 +175,9 @@ for what, pattern in (
 if re.search(r"behaviour code changed since the last round|round brings only nits", answer):
     errors.append("skills/code-review: its Answer findings step still reopens review whenever behaviour code changed "
                   "since the last round; only a behaviour fix to a Correctness or Spec blocker or should does (#172)")
+if not re.search(r"Report the rounds run, the axes each round ran", answer):
+    errors.append("skills/code-review: its Answer findings report must name the axes each round ran, "
+                  "so the stop condition can be checked from the report (#172)")
 if not re.search(r"\*\*Also line\.\*\*[^\n]*without ledger rows", answer):
     errors.append("skills/code-review: its Answer findings step must apply each report's \"also\" line without ledger rows")
 

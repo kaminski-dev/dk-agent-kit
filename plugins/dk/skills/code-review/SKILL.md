@@ -130,7 +130,7 @@ When you wrote the change (`dk:implement` sends you here), or the user asks you 
 
 Done when every id has its ledger outcome and no round the stop condition opens is left to run. Stuck when an id stays disputed after two replies, or the budget ends with a blocker or should open: show both sides in 2-3 lines each, and the user decides. Budget end is not approval.
 
-Report the rounds run, the ledger, the diff's shortstat before and after, and the issue number of each declined finding that scope intake filed.
+Report the rounds run, the axes each round ran, the ledger, the diff's shortstat before and after, and the issue number of each declined finding that scope intake filed.
 
 ## Why separate axes
 
