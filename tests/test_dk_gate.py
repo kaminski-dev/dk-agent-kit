@@ -197,6 +197,17 @@ def case_a_subdirectory_gates_its_checkout(root):
     assert code == 0 and CACHED in out and runs(repo) == 1, (code, out)
 
 
+def case_a_pass_drops_the_entries_of_worktrees_that_are_gone(root):
+    cache = os.path.join(root, "cache-gone")
+    gone, kept = make_repo(root, "gone"), make_repo(root, "kept")
+    run(gone, cache=cache)
+    run(kept, cache=cache)
+    subprocess.run(["rm", "-rf", gone], check=True)
+    run(make_repo(root, "later"), cache=cache)
+    assert len(os.listdir(cache)) == 2, os.listdir(cache)
+    assert CACHED in run(kept, cache=cache)[1]
+
+
 def case_a_checkout_without_a_gate_says_so(root):
     repo, cache = make_repo(root, "no-gate"), os.path.join(root, "cache-no-gate")
     git(repo, "rm", "-q", ".claude/gate.sh")

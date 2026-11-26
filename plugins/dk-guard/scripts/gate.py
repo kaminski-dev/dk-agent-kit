@@ -15,7 +15,8 @@ when the key after the run equals the key before it, so a tree that changed
 while the gate ran is gated again. --fresh runs the gate whatever the cache
 holds, for an input the key cannot see (a toolchain upgrade, a database).
 
-The cache holds one entry per worktree, outside the repo:
+The cache holds one entry per worktree, outside the repo, and a pass drops the
+entries of worktrees that are gone:
 $DK_GATE_CACHE when set (tests), else the dk-guard plugin's data directory
 (~/.claude/plugins/data/dk-guard-dk-agent-kit/gate-cache, under
 $CLAUDE_CONFIG_DIR when set). A hand run does not get the hooks'
@@ -144,7 +145,22 @@ def store_pass(root, k, seconds):
         os.replace(tmp, path)
     except OSError:
         return False
+    drop_gone(os.path.dirname(path))
     return True
+
+
+def drop_gone(directory):
+    """Remove the entries of worktrees that no longer exist, so the cache holds one entry per live worktree."""
+    for name in os.listdir(directory):
+        if not name.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(directory, name)) as f:
+                root = json.load(f).get("root")
+            if isinstance(root, str) and not os.path.isdir(root):
+                os.remove(os.path.join(directory, name))
+        except (OSError, ValueError, AttributeError):
+            pass
 
 
 def run_gate(gate, root, timeout=None, capture=True):
