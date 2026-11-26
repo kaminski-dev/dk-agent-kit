@@ -236,7 +236,7 @@ for what, pattern in (
 ):
     if not re.search(pattern, spawn, re.M):
         errors.append(f"skills/code-review: step 3 does not name {what}")
-if not re.search(r"\*\*Budget\.\*\*[^\n]*1 round in the small tier", answer):
+if not re.search(r"\*\*Budget\.\*\*[^\n]*small tier, 1 round", answer):
     errors.append("skills/code-review: its budget does not give the small tier one round")
 if not re.search(r"Report the tier line, the rounds run", answer):
     errors.append("skills/code-review: its Answer findings report does not state the tier")

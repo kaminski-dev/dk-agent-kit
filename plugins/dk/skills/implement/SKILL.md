@@ -13,7 +13,7 @@ Call the Skill tool with `dk:tdd` where possible, at pre-agreed seams.
 
 Run typechecking regularly, single test files regularly, and the full test suite once at the end. Commit after each green step.
 
-**Tier.** When the code is done, run `python3 -I <base directory>/../code-review/tier <base>`, with `<base directory>` the one this skill's header names and `<base>` the branch's base, both written out literally. `dk:verify`, `dk:code-review` and `dk:pr` each read it themselves: a small change gets a red/green test, one reviewer for one round and the short PR body, and a risky one adds blast radius to the PR.
+**Tier.** When the code is done, run `python3 -I <base directory>/../code-review/tier <base>`, with `<base directory>` the one this skill's header names and `<base>` the branch's base, both written out literally. `dk:verify`, `dk:code-review` and `dk:pr` each read it themselves: a small change gets a red/green test, one reviewer for one round (a second when a behaviour fix reopens review) and the short PR body, and a risky one adds blast radius to the PR.
 
 Then call the Skill tool with `dk:verify` and prove the change.
 

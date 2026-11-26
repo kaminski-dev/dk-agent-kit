@@ -70,7 +70,7 @@ End with the tier line and a one-line summary: findings per axis and severity, a
 
 When you wrote the change (`dk:implement` sends you here), or the user asks you to fix what the review found, answer every finding; otherwise step 4's report ends the review.
 
-**Budget.** 2 rounds, steps 3 and 4 being round 1; 1 round in the small tier, plus one with Correctness alone when a fix for a blocker changed behaviour code. In the standard and risky tiers, extend to 5 only when the change touches security, permissions, auth, data loss or concurrency and a blocker or should stays open with evidence, or when the user asks.
+**Budget.** 2 rounds, steps 3 and 4 being round 1; in the small tier, 1 round plus one more when the stop condition opens it. In the standard and risky tiers, extend to 5 only when the change touches security, permissions, auth, data loss or concurrency and a blocker or should stays open with evidence, or when the user asks.
 
 **Also line.** Apply the nits in each report's closing "also" line without ledger rows, skipping any you judge wrong.
 
@@ -82,7 +82,7 @@ When you wrote the change (`dk:implement` sends you here), or the user asks you 
 
    Agree on the evidence alone, never to end the loop.
 3. **Measure.** Run `git diff --shortstat <fixed-point>` before the first fix and after each round's fixes, once the checks they touch pass and the fixes are committed. When review fixes grew the diff, cut first: undo or narrow what no blocker or should needs, before another round.
-4. **Next round**, only while budget remains and a fix for a Correctness or Spec blocker or `should` changed behaviour code. Every other fix ends the loop: a nit, the "also" line, a Standards or Comments finding, a declined or disputed id, and a fix that touches only tests, comments, docs or formatting. The round runs step 3 for the axis that raised each such finding plus Correctness, on the fix diff (`git diff <last round's HEAD>`) as the prompt's `Diff`, and step 4 for those axes; each prompt adds its own axis's ledger rows, each open id's original claim and `file:line` from the report that raised it, and asks for only the open ids and the code changed since. An open id is a blocker or should whose fix opened a round, until that round's reviewer marks it `resolved`; every other id closes with its ledger outcome.
+4. **Next round**, only while budget remains and a fix for a Correctness or Spec blocker or `should` changed behaviour code. Every other fix ends the loop: a nit, the "also" line, a Standards or Comments finding, a declined or disputed id, and a fix that touches only tests, comments, docs or formatting. The round runs step 3 for the axis that raised each such finding plus Correctness, on the fix diff (`git diff <last round's HEAD>`) as the prompt's `Diff`, and step 4 for those axes; each prompt adds its own axis's ledger rows, each open id's original claim and `file:line` from the report that raised it, and asks for only the open ids and the code changed since. An open id is a Correctness or Spec blocker or should whose fix changed behaviour code, until a reviewer marks it `resolved`; every other id closes with its ledger outcome.
 
 Done when every id has its ledger outcome and no round the stop condition opens is left to run. Stuck when an id stays disputed after two replies, or the budget ends with a blocker or should open: show both sides in 2-3 lines each, and the user decides. Budget end is not approval.
 
