@@ -15,6 +15,8 @@ trap 'for p in $busy_pids; do kill "$p" 2>/dev/null || true; done; rm -rf "$tmp"
 start_in() { (cd "$1" && { sleep 600 >/dev/null 2>&1 & echo $!; }); }
 stop() { kill "$1"; while kill -0 "$1" 2>/dev/null; do sleep 0.1; done; }
 export HOME="$tmp/home" GIT_CONFIG_GLOBAL="$tmp/home/.gitconfig" GIT_CONFIG_NOSYSTEM=1
+# Only local remotes: dk-gc asks origin for its branches even of a repo whose PRs gh cannot list.
+export GIT_ALLOW_PROTOCOL=file
 unset GH_REPO GH_TOKEN GITHUB_TOKEN
 mkdir -p "$HOME"
 ws="$tmp/workspace" remotes="$tmp/remotes" fx="$tmp/fixture"
