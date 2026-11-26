@@ -8,7 +8,7 @@ GH_REPO says. Prints:
 
   ## Code      origin/<base> at its sha, fetched first, and a detached worktree
                at it: <dir> with --worktree (added, or moved there when it is
-               already one of this repo's worktrees), else the command that adds one
+               already one of this repo's detached worktrees), else the command that adds one
   ## Ready     issues with no open blocker, oldest first
   ## Blocked   the other ready-for-agent issues, each with its open blockers
 
@@ -21,7 +21,8 @@ The first cut is the search `-is:blocked`, which counts only open native
 blockers. GitHub does not document that qualifier; it was checked by hand on
 2026-11-02. Where search rejects it, every issue's native blockers are read
 through the API instead, every page of them. Exit 1: gh or git failed, origin
-is no github.com repo, or --worktree names a path that is no worktree of this repo.
+is no github.com repo, or --worktree names an existing path that is no worktree
+of this repo or a worktree on a branch.
 """
 import json
 import os
@@ -62,9 +63,16 @@ def code_at(base, tree):
     if tree is None:
         return lines + [f"git worktree add --detach <dir> {sha}"]
     path = pathlib.Path(tree).expanduser().resolve()
-    trees = {pathlib.Path(line[9:]).resolve() for line in git("worktree", "list", "--porcelain").splitlines()
-             if line.startswith("worktree ")}
-    if path in trees:
+    git("worktree", "prune")  # a worktree whose directory is gone is added again below
+    on_branch = {}
+    for block in git("worktree", "list", "--porcelain").split("\n\n"):
+        lines = block.splitlines()
+        if lines and lines[0].startswith("worktree "):
+            on_branch[pathlib.Path(lines[0].removeprefix("worktree ")).resolve()] = any(
+                line.startswith("branch ") for line in lines)
+    if on_branch.get(path):
+        sys.exit(f"--worktree {tree}: is on a branch; name a detached worktree or a new path.")
+    if path in on_branch:
         git("checkout", "-q", "--detach", sha, cwd=path)
     elif path.exists():
         sys.exit(f"--worktree {tree}: exists and is no worktree of this repo.")
