@@ -2,7 +2,7 @@
 
 For the session that hands a PR over to the maintainer, before its handoff (`dk:issue-flow` step 6). `<base directory>` is the skill's base directory, the folder this file sits in, written out literally.
 
-**Ready gate.** The PR goes to the maintainer once it passes this gate on the latest commit. Read the live PR with `gh pr view <PR> --json headRefOid,state,isDraft,reviewDecision,mergeable,mergeStateStatus`: it is open, not a draft, and on its `headRefOid`:
+The PR goes to the maintainer once it passes this gate on the latest commit. Read the live PR with `gh pr view <PR> --json headRefOid,state,isDraft,reviewDecision,mergeable,mergeStateStatus`: it is open, not a draft, and on its `headRefOid`:
 
 - your proof (step 5) covers every change in the diff, the review fixes included;
 - required checks are green;

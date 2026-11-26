@@ -53,7 +53,7 @@ if "until a round brings no new finding" in bot or not re.search(
                   "ledger and round budget, not run until a round brings no new finding")
 
 # One watcher, pr-wait, reports every PR event in step 6, run with Monitor (#124).
-watch = re.search(r"^\*\*Watch the PR\.\*\*.*?(?=^\*\*Watch to the merge\.\*\*)", ref["watch"], re.M | re.S)
+watch = re.search(r"\A.*?(?=^\*\*Watch to the merge\.\*\*)", ref["watch"], re.M | re.S)
 watch = watch.group(0) if watch else ""
 watcher = (DK / "skills" / "issue-flow" / "pr-wait").read_text()
 for what, pattern in (
@@ -119,8 +119,7 @@ if not re.search(r"review-body finding post a PR comment with its key", step7) o
 # format a script can match to drop the agent's own comments (#121).
 step6 = re.search(r"^## 6\..*?(?=^## 7\.)", flow, re.M | re.S)
 step6 = step6.group(0) if step6 else ""
-note = re.search(r"^\*\*Comments\.\*\*.*?(?=^\*\*[A-Z]|\Z)", ref["comments"], re.M | re.S)
-note = note.group(0) if note else ""
+note = ref["comments"]
 template = re.search(r"```md\n(.*?)```", note, re.S)
 template = template.group(1) if template else ""
 pattern = re.search(r"Python `re` pattern `([^`]+)`", note)
@@ -200,7 +199,7 @@ if re.search(r'(?<![-"])body=@<|--body-file <|title=<', step6) or '-F "title=@<t
 
 # A PR reaches the maintainer through one gate, checked on the latest commit, and one verdict (#126, tstack
 # full-send's merge gate and full-stop's handoff). Merging stays the maintainer's: no merge grant is taken.
-gate = re.search(r"^\*\*Ready gate\.\*\*.*?(?=^\*\*[A-Z]|\Z)", ref["ready-gate"], re.M | re.S)
+gate = re.search(r"\A.*?(?=^\*\*Customer reply\.\*\*|\Z)", ref["ready-gate"], re.M | re.S)
 gate = gate.group(0) if gate else ""
 if not gate:
     errors.append("skills/issue-flow: step 6 has no **Ready gate.** paragraph")
@@ -313,9 +312,10 @@ if re.search(r"(?:-X|--method)[ =]?['\"]?(?:PATCH|patch)", flow + "".join(ref.va
 # #177: the customer reply is posted once the review loop has ended and the PR passed the gate, so it is never
 # reworded after it is posted.
 reply = re.search(r"^\*\*Customer reply\.\*\*.*?(?=^\*\*[A-Z]|^## |\Z)", ref["ready-gate"], re.M | re.S)
-after_gate = bool(reply) and reply.start() > ref["ready-gate"].find("**Ready gate.**") >= 0
+gate_at = ref["ready-gate"].find("The PR goes to the maintainer")
+after_gate = bool(reply) and reply.start() > gate_at >= 0
 reply = reply.group(0) if reply else ""
-before_gate = step6 + ref["ready-gate"][:ref["ready-gate"].find("**Ready gate.**")]
+before_gate = step6 + ref["ready-gate"][:gate_at]
 if not after_gate:
     errors.append("skills/issue-flow/ready-gate.md: needs a **Customer reply.** paragraph after the **Ready gate.**")
 elif not re.search(r"gate passes[^.]*review loop", reply) or "workflow.md" not in reply or "**Blocked**" not in reply:
