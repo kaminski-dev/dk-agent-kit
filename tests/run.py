@@ -47,7 +47,7 @@ def skill(name, *reads):
 
 
 CHECKS = [
-    Check("tests/hooks/test_guard_bash.py", [HOOKS + "guard-bash.py", "tests/hooks/guard_bash_cases.json"]),
+    Check("tests/hooks/test_guard_bash.py", [HOOKS + "guard-bash.py", "tests/hooks/guard_bash_cases.json"], fast=True),
     Check("tests/hooks/test_stop_gate.py", [HOOKS + "stop-gate.py"]),
     Check("tests/hooks/test_push_gate.py", [HOOKS + "push-gate.py", HOOKS + "guard-bash.py"]),  # it loads the guard
     Check("tests/hooks/test_require_worktree.py", [HOOKS + "require-worktree.py"], fast=True),

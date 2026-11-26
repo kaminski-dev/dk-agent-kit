@@ -25,7 +25,7 @@ def check(name, ok, detail=""):
 
 every = {c.name for c in run.CHECKS}
 fast = {c.name for c in run.CHECKS if c.fast}
-SLOW = {"tests/hooks/test_guard_bash.py", "tests/test_evals.py", "tests/test_batch_pr.py", "tests/test_dk_gc.sh"}
+SLOW = {"tests/hooks/test_stop_gate.py", "tests/test_evals.py", "tests/test_batch_pr.py", "tests/test_dk_gc.sh"}
 check("map: the slow checks are not always-on", every >= SLOW and not fast & SLOW, sorted(fast & SLOW))
 check("map: the skill and runner checks are always-on", {"tests/test_skills.py", "tests/test_run.py"} <= fast,
       sorted(fast))
@@ -38,9 +38,12 @@ def selected(*paths):
 got = selected("plugins/dk-guard/scripts/stop-gate.py")
 check("one hook: its tests and the always-on set", got - fast == {"tests/hooks/test_stop_gate.py"} and fast <= got,
       sorted(got - fast))
+got = selected("plugins/dk-guard/scripts/session-baseline.py")
+check("another hook: its tests and the always-on set", got - fast == {"tests/hooks/test_session_baseline.py"},
+      sorted(got - fast))
 got = selected("plugins/dk-guard/scripts/guard-bash.py")
 check("guard-bash: its matrix and the push gate that loads it",
-      got - fast == {"tests/hooks/test_guard_bash.py", "tests/hooks/test_push_gate.py"}, sorted(got - fast))
+      "tests/hooks/test_guard_bash.py" in got and got - fast == {"tests/hooks/test_push_gate.py"}, sorted(got - fast))
 got = selected("plugins/dk/skills/verify/SKILL.md")
 check("one skill's prose: its test file and the always-on set",
       "tests/skills/test_verify.py" in got and got <= fast and fast <= got, sorted(got - fast))
