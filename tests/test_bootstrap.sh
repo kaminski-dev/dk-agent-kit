@@ -27,7 +27,7 @@ mkdir -p "$tmp/home/.claude/skills/own-skill" "$tmp/agents/linked-skill"
 echo '---' > "$tmp/home/.claude/skills/own-skill/SKILL.md"
 echo '---' > "$tmp/agents/linked-skill/SKILL.md"
 ln -s "$tmp/agents/linked-skill" "$tmp/home/.claude/skills/linked-skill"
-unset ZDOTDIR
+unset ZDOTDIR CLAUDE_CONFIG_DIR
 export HOME="$tmp/home" CLAUDE_SETTINGS="$tmp/settings.json" DK_PRIVATE_SETTINGS="$tmp/private.json"
 
 # A claude stub on PATH for every run, so none reaches the real claude CLI or
