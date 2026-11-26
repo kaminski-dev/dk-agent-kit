@@ -209,7 +209,7 @@ if re.search(r"gh pr merge|--admin|--auto\b|merge queue", gate) or "Merging is t
     errors.append("skills/issue-flow: step 6 keeps merging the maintainer's; its gate grants no merge")
 
 # After the handover the PR is watched until it merges, so no one relays a merge or a conflict by hand (#176).
-merge_watch = re.search(r"^\*\*Watch to the merge\.\*\*.*?(?=^\*\*[A-Z]|^## )", step6, re.M | re.S)
+merge_watch = re.search(r"^\*\*Watch to the merge\.\*\*.*?(?=^\*\*[A-Z]|^## |\Z)", step6, re.M | re.S)
 merge_watch = merge_watch.group(0) if merge_watch else ""
 for what, pattern in (
     ("the until-merged watcher", r"`python3 -I <base directory>/pr-wait <PR> --until merged`"),

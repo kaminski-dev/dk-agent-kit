@@ -77,6 +77,10 @@ flowchart LR
   fix --> watch
   watch -- "nothing left on the head" --> gate{"ready gate"}
   gate --> verdict(["one verdict<br/>ready, waiting or blocked"])
+  verdict --> merged["pr-wait --until merged<br/>in the background"]
+  merged -- "a conflict" --> rebase["rebase and push"]
+  rebase --> merged
+  merged -- "merged" --> after(["after-merge steps<br/>waiting tickets start"])
 ```
 
 `dk:issue-flow` step 6 runs `pr-wait` under Monitor, so each event on the
@@ -85,7 +89,11 @@ finished, a human comment, an unresolved thread, a base that moved over the
 PR's files, the review bot's verdict. A comment edit wakes nothing, nor does
 each check that passes, so a change asked for goes in a new comment. The ready
 gate hands the PR to the maintainer with one verdict, and a condition the agent
-cannot read counts as Blocked. A PR that went stale while others merged gets
+cannot read counts as Blocked. The session that hands the PR over then
+watches it with `pr-wait --until merged` until the merge: a conflict gets a
+rebase and a push, a merge the after-merge steps, with no one relaying either.
+A base `workflow.md` names under **No CI** skips the watcher's wait for checks
+to register. A PR that went stale while others merged gets
 `/dk:modernize`: it rebases the PR, or describes a rework or recommends
 closing it; doing the rework and closing the PR stay the user's call.
 
