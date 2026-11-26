@@ -27,6 +27,8 @@ for step, what, pattern in (
     ("7", "the review-fix implementer's own worktree off the integration branch, made by the orchestrator",
      r"its own worktree off the integration branch, made by you"),
     ("7", "a merger subagent bringing its branch back before step 8", r"merger subagent[^.]*before step 8"),
+    ("1", "the preflight, run from the skill's base directory", r"python3 -I <base directory>/preflight\.py <spec>"),
+    ("1", "the stop on an unfinishable spec before any worktree", r"exits 3[^.]*stop[^.]*no worktree"),
 ):
     text = re.search(rf"^{step}\. .*$", spec_steps, re.M)
     if not text or not re.search(pattern, text.group(0)):
