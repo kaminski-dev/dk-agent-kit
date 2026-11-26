@@ -41,14 +41,24 @@ Use this template for writing the PR body:
 
 <optional: potential ramifications of merge>
 
+**Tier:** <the tier script's line>
+
 Closes #<N>
 ```
 
-Drop "Also in this PR" and "Deviations" when empty. The last line is `Closes #N`, or `Refs #N` when a post-deploy check remains (see the `dk:issue-flow` skill); an epic PR or a batch PR into `main` carries one `Closes #N` or `Refs #N` line per issue it covers.
+The tier (### Tier below) cuts this template down for a small change. Drop "Also in this PR" and "Deviations" when empty. The last line is `Closes #N`, or `Refs #N` when a post-deploy check remains (see the `dk:issue-flow` skill); an epic PR or a batch PR into `main` carries one `Closes #N` or `Refs #N` line per issue it covers.
 
 ## Sections
 
 Skip all preambles and keep prose brief. Use the user's domain language from `GLOSSARY.md`. The PR is English; customer-facing wording goes in the customer reply on the issue, not here.
+
+### Tier
+
+Run `python3 -I <base directory>/../code-review/tier <base>`, with `<base directory>` the one this skill's header names and `<base>` the PR's base, both written out literally. Its line goes in the body as **Tier:**, so the maintainer sees which path ran:
+
+- **Small**: the body is the Summary's opening sentence, the Evidence, the **Tier:** line and the closing line, with the review ledger when it has a row.
+- **Standard**: the template.
+- **Risky**: the template, with `dk:blast-radius` in Merge Danger whatever the door, and the `ci` label when the repo has one (`gh label list --json name --jq '.[].name'` lists `ci`): `gh pr edit <PR> --add-label ci` once the PR exists.
 
 ### Title
 
