@@ -37,7 +37,7 @@ for axis, brief in (("Standards", standards_brief), ("Spec", spec_brief), ("Corr
         errors.append(f"agents/reviewer: has no `## {axis}` section holding that axis's brief")
 baseline = section(standards_brief, "Smell baseline", 3)
 for phrase in ("sub-agent prompt", "**Mysterious Name**", "**Defensive Interior**", "Break the behaviour",
-               "PR must carry", "Comment wording is the Comments axis's", "CODING_STANDARDS.md"):
+               "`PR must carry: …`", "Comment wording is the Comments axis's", "CODING_STANDARDS.md"):
     if phrase in review:
         errors.append(f"skills/code-review: still carries {phrase!r}; the axis briefs live in agents/reviewer (#174)")
 if not baseline or re.search(r"empty test", baseline, re.I):
@@ -59,7 +59,7 @@ for what, pattern in (("its scope: diffs over 200 changed lines", r"over 200 cha
         errors.append(f"agents/reviewer: the smell baseline does not name {what}")
 if not re.search(r"Comment wording is the Comments axis's", standards_brief):
     errors.append("agents/reviewer: the Standards brief must leave comment wording to the Comments axis (#172)")
-# The sources the parent used to read and list: the reviewer reads them itself, so the prompt stays short.
+# The reviewer reads the standards sources and the comment policy itself, so the prompt stays short.
 if not re.search(r"`CODING_STANDARDS\.md`[^\n]*nearest to the changed files[^\n]*every doc it links or names", standards_brief):
     errors.append("agents/reviewer: the Standards brief does not read `CODING_STANDARDS.md` (root and nearest to the "
                   "changed files) and every doc it links or names")
@@ -166,7 +166,7 @@ for name, text in (("agents/reviewer", reviewer), ("agents/comment-reviewer", co
         errors.append(f"{name}: still marks findings hard or judgement call; the blocker, should or nit severity replaces it")
 spawn = re.search(r"^### \d\. Spawn.*?(?=^### )", review, re.M | re.S)
 if not re.search(r"`ST`.*Standards.*`SP`.*Spec.*`CO`.*Correctness.*`CM`.*Comments", spawn.group(0) if spawn else "", re.S):
-    errors.append("skills/code-review: step 4 must hand each axis its id prefix (`ST`, `SP`, `CO`, `CM`), "
+    errors.append("skills/code-review: step 3 must hand each axis its id prefix (`ST`, `SP`, `CO`, `CM`), "
                   "so ids stay unique across the four reports")
 steps = re.findall(r"^### (\d+)\. (.*)$", review, re.M)
 answer = re.search(r"^### \d+\. Answer findings\n.*?(?=^## |\Z)", review, re.M | re.S)
@@ -229,21 +229,37 @@ spawn = spawn.group(0) if spawn else ""
 for what, pattern in (
     ("the small tier's one dk:reviewer call for Spec and Correctness",
      r"^- \*\*Small\*\*: one `dk:reviewer` call carrying the Spec and Correctness prompts"),
-    ("Standards left out of the small tier", r"^- \*\*Small\*\*:[^\n]*Standards does not run"),
     ("the standard and risky tiers' three dk:reviewer calls",
      r"^- \*\*Standard\*\* and \*\*risky\*\*: Standards, Spec and Correctness, each its own `dk:reviewer` call"),
     ("the Comments axis running, in every tier, only when the diff adds a comment line",
      r"^- \*\*Comments\*\*, in every tier: [^\n]*only when the diff adds a comment line"),
 ):
     if not re.search(pattern, spawn, re.M):
-        errors.append(f"skills/code-review: step 4 does not name {what}")
+        errors.append(f"skills/code-review: step 3 does not name {what}")
 if not re.search(r"\*\*Budget\.\*\*[^\n]*1 round in the small tier", answer):
     errors.append("skills/code-review: its budget does not give the small tier one round")
 if not re.search(r"Report the tier line, the rounds run", answer):
     errors.append("skills/code-review: its Answer findings report does not state the tier")
 aggregate = re.search(r"^### \d\. Aggregate\n.*?(?=^### )", review, re.M | re.S)
-if not re.search(r"left out[^.]*heading[^.]*why", aggregate.group(0) if aggregate else ""):
-    errors.append("skills/code-review: step 5 does not give an axis left out its heading and the reason")
+aggregate = aggregate.group(0) if aggregate else ""
+if not re.search(r"left out[^.]*heading[^.]*why", aggregate):
+    errors.append("skills/code-review: step 4 does not give an axis left out its heading and the reason")
+# A parent that rewrote the also line as prose bullets left id-less finding lines (#172 comment on the eval).
+if not re.search(r"`also:` and `PR must carry:` lines verbatim", aggregate):
+    errors.append("skills/code-review: step 4 does not keep each report's `also:` and `PR must carry:` lines verbatim")
+# A fixed id closes with its ledger outcome unless its fix opened a round; otherwise a small-tier fix, or a fixed
+# Standards should, stayed open past the budget and every such review ended Stuck.
+for what, pattern in (
+    ("an open id as one whose fix opened a round, until that round marks it resolved",
+     r"[Aa]n open id is a blocker or should whose fix opened a round, until that round's reviewer marks it `resolved`"),
+    ("every other id closing with its ledger outcome", r"every other id closes with its ledger outcome"),
+    ("the small tier's Correctness-only round after a behaviour fix to a blocker",
+     r"\*\*Budget\.\*\*[^\n]*small tier[^\n]*Correctness alone[^\n]*blocker changed behaviour code"),
+):
+    if not re.search(pattern, answer):
+        errors.append(f"skills/code-review: its Answer findings step does not name {what}")
+if not re.search(r"^Ledger: <", prompt, re.M):
+    errors.append("skills/code-review: the prompt template has no `Ledger:` line for a later round's ledger rows")
 
 if FRESH in review:
     errors.append(f"skills/code-review: launches named agent types, which never fork; it skips the {FRESH} line")
