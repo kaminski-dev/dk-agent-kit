@@ -32,7 +32,7 @@ graders:
   - name: second-round-on-fix-diff
     type: tool_used
     tool: Agent
-    input_match: '^(?=.*"subagent_type"\s*:\s*"dk:reviewer")(?=.*git diff [0-9a-f]{7,40}\b)'
+    input_match: '^(?=.*"subagent_type"\s*:\s*"dk:reviewer")(?=.*git diff [0-9a-f]{7,40}\b(?!\.\.\.))'
     min: 1
   - name: second-round-is-correctness
     type: llm
