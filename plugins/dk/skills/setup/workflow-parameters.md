@@ -2,7 +2,7 @@
 
 The `dk:issue-flow` skill holds the shared sequence. A repo's `workflow.md` keeps only what differs per repo:
 
-- **Worktree**: `dk:issue-flow` step 2's `git worktree add` command filled in for this repo, in backticks, since the `require-worktree` hook shows the first backticked `git worktree add` line in its deny message; the allowed branch types; and the fresh-worktree setup (installs, generated files) before gates mean anything.
+- **Worktree**: `dk:issue-flow` step 2's `git worktree add` command filled in for this repo, in backticks, since the `require-worktree` hook shows the first backticked `git worktree add` line in its deny message; the allowed branch types; and the fresh-worktree setup (installs, generated files) before gates mean anything, as one line `- **Fresh-worktree setup**: ` holding only its commands, each in backticks, in order, since `dk:batch-pr`'s `finish.py` runs every backticked command on it after a batch merges. A repo with no setup leaves the line out.
 - **CI and deploy**: which workflows run on a PR and on `main`, and how to watch a deploy. Also which workflow, if any, runs that CI against `pre-main` (a nightly), by the name `gh run list --workflow` takes, and how one of its runs shows the commit it tested, since a scheduled run's `headSha` is `main`'s. A repo with no such workflow leaves both out.
 - **Review bot**: the bases whose PRs a review bot reviews and its login, each in backticks on one line (`` - **Review bot**: `coderabbitai[bot]` on PRs into `main` ``), since `dk:issue-flow` step 6's watcher reads that line; a line naming no login means no bot.
 - **Batch-review fixes**: `push` or `pr`, the route `dk:issue-flow` step 7 takes for batch PR review findings.

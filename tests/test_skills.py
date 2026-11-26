@@ -761,6 +761,15 @@ if not runs or any("--workflow" not in r for r in runs) or "workflow.md" not in 
                   "run per CI workflow workflow.md names (`gh run list --workflow`) that tested pre-main's head, "
                   "never the latest run of any")
 
+# The batch's housekeeping after the merge was typed by hand, 20 times in two repos (#181).
+finish = re.search(r"^## 5\. Finish\n.*?(?=^## |\Z)", skills["batch-pr"].read_text(), re.M | re.S)
+finish = finish.group(0) if finish else ""
+if "finish.py" not in finish or not re.search(r"batch PR (?:has )?merged", finish):
+    errors.append("skills/batch-pr: no step 5 that runs finish.py and says it runs once the batch PR merged")
+setup_slot = re.search(r"^- \*\*Worktree\*\*: .*", (DK / "skills/setup/workflow-parameters.md").read_text(), re.M)
+if not setup_slot or "**Fresh-worktree setup**" not in setup_slot.group(0) or "finish.py" not in setup_slot.group(0):
+    errors.append("skills/setup: the Worktree slot does not name the **Fresh-worktree setup** line batch-pr's finish.py runs")
+
 # Evidence's pre-main run needs a workflow.md that names the workflow and the commit its runs tested (#106).
 ci_slot = re.search(r"^- \*\*CI and deploy\*\*: .*(?:\n  .*)*", (DK / "skills/setup/workflow-parameters.md").read_text(), re.M)
 ci_slot = ci_slot.group(0) if ci_slot else ""
