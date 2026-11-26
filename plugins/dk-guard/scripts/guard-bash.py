@@ -8,11 +8,12 @@ leaked a credential (reading a credential file) or broke the shell (a zsh
 special parameter such as `path` as a loop, read or assigned variable, `$name:`
 before a zsh modifier, a variable holding a spaced command as the command, a
 function named like one of the user's zsh aliases) or blocked the session (a CI
-or merge wait outside run_in_background) or dropped the issue body (`gh issue
-view --comments`) or a dk:verify run's evidence (`rm` inside a verify.XXXXXX run
-directory) or ran a Markdown code span (a backtick span in an unquoted here-doc
-body) or hung on stdin (a `cat` with no file and no input), ask for
-rewriting the shared pre-main branch, a push to the current branch when the
+or merge wait outside run_in_background, though not three quick reads of the
+merge state) or dropped the issue body (`gh issue view --comments`) or a
+dk:verify run's evidence (`rm` inside a verify.XXXXXX run directory, outside its
+control checkout and its cookie jars) or ran a Markdown code span (a backtick
+span in an unquoted here-doc body) or hung on stdin (a `cat` with no file and no
+input), ask for rewriting the shared pre-main branch, a push to the current branch when the
 guard cannot tell which branch that is, or answering dk-gc's question for the
 human across the workspace (--workspace with --yes or piped input), and
 hints for `gh pr view --comments`, which drops the body, for an unlabelled
@@ -1252,6 +1253,38 @@ def check_waits(cmd):
     return [FOREGROUND_WAIT] if any(not quoted_text(cmd, m.start(1)) for m in hits) else []
 
 
+# a retry this short on a merge state GitHub has not computed yet waits on no CI
+RETRY_TRIES, RETRY_SLEEP = 3, 5
+MERGE_FIELDS = {"mergeable", "mergeStateStatus"}
+LITERAL_ITEM = re.compile(r"[\w.:@%+-]+")
+BRACE_RANGE = re.compile(r"\{(-?\d+)\.\.(-?\d+)\}")
+
+
+def for_tries(rest, seg):
+    """How many passes `for <name> in <items>` makes when its items are literal; None when known only at run time."""
+    if rest[1:2] != ["in"] or seg.subs:
+        return None
+    items = rest[2:]
+    brace = BRACE_RANGE.fullmatch(items[0]) if len(items) == 1 else None
+    if brace:
+        return abs(int(brace.group(2)) - int(brace.group(1))) + 1
+    return len(items) if all(LITERAL_ITEM.fullmatch(w) for w in items) else None
+
+
+def short_sleep(words):
+    return len(words) == 2 and re.fullmatch(r"\d+(?:\.\d+)?", words[1]) is not None \
+        and float(words[1]) <= RETRY_SLEEP
+
+
+def reads_merge_state(words):
+    args = gh_args(words) or []
+    if args[:2] != ["pr", "view"]:
+        return False
+    fields = [w.split("=", 1)[1] for w in args if w.startswith("--json=")] \
+        + [args[k + 1] for k, w in enumerate(args[:-1]) if w == "--json"]
+    return any(MERGE_FIELDS & set(f.split(",")) for f in fields)
+
+
 @dataclasses.dataclass
 class Loop:
     keyword: str
@@ -1260,9 +1293,16 @@ class Loop:
     body_polls: bool = False
     sleeps: bool = False
     loop_last: object = None
+    tries: object = None  # a for loop's passes, when its items are literal
+    long_sleep: bool = False  # a sleep longer than RETRY_SLEEP, or one whose length the guard cannot read
+    polls_other: bool = False  # a poll that reads more than the merge state
+
+    def short_retry(self):
+        return self.keyword == "for" and self.tries is not None and self.tries <= RETRY_TRIES \
+            and not self.long_sleep and not self.polls_other
 
     def waits(self):
-        return self.condition_polls or (self.body_polls and self.sleeps)
+        return self.condition_polls or (self.body_polls and self.sleeps and not self.short_retry())
 
 
 def wait_words(segs):
@@ -1285,7 +1325,8 @@ def wait_words(segs):
             return [FOREGROUND_WAIT]
         for kw in keywords:
             if kw in LOOP_KEYWORDS:
-                loop = Loop(kw, in_condition=kw in ("while", "until"), loop_last=seg.loop_last)
+                loop = Loop(kw, in_condition=kw in ("while", "until"), loop_last=seg.loop_last,
+                            tries=for_tries(rest, seg) if kw == "for" else None)
                 # this segment's substitutions came before it in segs: the condition of a while or until, the first
                 # body command of a repeat, the word list of a for (read once)
                 sub_polls = any(polls(command(s)[1]) for sub in seg.subs for s in sub)
@@ -1300,7 +1341,9 @@ def wait_words(segs):
             loops[-1].condition_polls = True
         for loop in loops:
             loop.body_polls = loop.body_polls or polls(words)
+            loop.polls_other = loop.polls_other or polls(words) and not reads_merge_state(words)
             loop.sleeps = loop.sleeps or words[:1] == ["sleep"]
+            loop.long_sleep = loop.long_sleep or words[:1] == ["sleep"] and not short_sleep(words)
         while loops and loops[-1].loop_last is seg:
             if loops.pop().waits():
                 return [FOREGROUND_WAIT]
