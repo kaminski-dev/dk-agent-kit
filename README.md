@@ -57,7 +57,7 @@ flowchart LR
   ready(["ready-for-agent"]) --> implement["dk:implement<br/>worktree off pre-main"]
   implement --> verify["dk:verify<br/>control run, teardown"]
   verify --> review["dk:code-review<br/>four axes, findings answered"]
-  review -- "blocker or should open, up to 3 rounds" --> review
+  review -- "behaviour fix to a Correctness or Spec blocker or should, up to 2 rounds" --> review
   review --> pr["dk:pr<br/>PR into pre-main"]
   implement -. "side finding" .-> intake{"scope<br/>intake"}
   intake -- "small, same place" --> implement

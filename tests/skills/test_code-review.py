@@ -116,9 +116,8 @@ for what, pattern in (
     ("the disagree outcome with evidence", r"`disagree: [^`]+`"),
     ("the declined outcome", r"`declined: [^`]+`"),
     ("later rounds on the open ids and the code changed since", r"only the open ids and the code changed since"),
-    ("3 rounds by default", r"\b3 rounds\b"),
+    ("2 rounds by default", r"\b2 rounds\b"),
     ("5 rounds for the named risk classes", r"\b5\b[^.]*security, permissions, auth, data loss or concurrency"),
-    ("stopping early on a round that brings only nits", r"round brings only nits"),
     ("the diff size after each round", r"`git diff --shortstat <fixed-point>`"),
     ("growth cut first", r"cut first"),
     ("declined findings worth doing through scope intake", r"`dk:issue-flow` step 3"),
@@ -127,13 +126,31 @@ for what, pattern in (
     ("each next-round prompt carrying its own axis's ledger rows", r"its own axis's ledger rows"),
     ("each open id reaching the next round with its claim and location",
      r"\*\*Next round\*\*[^\n]*each open id's original claim and `file:line` from the report that raised it"),
-    ("the nits-only stop only when no nit's fix changed behaviour code", r"round brings only nits[^.]*no behaviour code"),
     # CodeRabbit on #136, round 2 (#112): a declined nit has no issue, so the report names one only when filed.
     ("an issue number reported only for a declined finding scope intake filed",
      r"issue number of each declined finding that scope intake filed"),
 ):
     if not re.search(pattern, answer, re.S):
         errors.append(f"skills/code-review: its Answer findings step does not name {what}")
+# Review reopens only for a behaviour fix to a Correctness or Spec blocker or should, and that round runs the raising
+# axis plus Correctness on the fix diff; a nit, the "also" line or any other fix ends the loop (#172: 100 of 194
+# re-reviews followed only nits or a small should, and the clause that reopened on any behaviour change caused them).
+next_round = re.search(r"^\d\. \*\*Next round\*\*.*$", answer, re.M)
+next_round = next_round.group(0) if next_round else ""
+for what, pattern in (
+    ("the stop condition: a fix for a Correctness or Spec blocker or should that changed behaviour code",
+     r"only while budget remains and a fix for a Correctness or Spec blocker or `should` changed behaviour code"),
+    ("the round's axes: the one that raised the finding plus Correctness", r"the axis that raised [^.]*plus Correctness"),
+    ("the round's diff: the fix diff", r"on the fix diff \(`git diff <last round's HEAD>`\)"),
+    ("every other fix ending the loop", r"[Ee]very other fix ends the loop"),
+):
+    if not re.search(pattern, next_round):
+        errors.append(f"skills/code-review: its **Next round** step does not name {what}")
+if re.search(r"behaviour code changed since the last round|round brings only nits", answer):
+    errors.append("skills/code-review: its Answer findings step still reopens review whenever behaviour code changed "
+                  "since the last round; only a behaviour fix to a Correctness or Spec blocker or should does (#172)")
+if not re.search(r"\*\*Also line\.\*\*[^\n]*without ledger rows", answer):
+    errors.append("skills/code-review: its Answer findings step must apply each report's \"also\" line without ledger rows")
 
 if FRESH in review:
     errors.append(f"skills/code-review: launches named agent types, which never fork; it skips the {FRESH} line")
