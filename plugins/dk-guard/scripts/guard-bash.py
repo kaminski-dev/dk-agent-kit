@@ -1256,6 +1256,7 @@ def check_waits(cmd):
 # a retry this short on a merge state GitHub has not computed yet waits on no CI
 RETRY_TRIES, RETRY_SLEEP = 3, 5
 MERGE_FIELDS = {"mergeable", "mergeStateStatus"}
+CHECK_FIELDS = {"statusCheckRollup"}
 LITERAL_ITEM = re.compile(r"[\w.:@%+-]+")
 BRACE_RANGE = re.compile(r"\{(-?\d+)\.\.(-?\d+)\}")
 
@@ -1277,12 +1278,14 @@ def short_sleep(words):
 
 
 def reads_merge_state(words):
+    """A `gh pr view` that reads the merge state and not the checks."""
     args = gh_args(words) or []
     if args[:2] != ["pr", "view"]:
         return False
     fields = [w.split("=", 1)[1] for w in args if w.startswith("--json=")] \
         + [args[k + 1] for k, w in enumerate(args[:-1]) if w == "--json"]
-    return any(MERGE_FIELDS & set(f.split(",")) for f in fields)
+    fields = set(",".join(fields).split(","))
+    return bool(MERGE_FIELDS & fields) and not CHECK_FIELDS & fields
 
 
 @dataclasses.dataclass
@@ -1293,13 +1296,14 @@ class Loop:
     body_polls: bool = False
     sleeps: bool = False
     loop_last: object = None
-    tries: object = None  # a for loop's passes, when its items are literal
+    tries: int | None = None  # a for loop's passes, when its items are literal
     long_sleep: bool = False  # a sleep longer than RETRY_SLEEP, or one whose length the guard cannot read
-    polls_other: bool = False  # a poll that reads more than the merge state
+    polls_other: bool = False  # a poll other than reads_merge_state()
+    holds_loop: bool = False  # its passes multiply those of the loop inside
 
     def short_retry(self):
         return self.keyword == "for" and self.tries is not None and self.tries <= RETRY_TRIES \
-            and not self.long_sleep and not self.polls_other
+            and not self.long_sleep and not self.polls_other and not self.holds_loop
 
     def waits(self):
         return self.condition_polls or (self.body_polls and self.sleeps and not self.short_retry())
@@ -1332,6 +1336,8 @@ def wait_words(segs):
                 sub_polls = any(polls(command(s)[1]) for sub in seg.subs for s in sub)
                 loop.condition_polls = loop.in_condition and sub_polls
                 loop.body_polls = kw == "repeat" and sub_polls
+                for outer in loops:
+                    outer.holds_loop = True
                 loops.append(loop)
             elif kw == "do" and loops:
                 loops[-1].in_condition = False
