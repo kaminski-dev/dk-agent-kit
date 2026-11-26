@@ -148,6 +148,13 @@ for script in ("batch-pr/batch.py", "issue-flow/pr-wait", "implement-spec/prefli
     copies.setdefault(m.group(0) if m else None, []).append(script)
 if len(copies) != 1 or None in copies:
     errors.append("skills: origin_repo() differs between " + " | ".join(", ".join(v) for v in copies.values()))
+# The spec preflight reads blockers as dk:triage's ready list does, so the two blocker patterns stay one.
+blocker_lines = {}
+for script in ("implement-spec/preflight.py", "triage/ready.py"):
+    lines = re.findall(r"^(?:BODY_BLOCKER|BLOCKER_REF) = .*$", (DK / "skills" / script).read_text(), re.M)
+    blocker_lines.setdefault(tuple(lines) if len(lines) == 2 else None, []).append(script)
+if len(blocker_lines) != 1 or None in blocker_lines:
+    errors.append("skills: BODY_BLOCKER and BLOCKER_REF differ between " + " | ".join(", ".join(v) for v in blocker_lines.values()))
 # dk-gc reads origin through its own git() helper, so only the pattern line is shared.
 dkgc_pattern_line = re.search(r"^def slug_of\(root\):\n(?:    .*\n)*?(    m = re\.search\(.*\n)",
                       (ROOT / "plugins" / "dk-guard" / "bin" / "dk-gc").read_text(), re.M)

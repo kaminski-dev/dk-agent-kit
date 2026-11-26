@@ -16,7 +16,7 @@ ticket's blockers, and prints:
 
 A blocker is a native dependency or a `Blocked by: #n` line in the ticket body,
 as in dk:triage's ready.py; `owner/repo#n` there names another repo's issue,
-which is always outside the spec.
+which is always outside the spec, unless owner/repo is origin's own (any case).
 Exit 0: every open ticket can finish. Exit 3: one cannot, or the spec has no
 open ticket; the last line, on stderr, says what blocks it. Exit 1: gh failed,
 or origin is no github.com repo.
@@ -60,9 +60,12 @@ def main():
     if not repo:
         sys.exit("origin names no github.com repo, so there is no repo to ask gh about.")
     os.environ["GH_REPO"] = repo  # an inherited GH_REPO would point gh at another repo
+    def home_of(issue):
+        return issue.get("repository_url", "").removeprefix("https://api.github.com/repos/") or repo
+
     tickets, elsewhere = {}, {}
     for t in pages(f"repos/{repo}/issues/{spec}/sub_issues"):
-        home = t.get("repository_url", "").removeprefix("https://api.github.com/repos/") or repo
+        home = home_of(t)
         if home.lower() == repo.lower():
             tickets[t["number"]] = t
         else:
@@ -78,10 +81,11 @@ def main():
     open_tickets = {n: t for n, t in tickets.items() if t["state"].lower() == "open"}
     inside, outside = {}, {}
     for n, t in open_tickets.items():
-        blockers = {f"#{b['number']}" for b in pages(f"repos/{repo}/issues/{n}/dependencies/blocked_by")
-                    if b["state"].lower() == "open"}
+        blockers = {("" if home_of(b).lower() == repo.lower() else home_of(b)) + f"#{b['number']}"
+                    for b in pages(f"repos/{repo}/issues/{n}/dependencies/blocked_by") if b["state"].lower() == "open"}
         for line in BODY_BLOCKER.findall(t.get("body") or ""):
-            blockers |= {f"{other}#{m}" for other, m in BLOCKER_REF.findall(line)
+            refs = [("" if other.lower() == repo.lower() else other, m) for other, m in BLOCKER_REF.findall(line)]
+            blockers |= {f"{other}#{m}" for other, m in refs
                          if (not other and int(m) in open_tickets) or is_open(other, m)}
         inside[n] = sorted(int(b[1:]) for b in blockers if b.startswith("#") and int(b[1:]) in open_tickets)
         reasons = [f"blocked by {b}, outside the spec" for b in sorted(blockers)
@@ -90,7 +94,6 @@ def main():
             reasons.append("not ready-for-agent")
         outside[n] = reasons
 
-    # A ticket can finish when nothing outside blocks it and every ticket it waits on can finish.
     finishable, grew = set(), True
     while grew:
         grew = False
@@ -107,12 +110,13 @@ def main():
     away = sorted(elsewhere, key=lambda ref: (ref.split("#")[0].lower(), int(ref.split("#")[1])))
     away_open = [ref for ref in away if elsewhere[ref]["state"].lower() == "open"]
     title = {**{f"#{n}": t["title"] for n, t in tickets.items()}, **{r: t["title"] for r, t in elsewhere.items()}}
+    cannot_finish = [(f"#{n}", why(n)) for n in order if n not in finishable] \
+        + [(ref, f"in {ref.split('#')[0]}, not this repo") for ref in away_open]
     sections = (
         ("Can finish now", [(f"#{n}", "") for n in order if n in finishable and not inside[n]]),
         ("Waits inside the spec", [(f"#{n}", "waits on " + ", ".join(f"#{b}" for b in inside[n]))
                                    for n in order if n in finishable and inside[n]]),
-        ("Cannot finish", [(f"#{n}", why(n)) for n in order if n not in finishable]
-         + [(ref, f"in {ref.split('#')[0]}, not this repo") for ref in away_open]),
+        ("Cannot finish", cannot_finish),
         ("Done", [(f"#{n}", "") for n in sorted(tickets) if n not in open_tickets]
          + [(ref, "") for ref in away if ref not in away_open]),
     )
@@ -121,12 +125,12 @@ def main():
         for ref, note in rows:
             print(f"- {ref} {title[ref]}" + (f": {note}" if note else ""))
 
-    stuck = sections[2][1]
     if not open_tickets and not away_open:
         print(f"Spec #{spec} cannot finish: it has no open ticket.", file=sys.stderr)
         return 3
-    if stuck:
-        print(f"Spec #{spec} cannot finish: " + "; ".join(f"{ref} {note}" for ref, note in stuck) + ".", file=sys.stderr)
+    if cannot_finish:
+        print(f"Spec #{spec} cannot finish: " + "; ".join(f"{ref} {note}" for ref, note in cannot_finish) + ".",
+              file=sys.stderr)
         return 3
     return 0
 
