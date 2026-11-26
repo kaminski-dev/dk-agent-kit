@@ -395,6 +395,9 @@ class Splitter:
 
     def close(self, seg, piped=False):
         if not (seg.words or seg.redirects):
+            if piped and seg.closes is not None:  # `(...) | cmd`: the subshell's output feeds cmd
+                seg = Segment(self.shell, seg.substituted)
+                seg.piped_in = True
             return seg
         self.out.append(seg)
         self.continued = False
