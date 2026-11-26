@@ -265,13 +265,13 @@ check("353 review: the diff adds no comment line, so Comments does not run (#173
       comment_lines(ws))
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
-# The ready gate's reads (#134): dk:issue-flow step 6 reads the PR through gh pr view.
+# The ready gate's reads (#134): dk:issue-flow step 6's ready gate, in ready-gate.md (#179), reads the PR through gh pr view.
 ws = scaffold("code-review-353")
 state_file = ws / ".tracker" / "state.json"
 TIP = git(ws, "app", "rev-parse", "HEAD").stdout.strip()
-issue_flow = (EVALS.parent / "skills" / "issue-flow" / "SKILL.md").read_text()
+issue_flow = (EVALS.parent / "skills" / "issue-flow" / "ready-gate.md").read_text()
 gate_fields = re.search(r"`gh pr view <PR> --json (headRefOid,[\w,]+)`", issue_flow)
-check("gate: dk:issue-flow's ready gate names its gh pr view fields", gate_fields is not None, "no such command in step 6")
+check("gate: dk:issue-flow's ready gate names its gh pr view fields", gate_fields is not None, "no such command in ready-gate.md")
 GATE = gate_fields.group(1) if gate_fields else ""
 
 
@@ -318,7 +318,7 @@ check("gate: new_pr in the state sets what a PR the agent opens carries",
       got == {"headRefOid": TIP, "state": "OPEN", "isDraft": True, "reviewDecision": "REVIEW_REQUIRED",
               "mergeable": "MERGEABLE", "mergeStateStatus": "BLOCKED", "base": "pre-main"}, got)
 blocking = re.search(r"`gh pr view <PR> (--json latestReviews --jq '[^']*')`", issue_flow)
-check("gate: dk:issue-flow's ready gate names its read of requested changes", blocking is not None, "no such command in step 6")
+check("gate: dk:issue-flow's ready gate names its read of requested changes", blocking is not None, "no such command in ready-gate.md")
 store_pr(1)
 r = run(ws, f"gh pr view 1 {blocking.group(1) if blocking else ''}", cwd=ws / "app")
 check("gate: a PR without reviews has nobody requesting changes", (r.returncode, r.stdout) == (0, ""), (r.stdout, r.stderr))
