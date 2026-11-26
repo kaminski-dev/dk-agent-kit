@@ -344,6 +344,14 @@ deadline = re.search(r"^- `deadline passed`:.*$", watch, re.M)
 if not deadline or "`BEHIND`" not in deadline.group(0) or "`DIRTY`" not in deadline.group(0) or "CLEAN" in deadline.group(0):
     errors.append("skills/issue-flow: step 6's `deadline passed` report must name a `BEHIND`, `DIRTY` or unreadable "
                   "merge state, the ones pr-wait gates on")
+# #148: a hand run of the gate goes through dk-gate, whose pass the push of the same tree reuses; the Stop hook
+# that once ran it is gone.
+gate_runs = re.search(r"^The gate runs at the push and by hand.*$", step6, re.M)
+if not gate_runs or "`dk-gate ~/workspace/<prefix>-<N>`" not in gate_runs.group(0) or "reuses" not in gate_runs.group(0):
+    errors.append("skills/issue-flow: step 6 must say the gate runs at the push and by hand through dk-gate "
+                  "(`dk-gate ~/workspace/<prefix>-<N>`), and that the push reuses a hand pass on the same tree")
+if re.search(r"Stop (hook|gate)", flow):
+    errors.append("skills/issue-flow: the Stop gate is gone (#148); the gate runs at the push and through dk-gate")
 # Before `gh pr create`: the branch's open PR, and the REST create when GraphQL is rate-limited.
 opening = re.search(r"^Rebase onto .*$", step6, re.M)
 opening = opening.group(0) if opening else ""
