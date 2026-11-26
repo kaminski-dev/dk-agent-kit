@@ -205,6 +205,32 @@ check("wave: the isolation grader catches a brief with worktree isolation",
 check("wave: the isolation grader passes a brief without it", re.search(isolated, brief("Work in ../app-353.")) is None,
       isolated)
 
+# The handover grader reads the trace, one JSON message per line: it needs three messages of the orchestrator's own
+# that end on a verdict line before its dry-merge call, so one report after the dry-merge fails, and so do the
+# implementers' own reports, which carry their parent_tool_use_id (#175).
+def trace_line(content, parent=None):
+    return json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [content]},
+                       "parent_tool_use_id": parent, "session_id": "s"}, separators=(",", ":"))
+
+
+def handover(num, verdict="Ready to merge"):
+    return trace_line({"type": "text", "text": f"## #{num}\n\n**PR:** https://github.com/acme/ledger/pull/{num}\n\n**{verdict}**"})
+
+
+dry_merge = trace_line({"type": "tool_use", "id": "t", "name": "Bash",
+                        "input": {"command": "git merge-tree --write-tree --name-only origin/a origin/b"}})
+handed = re.compile(grader_field("implement-wave", r"pattern: '((?:[^']|'')*)'")
+                    .get("hands-over-each-pr-before-the-dry-merge", "(?!)").replace("''", "'"), re.M)
+check("wave: the handover grader passes three handovers before the dry-merge",
+      handed.search("\n".join([handover(353), handover(376, "Blocked"), handover(380), dry_merge, handover(0)])) is not None)
+check("wave: the handover grader fails one report after the dry-merge",
+      handed.search("\n".join([dry_merge, handover(353), handover(376), handover(380)])) is None)
+check("wave: the handover grader fails two handovers before the dry-merge",
+      handed.search("\n".join([handover(353), handover(376), dry_merge, handover(380)])) is None)
+check("wave: the handover grader leaves out the implementers' own reports",
+      handed.search("\n".join([handover(353), handover(376)] + [
+          trace_line({"type": "text", "text": "**PR:** x\n\n**Ready to merge**"}, parent="toolu_1"), dry_merge])) is None)
+
 # The review fixture: a branch that fixes #353 correctly but breaks one documented standard.
 ws = scaffold("code-review-353")
 branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
