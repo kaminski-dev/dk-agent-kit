@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""Prints the size-and-risk tier of the current branch: small, standard or risky, then why.
+
+    python3 -I tier [<base>]
+
+<base> defaults to origin/pre-main when origin has a pre-main branch, else origin/main. The change is everything
+since the merge base with <base>: commits, staged, unstaged and untracked files. Its changed lines are added plus
+deleted lines; its files are every path it touches. The risk paths are the backticked globs in the bullets of the
+`## Risk paths` section of docs/agents/workflow.md, matched against each touched path without regard to case,
+with `*` crossing `/`.
+
+    small     60 changed lines or fewer, 3 files or fewer, no risk path, and the repo has a risk-path list
+    standard  500 changed lines or fewer, no risk path
+    risky     a risk path, or over 500 changed lines
+
+The one line printed starts with the tier and a colon, e.g. `small: 7 changed lines in 2 files, no risk path`.
+Exit 2 when <base> does not resolve.
+"""
+import fnmatch
+import pathlib
+import re
+import subprocess
+import sys
+
+SMALL_LINES, SMALL_FILES, STANDARD_LINES = 60, 3, 500
+WORKFLOW = "docs/agents/workflow.md"
+
+
+def git(*args, check=True):
+    out = subprocess.run(["git", *args], capture_output=True, text=True, errors="replace")
+    if check and out.returncode != 0:
+        sys.exit(f"tier: git {' '.join(args)}: {out.stderr.strip()}")
+    return out
+
+
+def default_base():
+    heads = git("ls-remote", "--heads", "origin", "pre-main", check=False)
+    return "origin/pre-main" if heads.returncode == 0 and heads.stdout.strip() else "origin/main"
+
+
+def risk_globs(root):
+    """The globs of the ## Risk paths section, or None when the repo keeps no such list."""
+    doc = root / WORKFLOW
+    if not doc.is_file():
+        return None
+    section = re.search(r"^## Risk paths[ \t]*\n(.*?)(?=^## |\Z)", doc.read_text(errors="replace"), re.M | re.S)
+    if not section:
+        return None
+    globs = [g for line in section.group(1).splitlines() if re.match(r"\s*[-*] ", line)
+             for g in re.findall(r"`([^`]+)`", line)]
+    return globs or None
+
+
+def measure(root, merge_base):
+    """Changed lines and the touched paths, committed and uncommitted, since merge_base."""
+    lines, paths = 0, set()
+    numstat = git("diff", "--numstat", "--no-renames", "-z", merge_base, "--").stdout
+    for record in filter(None, numstat.split("\0")):
+        added, deleted, path = record.split("\t", 2)
+        lines += (int(added) if added != "-" else 0) + (int(deleted) if deleted != "-" else 0)
+        paths.add(path)
+    untracked = git("ls-files", "--others", "--exclude-standard", "-z").stdout
+    for path in filter(None, untracked.split("\0")):
+        paths.add(path)
+        data = (root / path).read_bytes() if (root / path).is_file() else b""
+        if b"\0" not in data:
+            lines += data.count(b"\n") + (1 if data and not data.endswith(b"\n") else 0)
+    return lines, sorted(paths)
+
+
+def main(argv):
+    if len(argv) > 1 or any(a.startswith("-") for a in argv):
+        sys.exit(__doc__)
+    base = argv[0] if argv else default_base()
+    if git("rev-parse", "--verify", "-q", f"{base}^{{commit}}", check=False).returncode != 0:
+        print(f"tier: {base} does not resolve to a commit", file=sys.stderr)
+        return 2
+    root = pathlib.Path(git("rev-parse", "--show-toplevel").stdout.strip())
+    merge_base = git("merge-base", base, "HEAD").stdout.strip()
+    lines, paths = measure(root, merge_base)
+    size = f"{lines} changed lines in {len(paths)} files"
+    globs = risk_globs(root)
+    for path in paths:
+        for glob in globs or ():
+            if fnmatch.fnmatchcase(path.lower(), glob.lower()):
+                print(f"risky: {path} matches risk path `{glob}` ({size})")
+                return 0
+    if lines > STANDARD_LINES:
+        print(f"risky: {size}, over {STANDARD_LINES}")
+    elif globs is None:
+        print(f"standard: {size}; no risk-path list in {WORKFLOW}, so never small")
+    elif lines <= SMALL_LINES and len(paths) <= SMALL_FILES:
+        print(f"small: {size}, no risk path")
+    else:
+        print(f"standard: {size}, no risk path")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

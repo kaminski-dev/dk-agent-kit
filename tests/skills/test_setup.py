@@ -20,4 +20,14 @@ for what, pattern in (
     if not re.search(pattern, ci_slot):
         errors.append(f"skills/setup: workflow-parameters.md's **CI and deploy** does not ask for {what}")
 
+# The tier script reads the repo's risk paths; a repo without them never gets the small tier (#173).
+params = (DK / "skills/setup/workflow-parameters.md").read_text()
+setup = (DK / "skills/setup/SKILL.md").read_text()
+if not re.search(r"^- \*\*Risk paths\*\*: [^\n]*`tier`[^\n]*never gets the small tier", params, re.M):
+    errors.append("skills/setup: workflow-parameters.md has no **Risk paths** slot naming the tier script")
+if not re.search(r"^## Risk paths\n", params, re.M):
+    errors.append("skills/setup: workflow-parameters.md carries no ## Risk paths template with the default globs")
+if not re.search(r"Add its `## Risk paths` section when the repo has none", setup):
+    errors.append("skills/setup: its Workflow step does not add the ## Risk paths section")
+
 lib.finish("dk:setup")
