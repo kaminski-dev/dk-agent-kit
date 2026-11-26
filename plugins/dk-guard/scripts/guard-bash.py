@@ -1841,7 +1841,9 @@ def discardable(path, run, recursive):
     """Inside the control checkout (`$RUN/base/...`, code rather than evidence) or a cookie jar, which is a file, so
     a recursive rm of a cookie-named path may be a directory of evidence."""
     rest = path[run.end():]
-    return (rest.startswith("base/") and len(rest) > len("base/")) or (not recursive and cookie_jar(os.path.basename(path)))
+    # what follows base/ must name something past a word that may be empty, or the rm may take the checkout itself
+    inside = re.sub(r"\$(?:\{\w+\}|\w+)", "", rest[len("base/"):]).strip("/")
+    return (rest.startswith("base/") and bool(inside)) or (not recursive and cookie_jar(os.path.basename(path)))
 
 
 def operands(words):
