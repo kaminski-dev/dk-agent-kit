@@ -596,7 +596,8 @@ check("small review: the repo keeps a risk-path list, and the fix is small", tie
 check("small review: the diff adds no comment line", not comment_lines(ws), comment_lines(ws))
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 check("small review: one dk:reviewer call and no dk:comment-reviewer",
-      reviewer_counts("code-review-small") == {"one-reviewer": (1, 1), "no-comments-reviewer": (0, 0)},
+      reviewer_counts("code-review-small") == {"one-reviewer": (1, 1), "no-comments-reviewer": (0, 0),
+                                                "short-round-one-prompts": (0, 0)},
       reviewer_counts("code-review-small"))
 ws = scaffold("code-review-risky")
 check("risky review: the commented #353 fix is checked out",
@@ -636,6 +637,20 @@ for prompt, want in (("Correctness. Diff: `git diff 1a2b3c4`; open ids CO1.", Tr
     check(f"re-review: the fix-diff grader {'matches' if want else 'passes over'} {prompt!r}", got == want, fix_diff)
 check("re-review: the fix-diff grader passes over a Comments call on the fix diff",
       re.search(fix_diff, brief("`git diff 1a2b3c4`", subagent_type="dk:comment-reviewer")) is None, fix_diff)
+
+# Each axis's brief lives in its agent, so a round-one prompt carries only what changes per run: 600 characters
+# of template plus the spec reference (#174: the parent retyped 739 to 3,976 characters per dk:reviewer call).
+SHORT = ("code-review-353", "code-review-correctness", "code-review-small")
+for case in SHORT:
+    long_prompt = input_matches(case).get("short-round-one-prompts")
+    check(f"{case}: a grader fails any dk:reviewer prompt of 900 characters or more",
+          long_prompt is not None and reviewer_counts(case).get("short-round-one-prompts") == (0, 0), long_prompt)
+long_prompt = input_matches(SHORT[0]).get("short-round-one-prompts", "(?!)")
+for size, kind, want in ((899, "dk:reviewer", False), (900, "dk:reviewer", True), (2000, "dk:comment-reviewer", False)):
+    prompt = "Axis: Spec, ids SP. \"Quoted\"\n" + "x" * (size - 29)
+    got = re.search(long_prompt, brief(prompt, subagent_type=kind)) is not None
+    check(f"short prompts: the grader {'matches' if want else 'passes over'} a {size}-character {kind} prompt",
+          len(prompt) == size and got == want, (len(prompt), long_prompt))
 
 # The verify fixture: a clean #353 fix in a repo whose verify doc says there is no database to start.
 ws = scaffold("verify-no-db")
