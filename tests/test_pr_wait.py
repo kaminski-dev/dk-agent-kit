@@ -159,6 +159,8 @@ PENDING = [{"name": "test", "bucket": "pending", "link": "", "description": ""}]
 THREAD_UNREAD = "read 1 of 101 comments on the thread at src/app.py:12, so ready is not reported on 1111111"
 QUIET = ["--minutes", str(1.5 / 60)]  # a case whose event must not come ends at its deadline
 HUMAN = "Please rename the flag"
+READY = pr(reviews=[review(7, "x")])
+PEER = {"login": "reviewer", "__typename": "User"}
 STRANGER = {"login": "drive-by", "__typename": "User"}
 
 # name: (fixture, exit code, lines stdout must hold, text stdout must not hold)
@@ -322,6 +324,32 @@ CASES = {
         timeline=[[0, pr()], [2.0, pr(head=NEW)], [4.5, pr(head=NEW, reviews=[review(11, "x", commit=NEW)])]],
         checks=GREEN, args=["--minutes", str(3 / 60), "--interval", "0.2"]),
         0, ["reviews 11", "ready on 2222222"], "deadline"),
+    "until merged: a merge prints its event and exits 0": (dict(
+        polls=[READY, READY, pr(state="MERGED")], checks=GREEN, args=["--until", "merged"]),
+        0, ["ready on 1111111", "merged: https://github.com/acme/ledger/pull/1"], "deadline"),
+    "until merged: a conflict after ready prints its event and the watch goes on": (dict(
+        polls=[READY, READY, pr(merge="DIRTY", reviews=[review(7, "x")]), pr(state="MERGED")], checks=GREEN,
+        args=["--until", "merged"]),
+        0, ["ready on 1111111", "merge state is DIRTY: the branch conflicts with main, rebase it\n"
+            "#1 merged: https://github.com/acme/ledger/pull/1"], "deadline"),
+    "until merged: a new review after ready prints its event and the watch goes on": (dict(
+        polls=[READY, READY, pr(reviews=[review(7, "x"), review(20, "Ship it.", author=PEER, state="APPROVED",
+                                                            association="MEMBER")]), pr(state="MERGED")],
+        checks=GREEN, args=["--until", "merged"]),
+        0, ["ready on 1111111", "review from reviewer (approved): Ship it. https://github.com/acme/ledger/pull/1#r20\n"
+            "#1 merged: https://github.com/acme/ledger/pull/1"], "deadline"),
+    "until merged: a failed check is an event, not the end": (dict(
+        polls=[READY, READY, READY, pr(state="MERGED")], check_polls=[GREEN, GREEN, FAILED], args=["--until", "merged"]),
+        0, ["check failed: test https://ci/test\n#1 merged:"], "deadline"),
+    "until merged: its deadline passing exits 3": (dict(polls=[READY], checks=GREEN, args=["--until", "merged", *QUIET]),
+                                                   3, ["deadline passed: no merge after"], "merged:"),
+    "until merged: a restart keeps the deadline the first run set": (dict(
+        polls=[READY], checks=GREEN, args=["--until", "merged"],
+        state={"reported": [], "base_oid": BASE, "merge_state": "CLEAN", "merged_since": 1.0}),
+        3, ["deadline passed: no merge after"], "merged:"),
+    "a base workflow.md names as having no CI is green without the register wait": (dict(
+        polls=[pr()], checkout="no-ci", args=["--until", "green"]),
+        0, ["green on 1111111: no checks reported"], "deadline"),
     "an inherited GH_REPO: every gh call asks for origin's repo": (dict(
         polls=[pr(reviews=[review(12, "x")])], checks=GREEN, env={"GH_REPO": "kaminski-dev/dk-agent-kit"}, repo="acme/ledger"),
         0, ["reviews 12"], "deadline"),
@@ -333,6 +361,10 @@ def case_env(root, name, fix):
     os.makedirs(case)
     with open(os.path.join(case, "fix.json"), "w") as f:
         json.dump(fix, f)
+    if "state" in fix:  # a state file a watcher before this one left
+        os.makedirs(os.path.join(case, ".local", "state", "pr-wait"))
+        with open(os.path.join(case, ".local", "state", "pr-wait", "acme__ledger__1.json"), "w") as f:
+            json.dump(fix["state"], f)
     return case, {"PATH": f"{root}/bin:{os.environ['PATH']}", "FIX": f"{case}/fix.json", "STATE": case, "HOME": case}
 
 
@@ -467,6 +499,7 @@ def main():
         checkout(root, "greptile", "- **Review bot**: `greptile-apps[bot]` on PRs into `main`.")
         checkout(root, "short-bot", "- **Review bot**: `qa[bot]` on PRs into `main`.")
         checkout(root, "no-bot", "- **Review bot**: `coderabbitai[bot]` on PRs into `pre-main`.")
+        checkout(root, "no-ci", "- **No CI**: `main` runs no CI, so checks never register.")
         with ThreadPoolExecutor(8) as pool:
             jobs = [pool.submit(run_case, root, name, *spec) for name, spec in CASES.items()]
             jobs += [pool.submit(second_watcher, root)]
