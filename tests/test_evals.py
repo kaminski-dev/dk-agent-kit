@@ -829,6 +829,15 @@ check("ready.py: an existing --worktree moves to the new ref", r.returncode == 0
 (ws / "not-a-tree").mkdir()
 r, code = code_section(f"--worktree '{ws / 'not-a-tree'}'")
 check("ready.py: a --worktree path that is no worktree of this repo fails", r.returncode == 1, (r.stdout, r.stderr))
+branch = git(ws, "app", "symbolic-ref", "-q", "HEAD").stdout.strip()
+r, code = code_section(f"--worktree '{ws / 'app'}'")
+check("ready.py: a --worktree on a branch, the main checkout here, fails and stays on its branch",
+      r.returncode == 1 and git(ws, "app", "symbolic-ref", "-q", "HEAD").stdout.strip() == branch,
+      (r.returncode, r.stderr, branch))
+shutil.rmtree(tree)
+r, code = code_section(f"--worktree '{tree}'")
+check("ready.py: a registered --worktree whose directory is gone is added again",
+      r.returncode == 0 and (tree / ".git").exists() and "Traceback" not in r.stderr, (r.returncode, r.stderr))
 git(ws, "app", "worktree", "remove", "--force", str(tree))
 
 repos_log = ws / ".tracker" / "repos.log"
