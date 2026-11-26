@@ -10,7 +10,8 @@ ticket's blockers, and prints:
   ## Can finish now          open ready-for-agent tickets with no open blocker: the frontier
   ## Waits inside the spec   tickets whose open blockers are all tickets of this spec that can finish
   ## Cannot finish           each other open ticket, with why: an open blocker outside the spec,
-                             no ready-for-agent label, or a wait on a ticket that cannot finish
+                             no ready-for-agent label, a wait on a ticket that cannot finish, or
+                             a home in another repo (owner/repo#n), whose work no branch here holds
   ## Done                    closed tickets
 
 A blocker is a native dependency or a `Blocked by: #n` line in the ticket body,
@@ -59,7 +60,13 @@ def main():
     if not repo:
         sys.exit("origin names no github.com repo, so there is no repo to ask gh about.")
     os.environ["GH_REPO"] = repo  # an inherited GH_REPO would point gh at another repo
-    tickets = {t["number"]: t for t in pages(f"repos/{repo}/issues/{spec}/sub_issues")}
+    tickets, elsewhere = {}, {}
+    for t in pages(f"repos/{repo}/issues/{spec}/sub_issues"):
+        home = t.get("repository_url", "").removeprefix("https://api.github.com/repos/") or repo
+        if home.lower() == repo.lower():
+            tickets[t["number"]] = t
+        else:
+            elsewhere[f"{home}#{t['number']}"] = t
     states = {}
 
     def is_open(other, n):
@@ -97,24 +104,29 @@ def main():
         return "; ".join(outside[n] + stuck) or "waits in a cycle of tickets"
 
     order = sorted(open_tickets)
+    away = sorted(elsewhere, key=lambda ref: (ref.split("#")[0].lower(), int(ref.split("#")[1])))
+    away_open = [ref for ref in away if elsewhere[ref]["state"].lower() == "open"]
+    title = {**{f"#{n}": t["title"] for n, t in tickets.items()}, **{r: t["title"] for r, t in elsewhere.items()}}
     sections = (
-        ("Can finish now", [(n, "") for n in order if n in finishable and not inside[n]]),
-        ("Waits inside the spec", [(n, "waits on " + ", ".join(f"#{b}" for b in inside[n]))
+        ("Can finish now", [(f"#{n}", "") for n in order if n in finishable and not inside[n]]),
+        ("Waits inside the spec", [(f"#{n}", "waits on " + ", ".join(f"#{b}" for b in inside[n]))
                                    for n in order if n in finishable and inside[n]]),
-        ("Cannot finish", [(n, why(n)) for n in order if n not in finishable]),
-        ("Done", [(n, "") for n in sorted(tickets) if n not in open_tickets]),
+        ("Cannot finish", [(f"#{n}", why(n)) for n in order if n not in finishable]
+         + [(ref, f"in {ref.split('#')[0]}, not this repo") for ref in away_open]),
+        ("Done", [(f"#{n}", "") for n in sorted(tickets) if n not in open_tickets]
+         + [(ref, "") for ref in away if ref not in away_open]),
     )
-    for i, (title, rows) in enumerate(sections):
-        print(("\n" if i else "") + f"## {title}")
-        for n, note in rows:
-            print(f"- #{n} {tickets[n]['title']}" + (f": {note}" if note else ""))
+    for i, (heading, rows) in enumerate(sections):
+        print(("\n" if i else "") + f"## {heading}")
+        for ref, note in rows:
+            print(f"- {ref} {title[ref]}" + (f": {note}" if note else ""))
 
     stuck = sections[2][1]
-    if not open_tickets:
+    if not open_tickets and not away_open:
         print(f"Spec #{spec} cannot finish: it has no open ticket.", file=sys.stderr)
         return 3
     if stuck:
-        print(f"Spec #{spec} cannot finish: " + "; ".join(f"#{n} {note}" for n, note in stuck) + ".", file=sys.stderr)
+        print(f"Spec #{spec} cannot finish: " + "; ".join(f"{ref} {note}" for ref, note in stuck) + ".", file=sys.stderr)
         return 3
     return 0
 

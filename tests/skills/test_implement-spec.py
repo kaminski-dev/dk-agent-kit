@@ -58,7 +58,7 @@ ISSUES = {
     "599": ticket("Closed blocker", state="closed"),
     "600": ticket("Another spec's last ticket"),
 }
-ISSUES["500"]["sub_issues"] = [501, 502, 503, 504, 505, 506, 507, 508]
+ISSUES["500"]["sub_issues"] = [501, 502, 503, 504, 505, 506, 507, 508, "acme/infra#9", "acme/infra#8"]
 ISSUES["510"]["sub_issues"] = [501, 502, 506, 507]
 
 ws = pathlib.Path(tempfile.mkdtemp(prefix="dk-preflight-"))
@@ -68,7 +68,7 @@ try:
     shutil.copy(GH, ws / ".bin" / "gh")
     (ws / ".tracker" / "state.json").write_text(json.dumps(
         {"repo": "acme/ledger", "labels": [], "issues": ISSUES, "prs": [],
-         "other_repos": {"acme/infra": {"7": "open"}}}))
+         "other_repos": {"acme/infra": {"7": "open", "8": "closed", "9": "open"}}}))
     (ws / "repo").mkdir()
     env = {"PATH": os.pathsep.join([str(ws / ".bin"), os.environ["PATH"]]), "HOME": str(ws),
            "GIT_CONFIG_GLOBAL": "/dev/null", "GH_REPO": "kaminski-dev/dk-agent-kit"}
@@ -83,9 +83,9 @@ try:
         for line in r.stdout.splitlines():
             if line.startswith("## "):
                 section = sections.setdefault(line[3:], {})
-            elif line.startswith("- #") and section is not None:
-                number, _, rest = line[3:].partition(" ")
-                section[int(number)] = rest
+            elif line.startswith("- ") and section is not None:
+                ref, _, rest = line[2:].partition(" ")
+                section[int(ref[1:]) if ref.startswith("#") else ref] = rest
         return r.returncode, sections, r.stderr
 
     code, got, err = preflight("500")
@@ -98,6 +98,10 @@ try:
     ):
         if not re.search(pattern, blocked.get(n, "")):
             lib.errors.append(f"implement-spec preflight: #{n} ({what}) is not listed under Cannot finish: {got}")
+    if not re.search(r"in acme/infra, not this repo", blocked.get("acme/infra#9", "")):
+        lib.errors.append(f"implement-spec preflight: an open sub-issue in another repo must be under Cannot finish: {got}")
+    if "acme/infra#8" not in got.get("Done", {}):
+        lib.errors.append(f"implement-spec preflight: a closed sub-issue in another repo must be under Done: {got}")
     if code != 3 or "#500 cannot finish" not in err:
         lib.errors.append(f"implement-spec preflight: an unfinishable spec must exit 3 and say so, got {code}: {err}")
     if sorted(got.get("Can finish now", {})) != [501, 507] or sorted(got.get("Waits inside the spec", {})) != [502]:
