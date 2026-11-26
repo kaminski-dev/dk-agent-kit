@@ -34,3 +34,9 @@ graders:
       says Standards did not run for the small tier and Comments did not run because the diff adds no
       comment line, and reports one review round. PASS when all of that holds; FAIL when the tier is
       missing or not small, when it reports Standards or Comments findings, or a second round.
+  - name: short-round-one-prompts
+    type: tool_used
+    tool: Agent
+    input_match: '^(?=.*"subagent_type"\s*:\s*"dk:reviewer")(?=.*"prompt"\s*:\s*"(?:[^"\\]|\\.){900})'
+    min: 0
+    max: 0
