@@ -17,9 +17,10 @@ when the call does not set it or may have switched the checkout's branch), or
 missing before the call, runs no gate either, and the agent is told so.
 
 The gate takes one of the machine's gate slots first (gate.py). The wait for
-a slot counts against TIMEOUT; when no slot frees within DK_GATE_WAIT the push
-is denied with a message that the gates are busy and to push again, since the
-gate did not run.
+a slot counts against TIMEOUT; when no slot frees within DK_GATE_WAIT, or in
+time to leave the gate the seconds its last pass took, the push is denied with
+a message that the gates are busy and to push again, since the gate did not
+run.
 
 It fails open otherwise: a gate that outlives TIMEOUT is killed and the push
 goes through with a message to the user. A crash, or the hook's own timeout in

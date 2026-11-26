@@ -188,16 +188,20 @@ def key(root):
     return h.hexdigest()
 
 
-def cached_pass(root, k):
-    """The stored pass for `root` when its key is `k`, else None."""
-    if k is None:
-        return None
+def last_pass(root):
+    """The stored pass for `root`, whatever tree it was on, else None."""
     try:
         with open(entry_path(root)) as f:
             entry = json.load(f)
     except (OSError, ValueError):
         return None
-    return entry if isinstance(entry, dict) and entry.get("root") == root and entry.get("key") == k else None
+    return entry if isinstance(entry, dict) and entry.get("root") == root else None
+
+
+def cached_pass(root, k):
+    """The stored pass for `root` when its key is `k`, else None."""
+    entry = last_pass(root) if k is not None else None
+    return entry if entry and entry.get("key") == k else None
 
 
 def store_pass(root, k, seconds):
@@ -264,14 +268,21 @@ def check(root, timeout=None, capture=True, fresh=False, wait=None, on_wait=None
     """Gate `root`: returns (status, output, entry). status is "cached", "passed", "passed, not cached", BUSY or
     the failure ("failed (exit 1)", "timed out after 540 s", ...); entry is the cached pass for "cached", and for
     BUSY the roots whose gates held the slots. `timeout` covers the wait for a slot and the run together; the wait
-    is at most `wait` seconds (default DK_GATE_WAIT), and on_wait(holders) is called once when it starts."""
+    is at most `wait` seconds (default DK_GATE_WAIT), and on_wait(holders) is called once when it starts. Under a
+    timeout the wait also leaves the run the seconds the root's last pass took, so a slot that frees later reports
+    BUSY instead of starting a gate the timeout would kill."""
     gate = os.path.join(root, GATE)
     if not fresh:
         entry = cached_pass(root, key(root))
         if entry:
             return "cached", "", entry
     start = time.monotonic()
-    slot, holders = take_slot(root, setting("DK_GATE_WAIT", 240) if wait is None else wait, on_wait)
+    wait = setting("DK_GATE_WAIT", 240) if wait is None else wait
+    if timeout is not None:
+        last = last_pass(root) or {}
+        needs = last["seconds"] if isinstance(last.get("seconds"), (int, float)) else 0
+        wait = max(0, min(wait, timeout - needs))
+    slot, holders = take_slot(root, wait, on_wait)
     if holders is not None:
         return BUSY, "", holders
     try:

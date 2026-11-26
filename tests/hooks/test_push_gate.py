@@ -257,6 +257,37 @@ def case_push_that_gets_no_gate_slot_is_denied_as_busy(root):
         hand.wait()
 
 
+def case_a_slot_that_frees_too_late_for_the_gate_denies_the_push_as_busy(root):
+    # The gate's last pass took 3 s and the push has 6 s: the wait for a slot ends after 3, before the holder's
+    # gate (6 s) frees it, so the gate is never started with too little time left and killed.
+    main, wt = make_checkout(root, "late-slot", "#!/bin/sh\nsleep 3\ntouch .gate-ran\n")
+    env = {"DK_GATE_SLOTS": "1", "DK_GATE_WAIT": "30", "DK_PUSH_GATE_TIMEOUT": "6"}
+    assert run(main, f"cd {wt} && git push", env=env) == (0, None, "") and gate_ran(wt, forget=True)
+    with open(os.path.join(wt, "src.txt"), "w") as f:
+        f.write("new\n")
+    flag = os.path.join(root, "late-holder.started")
+    _, holder = make_checkout(root, "late-holder", f"#!/bin/sh\necho $$ > {flag}\nexec sleep 6\n")
+    hand = subprocess.Popen([DK_GATE], cwd=holder, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            env={"PATH": os.environ["PATH"], "DK_GATE_CACHE": CACHE, **env})
+    try:
+        deadline = time.monotonic() + 20
+        while not os.path.exists(flag):
+            assert time.monotonic() < deadline, "the holding gate never started"
+            time.sleep(0.05)
+        code, out, err = run(main, f"cd {wt} && git push", env=env)
+        reason = denial(out)
+        assert code == 0 and reason and "gates are busy" in reason, (code, out, err)
+        assert not gate_ran(wt), "the gate started with less time left than its last pass took"
+    finally:
+        hand.kill()
+        try:
+            with open(flag) as f:
+                os.kill(int(f.read()), 9)
+        except ProcessLookupError:
+            pass  # its sleep already ended
+        hand.wait()
+
+
 def case_decisions_go_to_the_guard_log(root):
     main, wt = make_checkout(root, "logged", FAIL)
     data = os.path.join(root, "plugin-data")
