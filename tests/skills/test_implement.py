@@ -61,6 +61,9 @@ for what, pattern in (
      r"[Aa]s each implementer returns[^.]*own message[^.]*verdict"),
     ("the dry-merge in a later message, after the last implementer returns",
      r"last implementer returns[^.]*dry-merge|dry-merge[^.]*last implementer returns"),
+    ("a message each for implementers that return together, all sent before the dry-merge starts (an eval run "
+     "batched two handovers with the dry-merge)",
+     r"return together[^.]*message each[^.]*dry-merge starts only after"),
     ("the merge order for a conflicting pair", r"merge order[^.]*merges first"),
     ("who rebases the later branch, and when", r"[Yy]ou rebase the later branch[^.]*once the first[^.]*merged"),
 ):
