@@ -51,7 +51,7 @@ Then record it, so review counts it as requested work: comment `Scope amendment:
 
 ## 4. Commit per green step
 
-Each commit is one verifiable unit: the gates from `AGENTS.md` pass on what it touches before the next unit starts. For a bug, the failing test lands first and the fix on top, so the history shows red then green. Messages are English, imperative, and name the issue: `Fix X when Y (#N)`.
+Each commit is one verifiable unit: the gates from `AGENTS.md` pass on what it touches before the next unit starts. For a bug, the failing test lands first and the fix on top, so the history shows red then green. Messages are English, imperative, and name the issue: `Fix X when Y (#N)`. A gate or test suite that can run past 10 minutes, where a Bash call with no `timeout` stops, names its `timeout`, up to 1800000.
 
 ## 5. Screenshots and evidence
 
