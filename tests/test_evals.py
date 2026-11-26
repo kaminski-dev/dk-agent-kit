@@ -73,7 +73,8 @@ def tier(ws):
 
 def comment_lines(ws):
     diff = git(ws, "app", "diff", "origin/pre-main...HEAD").stdout
-    return [l for l in diff.splitlines() if re.match(r'\+\s*(#|"""|--|//)', l) and not l.startswith("+++")]
+    return [l for l in diff.splitlines() if not l.startswith("+++")
+            and (re.match(r'\+\s*(#|"""|--|//)', l) or re.match(r'\+.*\S\s+(#|//) ', l))]
 
 
 # --- #353 fixture: Customer History order -------------------------------------------------------
