@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""repo-owner: whether the repo you post to is the maintainer's own, for dk:issue-flow's **Ownership.**
+
+  python3 -I repo-owner [<owner>/<repo>]
+
+Run it in the checkout. With no argument it reads origin and the upstream remote; with one it reads that repo,
+the one a `--repo` comment goes to. The repo is the maintainer's own when the gh user (`gh api user`) owns each
+repo read, and each is no fork of another owner's repo (GitHub's `parent`). Prints one line:
+
+  own: <login> owns <owner/repo>[, ...]
+  not own: <owner/repo> (<where>) belongs to <owner>, not <login>
+
+and exits 0 either way; 2 when git or gh cannot tell, so an unreadable repo is never taken for one's own.
+"""
+import json
+import re
+import subprocess
+import sys
+
+
+def die(msg):
+    print(f"repo-owner: {msg}", file=sys.stderr)
+    sys.exit(2)
+
+
+def run(*args):
+    r = subprocess.run(args, capture_output=True, text=True)
+    return r.returncode, r.stdout.strip(), r.stderr.strip()
+
+
+def slug_of(url):
+    m = re.match(r"^(?:https://|ssh://)?(?:[^@/]+@)?github\.com[:/]([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?$", url)
+    return m.group(1) if m else None
+
+
+def main(argv):
+    if len(argv) > 1 or (argv and not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", argv[0])):
+        die("usage: repo-owner [<owner>/<repo>]")
+    code, login, err = run("gh", "api", "user", "--jq", ".login")
+    if code or not login:
+        die(f"gh api user failed: {err}")
+
+    # (repo, where it was found, whether GitHub is asked for its fork parent)
+    read = []
+    if argv:
+        read.append((argv[0], "named", True))
+    else:
+        for remote in ("origin", "upstream"):
+            code, url, _ = run("git", "remote", "get-url", remote)
+            if code:
+                if remote == "origin":
+                    die("no origin remote in this checkout; name the repo: repo-owner <owner>/<repo>")
+                continue
+            slug = slug_of(url)
+            if not slug:
+                die(f"{remote} is not a GitHub repo: {url}")
+            read.append((slug, f"the {remote} remote", remote == "origin"))
+
+    seen = []
+    for slug, where, ask in read:
+        repos = [(slug, where)]
+        while repos:
+            repo, place = repos.pop()
+            owner = repo.partition("/")[0]
+            if owner.lower() != login.lower():
+                print(f"not own: {repo} ({place}) belongs to {owner}, not {login}")
+                return
+            seen.append(repo)
+            if ask and repo == slug:
+                code, out, err = run("gh", "api", f"repos/{slug}")
+                if code:
+                    die(f"gh api repos/{slug} failed: {err}")
+                parent = (json.loads(out).get("parent") or {}).get("full_name")
+                if parent:
+                    repos.append((parent, f"the repo {slug} is forked from"))
+    print(f"own: {login} owns {', '.join(seen)}")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
