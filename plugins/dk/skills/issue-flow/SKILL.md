@@ -135,4 +135,4 @@ Start it again after each push, after an action of yours that changes what block
 
 ## `pre-main`
 
-`pre-main` is shared by every open PR. The maintainer moves it and brings it level with `main` after each batch; agents reach it through PRs, or by the fast-forward push step 7 allows. The batch PR into `main` carries every merged PR's `Closes #N` or `Refs #N` line (step 6). A push that rewrites or deletes it makes the guard ask the user first.
+`pre-main` is shared by every open PR. After each batch merges, `dk:batch-pr` step 5 fast-forwards it to `main`; otherwise agents reach it through PRs, or by the fast-forward push step 7 allows. The batch PR into `main` carries every merged PR's `Closes #N` or `Refs #N` line (step 6). A push that rewrites or deletes it makes the guard ask the user first.
