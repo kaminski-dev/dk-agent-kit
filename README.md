@@ -56,7 +56,7 @@ solution.
 flowchart LR
   ready(["ready-for-agent"]) --> implement["dk:implement<br/>worktree off pre-main"]
   implement --> verify["dk:verify<br/>control run, teardown"]
-  verify --> review["dk:code-review<br/>four axes, findings answered"]
+  verify --> review["dk:code-review<br/>axes by tier, findings answered"]
   review -- "behaviour fix to a Correctness or Spec blocker or should, up to 2 rounds" --> review
   review --> pr["dk:pr<br/>PR into pre-main"]
   implement -. "side finding" .-> intake{"scope<br/>intake"}
@@ -234,7 +234,7 @@ daemon. CI runs every check once per push to a PR branch and once per push to
 `main`.
 
 The evals for `dk:implement`, `dk:triage`, `dk:code-review` (a report on all four axes, with
-seeded Standards and Correctness defects) and `dk:verify` live in
+seeded Standards and Correctness defects, and one reviewer for a small change) and `dk:verify` live in
 `plugins/dk/evals/` and need a model, so they run by hand (the command is in
 `docs/agents/workflow.md`), not in CI.
 
