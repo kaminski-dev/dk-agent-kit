@@ -48,4 +48,8 @@ for what, pattern in (
     if not re.search(pattern, guard, re.S):
         errors.append(f"skills/triage: the Guard issues section must name {what}")
 
+# On a repo the maintainer does not own, triage's disclaimer goes with the attribution note (#177).
+if not re.search(r"start with this disclaimer, unless `dk:issue-flow`'s \*\*Ownership\.\*\*", skills["triage"].read_text()):
+    errors.append("skills/triage: the disclaimer must yield to dk:issue-flow's **Ownership.** on a repo not your own")
+
 lib.finish("dk:triage")
