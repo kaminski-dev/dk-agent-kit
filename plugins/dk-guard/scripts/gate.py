@@ -304,8 +304,7 @@ def check(root, timeout=None, capture=True, fresh=False, wait=None, on_wait=None
             entry = cached_pass(root, before)
             if entry:
                 return "cached", "", entry
-        if fresh:  # the run checks an input the key cannot see, so the older pass no longer vouches for this tree
-            forget(root)
+        forget(root)  # a run that fails may fail on an input the key cannot see, so the older pass vouches for nothing
         run_start = time.monotonic()
         left = None if timeout is None else max(1, round(timeout - (run_start - start)))
         failure, output = run_gate(gate, root, left, capture)
