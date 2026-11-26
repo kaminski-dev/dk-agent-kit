@@ -247,14 +247,17 @@ if not re.search(r"left out[^.]*heading[^.]*why", aggregate):
 # A parent that rewrote the also line as prose bullets left id-less finding lines (#172 comment on the eval).
 if not re.search(r"`also:` and `PR must carry:` lines verbatim", aggregate):
     errors.append("skills/code-review: step 4 does not keep each report's `also:` and `PR must carry:` lines verbatim")
-# A fixed id closes with its ledger outcome unless its fix opened a round; otherwise a small-tier fix, or a fixed
-# Standards should, stayed open past the budget and every such review ended Stuck.
+# A Correctness or Spec fix that changed behaviour code stays open until a reviewer marks it resolved, so a blocker
+# fixed in the last round the budget allows ends Stuck, not Done (#167 round 2, CO9); every other fixed id closes with
+# its ledger outcome, or a small-tier fix and a fixed Standards should ended every review Stuck (SP1, CO2).
 for what, pattern in (
-    ("an open id as one whose fix opened a round, until that round marks it resolved",
-     r"[Aa]n open id is a blocker or should whose fix opened a round, until that round's reviewer marks it `resolved`"),
+    ("an open id as a Correctness or Spec fix that changed behaviour code, until a reviewer marks it resolved",
+     r"[Aa]n open id is a Correctness or Spec blocker or should whose fix changed behaviour code, until a reviewer "
+     r"marks it `resolved`"),
     ("every other id closing with its ledger outcome", r"every other id closes with its ledger outcome"),
-    ("the small tier's Correctness-only round after a behaviour fix to a blocker",
-     r"\*\*Budget\.\*\*[^\n]*small tier[^\n]*Correctness alone[^\n]*blocker changed behaviour code"),
+    # the small tier's extra round runs the raising axis plus Correctness, as every later round does (CO10, SP5)
+    ("the small tier's one extra round when the stop condition opens it",
+     r"\*\*Budget\.\*\*[^\n]*small tier, 1 round plus one more when the stop condition opens it"),
 ):
     if not re.search(pattern, answer):
         errors.append(f"skills/code-review: its Answer findings step does not name {what}")
