@@ -207,6 +207,10 @@ OPERATOR = re.compile(r"&&|\|\||\|&|\||;;|;&|;\||;|&\||&!|&")
 LEAD = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}", "fi", "done", "esac"}
 # Words that open or close a compound command: from the first one on, a segment may run never or more than once.
 COMPOUND = LEAD | {"for", "foreach", "select", "repeat", "case", "coproc"}
+# The words that open and close a construct whose commands share its input; a subshell's kind is `)`.
+OPENS = {"{": "}", "if": "fi", "case": "esac", "while": "done", "until": "done", "for": "done", "select": "done"}
+CLOSES = {"}", "fi", "esac", "done"}
+CONSTRUCTS = itertools.count()  # ids unique across splitters, since a script's or backtick's segments join the call's
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\[[^]]*\])?\+?=")
 # A source word whose dropped quotes matter: a `$` in single quotes, after a backslash or before a quote, a quote at or
 # after a `~`, or a name that only a quote or backslash separates from more word characters (`"$WT"x`).
@@ -241,6 +245,8 @@ class Segment:
         self.heredoc_backticks = []  # the backtick substitutions in the body of its unquoted here-docs
         self.defines = None  # the function name when the segment is `f()`, `f ()` or `function f`
         self.loop_last = None  # for a one-line `for x (a b) cmd` header, the last segment of the sublist it repeats
+        self.inside = frozenset()  # the ids of the subshells and compound commands it runs in
+        self.closes = None  # the id of the construct whose input or output its redirections give, as `} < f`, `) < f`
         self.piped_in = self.piped_out = self.started = False
         self.pipe_to = None
 
@@ -260,6 +266,17 @@ class Splitter:
         self.list = self.first_list = 0  # the current `&&` list, and the first one of its `;` or newline command line
         self.conditional = self.passed_or = False  # whether that line has passed a `&&` or `||`, and a `||`
         self.continued = False  # the last thing read is a `&&`, `||` or `|`, so a newline does not end the line
+        self.open = []  # (id, closing word) of the constructs the cursor is inside, innermost last
+        self.fed = set()  # the ids of those a pipe feeds: every command inside reads the pipe
+
+    def inherit(self, splitter, piped):
+        """Start a script's or backtick's splitter inside this one's constructs, fed when its command is piped."""
+        splitter.open, splitter.fed = list(self.open), set(self.fed)
+        if piped:
+            cid = next(CONSTRUCTS)
+            splitter.open.append((cid, None))
+            splitter.fed.add(cid)
+        return splitter
 
     def run(self):
         self.parse(None, self.substituted)
@@ -323,12 +340,16 @@ class Splitter:
             elif c == "(" and not seg.started and self.peek(1) != "(":
                 self.i += 1
                 seg = self.close(seg)
-                first = len(self.out)
+                cid = next(CONSTRUCTS)
+                self.open.append((cid, ")"))
+                if seg.piped_in:
+                    self.fed.add(cid)
                 self.nesting += 1
                 self.parse(")", substituted)  # a subshell
                 self.nesting -= 1
-                if seg.piped_in and len(self.out) > first:
-                    self.out[first].piped_in = True  # the pipe feeds the subshell
+                del self.open[next(k for k, (c, _) in enumerate(self.open) if c == cid):]
+                seg = Segment(self.shell, substituted)  # the pipe fed the subshell, not what follows it
+                seg.closes = cid
             else:
                 mark, start = len(self.modifier_names), self.i
                 word, quoted, subs = self.word()
@@ -350,6 +371,12 @@ class Splitter:
         """Add a word; True when it ends a function's name (`f() {`, `f () {`, `function f {`), so its body starts
         a new segment."""
         first = not seg.started and word not in LEAD
+        if word in OPENS and not quoted and all(w in COMPOUND for w in seg.words):
+            # opened here, before the substitutions in the rest of the segment are split
+            cid = next(CONSTRUCTS)
+            self.open.append((cid, OPENS[word]))
+            if seg.piped_in:
+                self.fed.add(cid)
         seg.started = seg.started or first
         seg.words.append(word)
         named = command_words(seg.words)[1]
@@ -371,6 +398,13 @@ class Splitter:
             return seg
         self.out.append(seg)
         self.continued = False
+        seg.inside = frozenset(c for c, _ in self.open)
+        seg.piped_in = seg.piped_in or bool(seg.inside & self.fed)
+        for w in itertools.takewhile(lambda w: w in COMPOUND, seg.words):
+            if w in CLOSES and any(kind == w for _, kind in self.open):
+                while (top := self.open.pop())[1] != w:
+                    pass  # a construct left open, such as zsh's `while true { … }`, ends with the one around it
+                seg.closes = top[0]
         # a `case` inside a subshell ends the subshell's parse at its first pattern's `)`
         if (seg.defines or seg.words[:1] and seg.words[0] in COMPOUND) and (not self.nesting or seg.words[0] == "case"):
             self.straight = False
@@ -415,7 +449,7 @@ class Splitter:
                 j += 2 if words[j] in ("-o", "+o") else 1
             if has_c and j < len(words):
                 seg.scripts.add(j)
-                inner = Splitter(words[j], shell, seg.substituted, self.depth + 1).run()
+                inner = self.inherit(Splitter(words[j], shell, seg.substituted, self.depth + 1), seg.piped_in).run()
                 if inner:
                     inner[0].piped_in = seg.piped_in
                 self.out += inner
@@ -585,7 +619,7 @@ class Splitter:
                 self.i += 1
         if not self.command_subs:
             self.backticks.append(self.s[start:self.i])
-        inner = Splitter("".join(buf), self.shell, True, self.depth + 1).run()
+        inner = self.inherit(Splitter("".join(buf), self.shell, True, self.depth + 1), False).run()
         self.out += inner
         return inner
 
@@ -1782,13 +1816,26 @@ VERIFY_RM = ("deny", "This deletes inside a dk:verify run directory (verify.XXXX
              "checkout (`$RUN/base/`) and cookie jars may go; the control checkout itself goes with "
              "`git worktree remove`.")
 # login state a rerun starts over: cookies.txt, control-cookies.txt, control.cookies, jar, cookie-jar.txt
-COOKIE_JAR = re.compile(r"(?i)(?:^|[-_.*])(?:cookies?|jar)(?:[-_*]|\.(?!png$|jpe?g$|webp$)|$)")
+COOKIE_JAR = re.compile(r"(?i)(?:^|[-_.*])(?:cookies?|jar)(?:[-_.*]|$)")
+IMAGE = re.compile(r"(?i)\.(?:png|jpe?g|webp)$")
+EXTENSION = re.compile(r"\.\w+$")
+
+
+def cookie_jar(name):
+    """A cookie jar's name, not a screenshot's. A glob names jars only when its text before or after the wildcards
+    ends in an extension other than an image's (`cookies-*.txt`, `control-cookies.txt*`), so `cookies.*` is none."""
+    if not COOKIE_JAR.search(name) or IMAGE.search(name):
+        return False
+    if not re.search(r"[*?[]", name):
+        return True
+    ends = (re.split(r"[*?[]", name)[0], re.split(r"[*?\]]", name)[-1])
+    return any(EXTENSION.search(end) and not IMAGE.search(end) for end in ends)
 
 
 def discardable(path, run):
     """Inside the control checkout (`$RUN/base/...`, code rather than evidence) or a cookie jar."""
     rest = path[run.end():]
-    return rest.startswith("base/") and len(rest) > len("base/") or bool(COOKIE_JAR.search(os.path.basename(path)))
+    return (rest.startswith("base/") and len(rest) > len("base/")) or cookie_jar(os.path.basename(path))
 
 
 def operands(words):
@@ -1853,16 +1900,16 @@ def check_stdin_cat(cmd):
 
 def stdin_cat_words(segs):
     """A cat in a function body reads what the call feeds the function, so the body's segments are skipped: from the
-    one after the name until its braces close. A cat followed by input given to a group, subshell or loop (a segment
-    of no command, such as `} < file` or `done < file`) may read that input, so it passes."""
+    one after the name until its braces close. A cat inside a group, subshell or loop given input (by a later segment
+    of no command that closes it, such as `} < file` or `done < file`) reads that input, so it passes."""
     depth = None
     for k, seg in enumerate(segs):
         if seg.defines:
             depth = 0
             continue
         if depth is None and reads_stdin(seg) and not any(
-                not command(later)[1] and any(op in INPUT_REDIRECTS for op, _ in later.redirects)
-                for later in segs[k + 1:]):
+                not command(later)[1] and later.closes in seg.inside
+                and any(op in INPUT_REDIRECTS for op, _ in later.redirects) for later in segs[k + 1:]):
             return [STDIN_CAT]
         if depth is not None:
             depth += seg.words.count("{") - seg.words.count("}")
