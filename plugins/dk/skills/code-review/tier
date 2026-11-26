@@ -17,6 +17,7 @@ The one line printed starts with the tier and a colon, e.g. `small: 7 changed li
 Exit 2 when <base> does not resolve.
 """
 import fnmatch
+import os
 import pathlib
 import re
 import subprocess
@@ -76,6 +77,7 @@ def main(argv):
         print(f"tier: {base} does not resolve to a commit", file=sys.stderr)
         return 2
     root = pathlib.Path(git("rev-parse", "--show-toplevel").stdout.strip())
+    os.chdir(root)
     merge_base = git("merge-base", base, "HEAD").stdout.strip()
     lines, paths = measure(root, merge_base)
     size = f"{lines} changed lines in {len(paths)} files"
