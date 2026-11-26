@@ -28,7 +28,7 @@ List what the diff changes and take the matching rows; each row touched is owed 
 
 A change no row covers (docs, CI, tooling) owes what the Evidence section of the repo's `workflow.md` asks. Done when every changed area has its proof named.
 
-**Tier.** Run `python3 -I <base directory>/../code-review/tier <base>`, with `<base directory>` the one this skill's header names and `<base>` the branch's base, both written out literally; its line starts with the tier. In the `small` tier the proof is a regression test seen red, then green, or for a visible change one screenshot at 390 × 844 (step 5) that shows it: no stack (steps 2 and 3) and no control run (step 4), and the red run is the before. The `standard` and `risky` tiers owe the rows above in full.
+**Tier.** Run `python3 -I <base directory>/../code-review/tier <base>`, with `<base directory>` the one this skill's header names and `<base>` the branch's base, both written out literally; its line starts with the tier. In the `small` tier the proof is a regression test seen red, then green, or for a visible change one screenshot at 390 × 844 (step 5) that shows it, served by the frontend alone: no rest of the stack (steps 2 and 3) and no control run (step 4), and the red run is the before. The `standard` and `risky` tiers owe the rows above in full.
 
 ## 2. Start the stack
 
