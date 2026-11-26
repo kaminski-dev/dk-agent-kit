@@ -1,0 +1,43 @@
+schema_version: "1.1"
+name: code-review-rereview
+description: >
+  #388 on a stand-in repo (the code-review-correctness fixture), reviewed by its author: its
+  Correctness axis raises the crash window in `Outbox.send_next` as a should or blocker, whose fix
+  changes behaviour code, while Standards, Spec and Comments have no blocker or should to answer.
+  dk:code-review then runs a second round of Correctness alone, on the fix diff
+  (`git diff <round 1's HEAD>`), and stops within its two-round budget (#172).
+tags: [code-review]
+runs: 2
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 120
+  timeout_seconds: 2400
+  allowed_tools: [Read, Glob, Grep, Skill, Agent, TodoWrite, Bash, Write, Edit]
+graders:
+  - name: four-reviewers-two-rounds
+    type: tool_used
+    tool: Agent
+    input_match: '"subagent_type"\s*:\s*"dk:reviewer"'
+    min: 4
+    max: 4
+  - name: one-comments-reviewer
+    type: tool_used
+    tool: Agent
+    input_match: '"subagent_type"\s*:\s*"dk:comment-reviewer"'
+    min: 1
+    max: 1
+  - name: second-round-on-fix-diff
+    type: tool_used
+    tool: Agent
+    input_match: '^(?=.*"subagent_type"\s*:\s*"dk:reviewer")(?=.*git diff [0-9a-f]{7,40}\b)'
+    min: 1
+  - name: second-round-is-correctness
+    type: llm
+    criteria: >
+      The final message reports two review rounds: round 1 on all four axes (Standards, Spec,
+      Correctness, Comments), and round 2 on Correctness alone, after a fix to the crash window in
+      `Outbox.send_next` (the provider call between the claim's commit and the sent mark's, or the
+      missing idempotency key). PASS when it reports exactly two rounds and round 2 ran the
+      Correctness axis and no other; FAIL when it reports one round, three or more, or a second
+      round that also ran Standards, Spec or Comments.

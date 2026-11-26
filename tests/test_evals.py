@@ -547,6 +547,49 @@ check("388 review: on the reference fix the Outbox tab's test fails when renderi
       and "TypeError" in empty.stderr, empty.stderr[-500:])
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
+# The review loop's stop condition (#172): the author answering a nit-only first round runs no second, and a
+# behaviour fix to a Correctness should runs Correctness alone on the fix diff.
+def reviewer_counts(case):
+    """{grader name: (min, max)} for a case's tool_used graders on Agent calls."""
+    text = (EVALS / case / "case.yaml").read_text()
+    out = {}
+    for block in re.split(r"\n  - ", text)[1:]:
+        name, lo, hi = (re.search(p, block) for p in (r"name: (\S+)", r"\bmin: (\d+)", r"\bmax: (\d+)"))
+        if name and "tool: Agent" in block:
+            out[name.group(1)] = (int(lo.group(1)) if lo else 1, int(hi.group(1)) if hi else None)
+    return out
+
+
+ws = scaffold("code-review-nits")
+branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+check("nit-only review: the clean #353 fix is checked out", branch == "fix/353-ordered", branch)
+pr = pull_on(ws, "353", "HEAD")
+check("nit-only review: the branch meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr)
+stat = git(ws, "app", "diff", "--numstat", "origin/pre-main...HEAD").stdout.split()
+check("nit-only review: the diff is under the smell baseline's 200 lines",
+      stat and sum(int(n) for n in stat[0::3] + stat[1::3]) <= 200, stat)
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+check("nit-only review: one round is three dk:reviewer calls and one dk:comment-reviewer call",
+      reviewer_counts("code-review-nits") == {"three-reviewers-one-round": (3, 3), "one-comments-reviewer": (1, 1)},
+      reviewer_counts("code-review-nits"))
+for case in ("code-review-nits", "code-review-rereview"):
+    prompt = (EVALS / case / "prompt.md").read_text()
+    check(f"{case}: the prompt has the author answer the findings", "Answer findings" in prompt, prompt)
+check("re-review: it replays the #388 correctness fixture",
+      (EVALS / "code-review-rereview" / "scaffold.sh").read_text() == (EVALS / "code-review-correctness" / "scaffold.sh").read_text())
+check("re-review: round 2 is one more dk:reviewer call, and Comments does not rerun",
+      reviewer_counts("code-review-rereview") == {"four-reviewers-two-rounds": (4, 4), "one-comments-reviewer": (1, 1),
+                                                  "second-round-on-fix-diff": (1, None)},
+      reviewer_counts("code-review-rereview"))
+fix_diff = input_matches("code-review-rereview").get("second-round-on-fix-diff", "(?!)")
+for prompt, want in (("Correctness. Diff: `git diff 1a2b3c4`; open ids CO1.", True),
+                     ("Correctness. Diff: `git diff 1a2b3c4d5e6f..HEAD`; open ids CO1.", True),
+                     ("Correctness. Diff: `git diff origin/pre-main...HEAD`.", False)):
+    got = re.search(fix_diff, brief(prompt, subagent_type="dk:reviewer")) is not None
+    check(f"re-review: the fix-diff grader {'matches' if want else 'passes over'} {prompt!r}", got == want, fix_diff)
+check("re-review: the fix-diff grader passes over a Comments call on the fix diff",
+      re.search(fix_diff, brief("`git diff 1a2b3c4`", subagent_type="dk:comment-reviewer")) is None, fix_diff)
+
 # The verify fixture: a clean #353 fix in a repo whose verify doc says there is no database to start.
 ws = scaffold("verify-no-db")
 branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()

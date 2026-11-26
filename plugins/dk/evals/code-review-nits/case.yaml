@@ -1,0 +1,36 @@
+schema_version: "1.1"
+name: code-review-nits
+description: >
+  The clean #353 fix (the ORDER BY gains its tie-breakers, with a test that fails before it), reviewed
+  by its author: the first round can bring nits alone, so dk:code-review answers them and ends after
+  that round, with no second set of reviewers (#172: 100 of 194 re-reviews followed only nits or a
+  small should).
+tags: [code-review]
+runs: 2
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 80
+  timeout_seconds: 1500
+  allowed_tools: [Read, Glob, Grep, Skill, Agent, TodoWrite, Bash, Write, Edit]
+graders:
+  - name: three-reviewers-one-round
+    type: tool_used
+    tool: Agent
+    input_match: '"subagent_type"\s*:\s*"dk:reviewer"'
+    min: 3
+    max: 3
+  - name: one-comments-reviewer
+    type: tool_used
+    tool: Agent
+    input_match: '"subagent_type"\s*:\s*"dk:comment-reviewer"'
+    min: 1
+    max: 1
+  - name: reports-one-round
+    type: llm
+    criteria: >
+      The final message reports the review loop's rounds run as one, and every finding of that round
+      as a nit (or the axes as clean), each nit answered as fixed, declined or disagreed with, or
+      applied from an "also" line. PASS when it reports one round and no second review round; FAIL
+      when it reports two or more rounds, or when the first round holds a blocker or should (the
+      fixture then no longer tests a nit-only round, which the failure should name).
