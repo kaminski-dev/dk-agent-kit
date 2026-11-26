@@ -7,10 +7,12 @@ to .gate-runs (ignored, so the record never changes the tree it gates), runs
 the exit code, what it printed and how many times the gate ran.
 """
 import os
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DK_GATE = os.path.join(HERE, "..", "plugins", "dk-guard", "bin", "dk-gate")
@@ -49,11 +51,26 @@ def make_repo(root, name, gate=PASS):
     return repo
 
 
-def run(cwd, *args, cache):
-    out = subprocess.run([DK_GATE, *args], cwd=cwd, capture_output=True, text=True,
-                         env={"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", cwd),
-                              "DK_GATE_CACHE": cache})
+def gate_env(cwd, cache, env=None):
+    return {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", cwd), "DK_GATE_CACHE": cache, **(env or {})}
+
+
+def run(cwd, *args, cache, env=None):
+    out = subprocess.run([DK_GATE, *args], cwd=cwd, capture_output=True, text=True, env=gate_env(cwd, cache, env))
     return out.returncode, out.stdout + out.stderr
+
+
+def start(cwd, *args, cache, env=None):
+    """dk-gate started in the background; its pid is the gate command's own (bin/dk-gate execs it)."""
+    return subprocess.Popen([DK_GATE, *args], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                            env=gate_env(cwd, cache, env))
+
+
+def wait_for(path, seconds=20):
+    deadline = time.monotonic() + seconds
+    while not os.path.exists(path):
+        assert time.monotonic() < deadline, f"{path} never appeared"
+        time.sleep(0.05)
 
 
 def runs(repo):
@@ -220,6 +237,66 @@ def case_outside_a_checkout_is_an_error(root):
     os.makedirs(plain)
     code, out = run(plain, cache=os.path.join(root, "cache-plain"))
     assert code == 2 and "not in a git checkout" in out, (code, out)
+
+
+def case_three_gates_started_together_run_at_most_two_at_once(root):
+    shared, cache = os.path.join(root, "overlap"), os.path.join(root, "cache-overlap")
+    os.makedirs(os.path.join(shared, "running"))
+    # Each run counts the runs under way as it starts; the last to start at the peak sees all of them.
+    gate = (f"#!/bin/sh\ntouch {shared}/running/$$\nls {shared}/running | wc -l >> {shared}/peaks\n"
+            f"sleep 2\nrm {shared}/running/$$\necho run >> .gate-runs\n")
+    repos = [make_repo(root, f"overlap-{i}", gate) for i in range(3)]
+    procs = [start(repo, cache=cache) for repo in repos]
+    outs = [p.communicate(timeout=60)[0] for p in procs]
+    assert all(p.returncode == 0 for p in procs) and all(runs(r) == 1 for r in repos), outs
+    with open(os.path.join(shared, "peaks")) as f:
+        peaks = [int(line) for line in f.read().split()]
+    assert max(peaks) == 2, (peaks, outs)
+
+
+def holding_gate(root, name):
+    """A repo whose gate says it started, then sleeps with its own pid on record."""
+    flag = os.path.join(root, name + ".started")
+    return make_repo(root, name, f"#!/bin/sh\necho $$ > {flag}\nexec sleep 30\n"), flag
+
+
+def case_a_gate_that_gets_no_slot_in_its_wait_is_refused_as_busy(root):
+    cache, env = os.path.join(root, "cache-busy"), {"DK_GATE_SLOTS": "1", "DK_GATE_WAIT": "1"}
+    holder, flag = holding_gate(root, "busy-holder")
+    proc = start(holder, cache=cache, env=env)
+    try:
+        wait_for(flag)
+        repo = make_repo(root, "busy")
+        code, out = run(repo, cache=cache, env=env)
+        assert code == 3 and "gates are busy" in out and holder in out and runs(repo) == 0, (code, out)
+    finally:
+        proc.kill()
+        with open(flag) as f:
+            os.kill(int(f.read()), signal.SIGKILL)
+        proc.communicate()
+
+
+def case_a_slot_held_by_a_killed_process_is_reclaimed(root):
+    cache, env = os.path.join(root, "cache-stale"), {"DK_GATE_SLOTS": "1", "DK_GATE_WAIT": "2"}
+    holder, flag = holding_gate(root, "stale-holder")
+    proc = start(holder, cache=cache, env=env)
+    wait_for(flag)
+    proc.send_signal(signal.SIGKILL)  # the gate command dies without releasing anything
+    with open(flag) as f:
+        os.kill(int(f.read()), signal.SIGKILL)  # its gate's sleep holds the pipe until it goes too
+    proc.communicate()
+    repo = make_repo(root, "stale")
+    code, out = run(repo, cache=cache, env=env)
+    assert code == 0 and runs(repo) == 1, (code, out)
+
+
+def case_the_gate_gets_the_worker_limit(root):
+    gate = "#!/bin/sh\necho \"workers=$DK_GATE_WORKERS\"\n"
+    for name, env, want in (("workers-default", None, "workers=4"), ("workers-set", {"DK_GATE_WORKERS": "3"},
+                                                                      "workers=3")):
+        repo = make_repo(root, name, gate)
+        code, out = run(repo, cache=os.path.join(root, "cache-" + name), env=env)
+        assert code == 0 and want in out.splitlines(), (name, code, out)
 
 
 CASES = [v for k, v in sorted(globals().items()) if k.startswith("case_")]
