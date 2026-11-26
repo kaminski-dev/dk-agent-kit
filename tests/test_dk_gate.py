@@ -330,6 +330,23 @@ def case_a_gate_that_gets_no_slot_in_its_wait_is_refused_as_busy(root):
         proc.communicate()
 
 
+def case_gates_under_two_claude_config_dirs_share_the_slots(root):
+    home = os.path.join(root, "home-shared")
+    env = {"DK_GATE_CACHE": "", "HOME": home, "DK_GATE_SLOTS": "1", "DK_GATE_WAIT": "1"}
+    holder, flag = holding_gate(root, "config-holder")
+    proc = start(holder, cache="", env={**env, "CLAUDE_CONFIG_DIR": os.path.join(root, "config-a")})
+    try:
+        wait_for(flag)
+        repo = make_repo(root, "config-other")
+        code, out = run(repo, cache="", env={**env, "CLAUDE_CONFIG_DIR": os.path.join(root, "config-b")})
+        assert code == 3 and "gates are busy" in out and runs(repo) == 0, (code, out)
+    finally:
+        proc.kill()
+        with open(flag) as f:
+            os.kill(int(f.read()), signal.SIGKILL)
+        proc.communicate()
+
+
 def case_a_slot_held_by_a_killed_process_is_reclaimed(root):
     cache, env = os.path.join(root, "cache-stale"), {"DK_GATE_SLOTS": "1", "DK_GATE_WAIT": "2"}
     holder, flag = holding_gate(root, "stale-holder")
