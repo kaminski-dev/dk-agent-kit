@@ -480,5 +480,18 @@ check("uncommitted change on the checked-out main: exits 1, nothing moves, the c
       and (ws.repo / "base").read_text() == "edited\n", (r.returncode, r.stderr, refs(ws), before))
 ws.remove()
 
+# A repo whose workflow.md names no setup line (this kit's own): the setup is skipped, the rest runs.
+ws = finish_ws(setup_line="- Path and branch: `git worktree add ~/workspace/ledger-<issue> origin/main`. No install step.\n")
+r, gc = run_finish(ws)
+check("no setup line: exits 0, says the setup is skipped, runs no backticked command",
+      r.returncode == 0 and "no **Fresh-worktree setup** line" in r.stdout and "git worktree add" not in r.stdout
+      and not (ws.root / "workspace").exists(), (r.returncode, r.stdout, r.stderr))
+check("no setup line: the branches still move and the cleanup list is printed",
+      refs(ws) == [ws.merged] * 4 and len(gc) == 1, (refs(ws), gc))
+r, gc = run_finish(ws)
+check("a second run: says the branches are level and changes nothing",
+      r.returncode == 0 and "level with origin/main" in r.stdout and refs(ws) == [ws.merged] * 4, (r.stdout, r.stderr))
+ws.remove()
+
 print(f"{len(failures)} failures")
 sys.exit(1 if failures else 0)
