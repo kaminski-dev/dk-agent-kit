@@ -231,7 +231,7 @@ def drop_gone(directory):
             if isinstance(root, str) and not os.path.isdir(root):
                 os.remove(os.path.join(directory, name))
         except (OSError, ValueError, AttributeError):
-            pass  # an entry another run is replacing or removing; the next pass looks at it again
+            pass  # dropped by another run meanwhile, or unreadable, which cached_pass reads as no pass
 
 
 def run_gate(gate, root, timeout=None, capture=True):
