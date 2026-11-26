@@ -13,7 +13,8 @@ origin's main and pre-main (a repo whose origin has no pre-main skips origin's),
 
 Nothing moves unless every branch can: pre-main on origin and both local branches must be
 ancestors of origin/main, and a worktree that has one checked out must hold no uncommitted
-change to a tracked file and no untracked file the fast-forward adds. Nothing moves either
+change to a tracked file and no untracked or ignored file in the way of a path the fast-forward
+adds (git merge overwrites ignored files, so they are checked too). Nothing moves either
 when the setup line holds anything but backticked commands and the words between them
 (`, then`, `and`), since prose in backticks is no command.
 Otherwise it names the branch or the line and exits 1, having changed nothing.
@@ -22,6 +23,7 @@ Exit 0: finished. Exit 1: a branch cannot fast-forward, the setup line is prose,
 setup command failed (it names the command; the branches have moved by then). A missing dk-gc is
 reported, not failed.
 """
+import os
 import re
 import shutil
 import subprocess
@@ -47,6 +49,27 @@ def rev(ref):
 
 def is_ancestor(old, new):
     return git("merge-base", "--is-ancestor", old, new, ok=(0, 1)).returncode == 0
+
+
+def in_the_way(tree, old, new):
+    """Why tree cannot move from old to new without losing a file: git's refusal, or the ignored paths in the way."""
+    dry = git("read-tree", "-n", "-m", "-u", old, new, cwd=tree, ok=(0, 128))
+    if dry.returncode:
+        return (dry.stderr or dry.stdout).strip()
+    # read-tree lets ignored files go. An added path counts if anything is there, a parent of it if a file is.
+    present = set()
+    added = git("diff", "-z", "--no-renames", "--name-only", "--diff-filter=A", old, new).stdout.split("\0")
+    for path in filter(None, added):
+        if os.path.lexists(os.path.join(tree, path)):
+            present.add(path)
+        while path := os.path.dirname(path):
+            if os.path.islink(os.path.join(tree, path)) or os.path.isfile(os.path.join(tree, path)):
+                present.add(path)
+    if not present:
+        return ""
+    checked = git("check-ignore", "-z", "--", *sorted(present), cwd=tree, ok=(0, 1)).stdout
+    ignored = [p for p in checked.split("\0") if p]
+    return f"it would overwrite ignored {', '.join(ignored)}" if ignored else ""
 
 
 def checked_out():
@@ -104,18 +127,16 @@ def main():
             if git("status", "--porcelain", "--untracked-files=no", cwd=tree).stdout.strip():
                 sys.exit(f"{name} is checked out in {tree} with uncommitted changes, so it cannot fast-forward. "
                          "Nothing was changed.")
-            added = set(git("diff", "-z", "--name-only", "--diff-filter=A", old, target).stdout.split("\0"))
-            untracked = git("ls-files", "-z", "--others", "--exclude-standard", cwd=tree).stdout.split("\0")
-            if in_the_way := sorted(added.intersection(untracked) - {""}):
-                sys.exit(f"{name} is checked out in {tree}, where the fast-forward would overwrite untracked "
-                         f"{', '.join(in_the_way)}. Move them aside and rerun. Nothing was changed.")
+            if blocked := in_the_way(tree, old, target):
+                sys.exit(f"{name} is checked out in {tree}, where the fast-forward cannot run: {blocked}\n"
+                         "Move them aside and rerun. Nothing was changed.")
         moves.append((name, ref, old, tree))
 
     for name, ref, old, tree in moves:
         if ref.startswith("refs/remotes/"):
             git("push", "-q", "origin", f"{target}:refs/heads/{BASE}")
         elif tree:
-            git("merge", "-q", "--ff-only", target, cwd=tree)
+            git("merge", "-q", "--ff-only", "--no-overwrite-ignore", target, cwd=tree)
         else:
             git("update-ref", ref, target, old)
         print(f"{name}: {old[:12]} -> {target[:12]}")
