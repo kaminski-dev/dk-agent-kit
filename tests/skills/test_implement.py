@@ -60,4 +60,17 @@ for what, pattern, text in (
     if not re.search(pattern, text):
         errors.append(f"skills/implement: does not name {what}")
 
+# The tier sizes verify, review and the PR body; the report states it, so the maintainer sees which path ran (#173).
+tier = re.search(r"^\*\*Tier\.\*\*.*$", implement, re.M)
+tier = tier.group(0) if tier else ""
+for what, pattern in (
+    ("the tier script, run from dk:code-review", r"`python3 -I <base directory>/\.\./code-review/tier <base>`"),
+    ("the skills that read it", r"`dk:verify`, `dk:code-review` and `dk:pr` each read it"),
+    ("what the small tier changes", r"[Ss]mall[^.]*red/green test[^.]*one reviewer[^.]*one round[^.]*short PR body"),
+):
+    if not re.search(pattern, tier):
+        errors.append(f"skills/implement: its **Tier.** paragraph does not name {what}")
+if not re.search(r"The final message is the report: [^.]*the tier line", report):
+    errors.append("skills/implement: its ## Report does not state the tier line")
+
 lib.finish("dk:implement")
