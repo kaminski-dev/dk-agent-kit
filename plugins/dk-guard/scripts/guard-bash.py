@@ -323,9 +323,12 @@ class Splitter:
             elif c == "(" and not seg.started and self.peek(1) != "(":
                 self.i += 1
                 seg = self.close(seg)
+                first = len(self.out)
                 self.nesting += 1
                 self.parse(")", substituted)  # a subshell
                 self.nesting -= 1
+                if seg.piped_in and len(self.out) > first:
+                    self.out[first].piped_in = True  # the pipe feeds the subshell
             else:
                 mark, start = len(self.modifier_names), self.i
                 word, quoted, subs = self.word()
@@ -1847,13 +1850,16 @@ def check_stdin_cat(cmd):
 
 def stdin_cat_words(segs):
     """A cat in a function body reads what the call feeds the function, so the body's segments are skipped: from the
-    one after the name until its braces close."""
+    one after the name until its braces close. A cat followed by input given to a group, subshell or loop (a segment
+    of no command, such as `} < file` or `done < file`) may read that input, so it passes."""
     depth = None
-    for seg in segs:
+    for k, seg in enumerate(segs):
         if seg.defines:
             depth = 0
             continue
-        if depth is None and reads_stdin(seg):
+        if depth is None and reads_stdin(seg) and not any(
+                not command(later)[1] and any(op in INPUT_REDIRECTS for op, _ in later.redirects)
+                for later in segs[k + 1:]):
             return [STDIN_CAT]
         if depth is not None:
             depth += seg.words.count("{") - seg.words.count("}")
