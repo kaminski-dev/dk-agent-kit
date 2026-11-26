@@ -14,7 +14,7 @@ directory) or ran a Markdown code span (a backtick span in an unquoted here-doc
 body), ask for
 rewriting the shared pre-main branch, a push to the current branch when the
 guard cannot tell which branch that is, or answering dk-gc's question for the
-human (--yes, piped input), and
+human across the workspace (--workspace with --yes or piped input), and
 hints for `gh pr view --comments`, which drops the body, for an unlabelled
 Postgres server that dk-pg should start instead, and for `git worktree remove`
 in a loop, which dk-gc does. Everything else passes.
@@ -1310,8 +1310,9 @@ def wait_words(segs):
 DK_GC = re.compile(r"(?:^|(\|\|?|" + OPENERS + r"))\s*" + PREFIX
                    + r"(?:python3?\s+(?:-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?dk-gc"
                    + r"(?=$|[\s;&|)`<>]|['\"](?:$|[\s;&|)]))(" + END + ")")
-DK_GC_YES = ("ask", "dk-gc removes worktrees, branches and databases after one yes, and that yes is the human's. "
-             "Run `dk-gc` or `dk-gc --dry-run` and leave the answer to them.")
+DK_GC_YES = ("ask", "dk-gc --workspace removes worktrees, branches and databases in every repo under the workspace "
+             "after one yes, and that yes is the human's. Clean one repo with `dk-gc --yes` run in it, or run "
+             "`dk-gc --workspace --dry-run` and leave the answer to them.")
 OUTPUT_REDIRECT = re.compile(r"\d*>>?&(?:\d+|-)?|&>>?")
 
 
@@ -1336,6 +1337,11 @@ def quoted_text(cmd, pos, shell=""):
     return quote is not None and not re.search(shell + r"-c\s+$", cmd[:quote])
 
 
+def workspace_wide(args):
+    """True when dk-gc's arguments name --workspace: every repo, not the one it runs in."""
+    return any(a == "--workspace" or a.startswith("--workspace=") for a in args)
+
+
 def check_dk_gc(cmd):
     # `2>&1` and `&>` would end the match at their `&` and hide a later --yes or `<`; `<&3` stays as input
     cmd = OUTPUT_REDIRECT.sub(lambda r: " " * len(r.group()), cmd)
@@ -1345,7 +1351,7 @@ def check_dk_gc(cmd):
             continue
         piped = sep == "|" or (sep == "&" and cmd[m.start() - 1:m.start()] == "|")
         args = rest.split()
-        if "--dry-run" not in args and ("--yes" in args or "<" in rest or piped):
+        if "--dry-run" not in args and workspace_wide(args) and ("--yes" in args or "<" in rest or piped):
             return [DK_GC_YES]
     return []
 
@@ -1355,18 +1361,20 @@ def dk_gc_words(segs):
         _, words = command(seg)
         if words and re.fullmatch(r"python3?", os.path.basename(words[0])):
             words = words[1:]
-            while words and words[0].startswith("-"):
+            while words and words[0].startswith("-") and words[0] not in ("-", "-c", "-m"):
                 words = words[1:]
-        if not words or os.path.basename(words[0]) != "dk-gc" or "--dry-run" in words:
+            if words[:1] in (["-"], ["-c"], ["-m"]):  # the script comes from stdin or the command line
+                continue
+        if not words or os.path.basename(words[0]) != "dk-gc" or "--dry-run" in words or not workspace_wide(words):
             continue
         if "--yes" in words or seg.piped_in or any(op.startswith("<") for op, _ in seg.redirects):
             return [DK_GC_YES]
     return []
 
 
-WORKTREE_LOOP = ("hint", "This loop removes worktrees by hand. `dk-gc --dry-run` lists the worktrees and branches of "
-                 "merged PRs and the databases of closed issues; `dk-gc` removes them after the human's yes and keeps "
-                 "a worktree with uncommitted changes.")
+WORKTREE_LOOP = ("hint", "This loop removes worktrees by hand. `dk-gc --dry-run`, run in the repo, lists the worktrees "
+                 "and branches of its merged PRs and the databases of its closed issues; `dk-gc --yes` removes them "
+                 "and keeps a worktree with uncommitted changes.")
 RAW_WORKTREE_LOOP = re.compile(START + r"(" + "|".join(k for k in LOOP_KEYWORDS if k != "repeat")
                                + r")\b(?=.*?\bgit\b[^;&|\n]*?\sworktree\s+remove\b)", re.S)
 
