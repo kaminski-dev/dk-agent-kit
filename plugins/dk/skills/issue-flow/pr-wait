@@ -88,8 +88,8 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 DEFAULT_BOT = ("coderabbitai[bot]", {"main"})
-# dk:issue-flow step 6's attribution note, which opens every comment the agent posts; tests/test_skills.py keeps
-# this copy equal to the skill's
+# dk:issue-flow step 6's attribution note, which opens every comment the agent posts; tests/skills/test_issue-flow.py
+# keeps this copy equal to the skill's
 ATTRIBUTION = re.compile(r"\A> \[!NOTE\]\r?\n> \*\*.+ responding on behalf of .+\*\*")
 # CodeRabbit's summary comment: the rate-limit and pause notices and the recent-review block name the commit they are
 # about; the status block does not.

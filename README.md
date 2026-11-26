@@ -18,7 +18,7 @@ Claude Code only for now. Codex and other hosts will follow.
 | `upstream/` | `UPSTREAM.md` records the commit and changes for every adapted file; `sync.sh` shows what mattpocock/skills, pstack, HumanLayer and tstack changed since in those files. |
 | `settings/user.fragment.json` | What a plugin cannot ship: permission allow (the sanctioned pushes), deny and ask rules, and `autoMode.hard_deny` lines. Merged into `~/.claude/settings.json` by `bootstrap.sh`. |
 | `bootstrap.sh` | Shows the settings diff, the zsh options block for `~/.zshenv`, the zsh alias-name list for `dk-guard` and the `--isolated` change to the `playwright` MCP server; `--apply` backs both files up, writes them and the list, installs the plugins from this checkout and re-registers the server. |
-| `tests/` | The guard's case matrix (taken from real incidents), fixture repos for `dk-gate`, the push gate and the session hooks, a `dk-pg` run against Docker, a `dk-gc` run against fixture repos with stubbed `gh` and `docker`, a `dk-assets` run against a local origin, a bootstrap test with a stubbed `claude` and `zsh`, an `upstream/sync.sh` run against fixture upstream repos, a check of the skill-eval fixtures, a run of the `dk:retro` extraction script against fixture transcripts, runs of the `dk:batch-pr` collection and review scripts against a fixture repo with the stubbed `gh` and `coderabbit`, a run of `dk:issue-flow`'s `pr-wait` watcher against a stubbed `gh`, fixtures for the fork guard, and `replay_history.py` for checking the guard against past transcripts. |
+| `tests/` | The guard's case matrix (taken from real incidents), fixture repos for `dk-gate`, the push gate and the session hooks, a `dk-pg` run against Docker, a `dk-gc` run against fixture repos with stubbed `gh` and `docker`, a `dk-assets` run against a local origin, a bootstrap test with a stubbed `claude` and `zsh`, an `upstream/sync.sh` run against fixture upstream repos, a check of the skill-eval fixtures, a run of the `dk:retro` extraction script against fixture transcripts, runs of the `dk:batch-pr` collection and review scripts against a fixture repo with the stubbed `gh` and `coderabbit`, a run of `dk:issue-flow`'s `pr-wait` watcher against a stubbed `gh`, fixtures for the fork guard, `run.py`, the runner that picks the checks a change needs, and `replay_history.py` for checking the guard against past transcripts. |
 | `THIRD_PARTY/` | Licenses and commits of the projects material is adapted from. |
 
 Every rule traces back to something that went wrong in a real session: a
@@ -218,24 +218,20 @@ local-scope one, is left alone, and bootstrap never adds one that isn't there.
 ## Test
 
 ```sh
-python3 -I tests/hooks/test_guard_bash.py
-python3 -I tests/hooks/test_push_gate.py
-python3 -I tests/hooks/test_require_worktree.py
-python3 -I tests/hooks/test_session_baseline.py
-python3 -I tests/hooks/test_fork_guard.py
-python3 -I tests/test_skills.py
-python3 -I tests/test_evals.py
-python3 -I tests/test_retro_extract.py
-python3 -I tests/test_pr_wait.py
-python3 -I tests/test_batch_pr.py
-python3 -I tests/test_dk_gate.py
-bash tests/test_bootstrap.sh
-bash tests/test_dk_pg.sh      # skips without a Docker daemon
-bash tests/test_dk_gc.sh
-bash tests/test_dk_assets.sh
-bash tests/test_sync.sh
-claude plugin validate .
+python3 -I tests/run.py              # every check, with each one's seconds
+python3 -I tests/run.py origin/main  # the checks the changes since origin/main need
 ```
+
+With a base ref, the runner reads the paths changed since the merge base
+(committed, staged, unstaged and untracked) and runs the checks its map in
+`tests/run.py` names for them, plus the always-on ones, which take under two
+seconds each. A changed path the map does not know runs every check, and
+`tests/test_run.py` fails on a test file the map does not name. The skill
+checks are `tests/test_skills.py` for those across skills and
+`tests/skills/test_<skill>.py` for one skill's prose. `claude plugin validate .`
+needs `claude` on the PATH, and `tests/test_dk_pg.sh` skips without a Docker
+daemon. CI runs every check once per push to a PR branch and once per push to
+`main`.
 
 The evals for `dk:implement`, `dk:triage`, `dk:code-review` (a report on all four axes, with
 seeded Standards and Correctness defects) and `dk:verify` live in
