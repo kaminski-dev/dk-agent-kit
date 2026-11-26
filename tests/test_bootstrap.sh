@@ -21,6 +21,11 @@ echo '{"autoMode": {"environment": ["private line"]}}' > "$tmp/private.json"
 mkdir -p "$tmp/home"
 printf 'export PATH="$HOME/.bun/bin:$PATH"\n' > "$tmp/home/.zshenv"
 cp "$tmp/home/.zshenv" "$tmp/zshenv.orig"
+# a user skill with a name no dk skill has, and a link to one: no shadow, every run below passes
+mkdir -p "$tmp/home/.claude/skills/own-skill" "$tmp/agents/linked-skill"
+echo '---' > "$tmp/home/.claude/skills/own-skill/SKILL.md"
+echo '---' > "$tmp/agents/linked-skill/SKILL.md"
+ln -s "$tmp/agents/linked-skill" "$tmp/home/.claude/skills/linked-skill"
 unset ZDOTDIR
 export HOME="$tmp/home" CLAUDE_SETTINGS="$tmp/settings.json" DK_PRIVATE_SETTINGS="$tmp/private.json"
 
@@ -158,4 +163,22 @@ HOME="$tmp/home3" CLAUDE_SETTINGS="$s3" "$root/bootstrap.sh" >/dev/null
 HOME="$tmp/home3" CLAUDE_SETTINGS="$s3" "$root/bootstrap.sh" --apply >/dev/null
 jq -e '.permissions.deny | index("Bash(docker container prune *)")' "$s3" >/dev/null || fail "--apply did not create the settings"
 [[ "$(head -1 "$tmp/home3/.zshenv")" == '# >>> dk-agent-kit zsh options >>>' ]] || fail "new .zshenv does not start with the block: $(head -3 "$tmp/home3/.zshenv")"
+# a user skill named like a dk skill shadows it (/retro resolves to the user copy):
+# a directory or a link fails the run, names each path, and nothing is written
+mkdir -p "$tmp/home4/.claude/skills/retro" "$tmp/agents/tdd"
+echo '---' > "$tmp/home4/.claude/skills/retro/SKILL.md"
+echo '---' > "$tmp/agents/tdd/SKILL.md"
+ln -s "$tmp/agents/tdd" "$tmp/home4/.claude/skills/tdd"
+s4="$tmp/home4/.claude/settings.json"
+for mode in "" --apply; do
+  : > "$tmp/claude.log"
+  rc=0
+  out=$(HOME="$tmp/home4" CLAUDE_SETTINGS="$s4" "$root/bootstrap.sh" $mode 2>&1) || rc=$?
+  [[ $rc != 0 ]] || fail "a shadowing user skill did not fail the run${mode:+ ($mode)}: $out"
+  grep -qF "$tmp/home4/.claude/skills/retro" <<<"$out" || fail "the shadowing directory is not named: $out"
+  grep -qF "$tmp/home4/.claude/skills/tdd" <<<"$out" || fail "the shadowing link is not named: $out"
+  grep -qF "$tmp/agents/tdd" <<<"$out" || fail "the link's target is not named: $out"
+  [[ ! -e "$s4" && ! -e "$tmp/home4/.zshenv" ]] || fail "a shadowed run wrote files${mode:+ ($mode)}"
+  ! grep -q 'plugin install' "$tmp/claude.log" || fail "a shadowed run installed plugins"
+done
 echo "bootstrap: all checks passed"
