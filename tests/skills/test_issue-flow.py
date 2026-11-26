@@ -208,6 +208,24 @@ if not re.search(r"6 hours[^.]*fresh baseline", step6):
 if re.search(r"gh pr merge|--admin|--auto\b|merge queue", gate) or "Merging is the maintainer's" not in step6:
     errors.append("skills/issue-flow: step 6 keeps merging the maintainer's; its gate grants no merge")
 
+# After the handover the PR is watched until it merges, so no one relays a merge or a conflict by hand (#176).
+merge_watch = re.search(r"^\*\*Watch to the merge\.\*\*.*?(?=^\*\*[A-Z]|^## )", step6, re.M | re.S)
+merge_watch = merge_watch.group(0) if merge_watch else ""
+for what, pattern in (
+    ("the until-merged watcher", r"`python3 -I <base directory>/pr-wait <PR> --until merged`"),
+    ("who starts it: the session that hands the PR over, the orchestrator for a subagent's PR",
+     r"session that hands the PR over[^.]*orchestrator"),
+    ("that it runs in the background only, re-armed when its monitor expires", r"background.*re-arm"),
+    ("a rebase and push on a conflict", r"`merge state is DIRTY`[^.]*rebase onto `origin/<base>`[^.]*push"),
+    ("step 7 and the waiting tickets on a merge", r"`merged`[^.]*step 7[^.]*tickets that waited"),
+    ("its own deadline, exit 3, told to the user", r"`deadline passed: no merge after[^.]*exit 3[^.]*user"),
+):
+    if not re.search(pattern, merge_watch, re.S):
+        errors.append(f"skills/issue-flow: step 6's **Watch to the merge.** paragraph does not name {what}")
+for line in ("deadline passed: no merge after", '"merged"'):
+    if line not in watcher:
+        errors.append(f"skills/issue-flow/pr-wait: the watcher lacks `{line}`, which step 6's **Watch to the merge.** names")
+
 fan_out = re.search(r"^\*\*Fan-out\.\*\*.*?(?=^## )", flow, re.M | re.S)
 waits = re.search(r"^- \*\*Waits\*\*:.*$", fan_out.group(0) if fan_out else "", re.M)
 if not waits or not re.search(r"every background wait", waits.group(0)) or not re.search(

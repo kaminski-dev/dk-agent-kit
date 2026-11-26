@@ -20,4 +20,13 @@ for what, pattern in (
     if not re.search(pattern, ci_slot):
         errors.append(f"skills/setup: workflow-parameters.md's **CI and deploy** does not ask for {what}")
 
+# A base with no CI skips pr-wait's wait for checks to register, read from workflow.md's **No CI** line (#176).
+params = (DK / "skills/setup/workflow-parameters.md").read_text()
+no_ci = re.search(r"^- \*\*No CI\*\*: .*$", params, re.M)
+if not no_ci or "backticks" not in no_ci.group(0) or "watcher" not in no_ci.group(0):
+    errors.append("skills/setup: workflow-parameters.md needs a **No CI** item: the bases with no CI, in backticks, "
+                  "which dk:issue-flow's watcher reads")
+if r"\*\*No CI\*\*" not in (DK / "skills/issue-flow/pr-wait").read_text():
+    errors.append("skills/issue-flow/pr-wait: the watcher does not read workflow.md's **No CI** line")
+
 lib.finish("dk:setup")
