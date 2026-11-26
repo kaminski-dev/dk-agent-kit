@@ -44,9 +44,13 @@ check("another hook: its tests and the always-on set", got - fast == {"tests/hoo
 got = selected("plugins/dk-guard/scripts/guard-bash.py")
 check("guard-bash: its matrix and the push gate that loads it",
       "tests/hooks/test_guard_bash.py" in got and got - fast == {"tests/hooks/test_push_gate.py"}, sorted(got - fast))
-got = selected("plugins/dk/skills/verify/SKILL.md")
+got = selected("plugins/dk/skills/handoff/SKILL.md")
 check("one skill's prose: its test file and the always-on set",
-      "tests/skills/test_verify.py" in got and got <= fast and fast <= got, sorted(got - fast))
+      "tests/skills/test_handoff.py" in got and got <= fast and fast <= got, sorted(got - fast))
+for name in ("tdd", "verify", "code-review", "pr"):
+    got = selected(f"plugins/dk/skills/{name}/SKILL.md")
+    check(f"{name}'s SKILL.md: the evals, which grade briefs on its disable-model-invocation line",
+          "tests/test_evals.py" in got, sorted(got - fast))
 got = selected("plugins/dk/skills/issue-flow/SKILL.md")
 check("issue-flow's prose: its test file, and the evals that read it",
       "tests/skills/test_issue-flow.py" in got and got - fast == {"tests/test_evals.py"}, sorted(got - fast))
@@ -93,10 +97,13 @@ with tempfile.TemporaryDirectory() as tmp:
     write("a.txt", "staged\n")
     git("add", "a.txt")
     write("b.txt", "unstaged\n")
+    write("c.txt", "staged\n")
+    git("add", "c.txt")
+    write("c.txt")  # the working tree undoes the staged edit, which a commit would still carry
     write("new dir/untracked.txt")
     got = run.changed("main", tmp)
     check("diff read: committed, staged, unstaged and untracked paths since the merge base",
-          sorted(got) == ["a.txt", "b.txt", "committed/one.txt", "new dir/untracked.txt"], got)
+          sorted(got) == ["a.txt", "b.txt", "c.txt", "committed/one.txt", "new dir/untracked.txt"], got)
 
 # The run: each check's seconds, a failure's output, and the exit status.
 with tempfile.TemporaryDirectory() as tmp:
