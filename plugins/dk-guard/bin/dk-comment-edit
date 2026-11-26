@@ -3,14 +3,15 @@
 
   dk-comment-edit <comment id> <file>
 
-Replaces the comment's body with the file's and prints the comment's URL. The comment is in the repo gh
-reads from the current checkout ({owner}/{repo}); its id is the number in its URL (#issuecomment-<id>,
+Replaces the comment's body with the file's and prints the comment's URL. The comment is in origin's
+github.com repo, whatever GH_REPO or an upstream remote says, else in the repo gh reads ({owner}/{repo}); its id is the number in its URL (#issuecomment-<id>,
 #discussion_r<id>). It edits only a comment the gh user wrote whose body opens with dk:issue-flow's
 attribution note, and the new body must open with the note too, so the maintainer's own comments and
 everyone else's stay as they are. The edit is a `gh api` PATCH run from here, so the command line itself
 is not one the product repos ask about.
 """
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -23,6 +24,13 @@ ATTRIBUTION = re.compile(r"\A> \[!NOTE\]\r?\n> \*\*.+ responding on behalf of .+
 def die(msg, code=1):
     print(f"dk-comment-edit: {msg}", file=sys.stderr)
     sys.exit(code)
+
+
+def origin_repo():
+    """None when origin is no github.com repo. Read from the configured URL, before any insteadOf rewrites it."""
+    url = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True).stdout.strip()
+    m = re.search(r"^(?:[\w.+-]+://(?:[^@/?#]+@)?|(?:[^@/:]+@)?)github\.com(?::\d+)?[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$", url, re.I)
+    return m.group(1) if m else None
 
 
 def gh(*args):
@@ -42,13 +50,16 @@ def main(argv):
         die(f"{path} does not open with the attribution note; the new body keeps it, so the comment stays marked "
             "as an agent's")
 
+    repo = origin_repo()
+    if repo:
+        os.environ["GH_REPO"] = repo  # an inherited GH_REPO would point gh at another repo
     code, login, err = gh("api", "user", "--jq", ".login")
     if code:
         die(f"gh api user failed: {err}")
     login = login.strip()
 
     for kind in ("issues", "pulls"):
-        endpoint = f"repos/{{owner}}/{{repo}}/{kind}/comments/{cid}"
+        endpoint = f"repos/{repo or '{owner}/{repo}'}/{kind}/comments/{cid}"
         code, out, err = gh("api", endpoint)
         if code == 0:
             break

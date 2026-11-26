@@ -143,7 +143,8 @@ for repo, license_name, commit in re.findall(rf"^## (\S+) .*?\(([^()]+)\) @ {PIN
 
 # Each skill ships its own copy, since `python3 -I` keeps a script's folder off sys.path; the copies stay one.
 copies = {}
-for script in ("batch-pr/batch.py", "issue-flow/pr-wait", "implement-spec/preflight.py", "triage/ready.py"):
+for script in ("batch-pr/batch.py", "issue-flow/pr-wait", "implement-spec/preflight.py", "triage/ready.py",
+               "../../dk-guard/bin/dk-comment-edit"):
     m = re.search(r"^def origin_repo\(\):\n(?:    .*\n)+", (DK / "skills" / script).read_text(), re.M)
     copies.setdefault(m.group(0) if m else None, []).append(script)
 if len(copies) != 1 or None in copies:
