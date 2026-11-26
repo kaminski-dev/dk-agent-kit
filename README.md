@@ -204,7 +204,11 @@ writes anything, bootstrap looks in `~/.claude/skills`
 its target, that holds a `SKILL.md` and has the name of a skill in
 `plugins/dk/skills`. It lists each one, with a link's target and the `rm`
 that clears it, and exits 1. Remove those paths (a link alone, not its
-target, which other tools may still use), then rerun bootstrap.
+target, which other tools may still use), then rerun bootstrap. Only
+`~/.claude/skills` is checked, since Claude Code loads user skills from
+there; a copy in another tool's directory such as `~/.agents/skills` shadows
+nothing until a link in `~/.claude/skills` points at it, and the check
+follows that link.
 
 The Bash tool runs zsh, and agents write bash. Bootstrap appends a marked
 block to `~/.zshenv` (`$ZDOTDIR/.zshenv` when set) with `setopt NO_NOMATCH`

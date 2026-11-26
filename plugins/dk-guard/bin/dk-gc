@@ -53,7 +53,7 @@ KEPT_PREFIX = "verify-assets/"  # PR bodies embed screenshots from these branche
 REGENERABLE = ("node_modules", "dist", "build", ".next", ".output", "target", ".venv", "__pycache__",
                "test-results", ".api-port", ".tanstack", "*.tsbuildinfo", "*.gen.*", ".env*")
 KEEP_LINE_NAMES = 5  # ignored entries or processes a "keep" line names before it counts the rest
-PARALLEL_CALLS = 16  # gh and ls-remote calls in flight at once
+PARALLEL_CALLS = 16  # threads per in_parallel() pool; each repo's fetch() runs a pool inside the repos' pool
 
 
 def run(args, cwd=None):
@@ -108,7 +108,6 @@ def main_roots(workspace):
 
 
 def in_parallel(call, items):
-    """call(item) for each item, PARALLEL_CALLS at a time, in order."""
     with concurrent.futures.ThreadPoolExecutor(PARALLEL_CALLS) as pool:
         return list(pool.map(call, items))
 
@@ -395,7 +394,7 @@ class Repo:
         trees = worktrees(self.root)
         linked = [wt for wt in trees[1:] if wt["branch"] and not wt.get("locked") and not wt.get("prunable")
                   and os.path.join(os.path.realpath(wt["path"]), "").startswith(inside)]
-        unsaved = in_parallel(worktree_blocker, [wt["path"] for wt in linked])  # a git status each, side by side
+        unsaved = in_parallel(worktree_blocker, [wt["path"] for wt in linked])
         for wt, reason in zip(linked, unsaved):
             self.consider(wt["branch"], wt["head"], worktree=wt["path"], unsaved=reason)
         checked_out = {wt["branch"] for wt in trees if wt["branch"]}
@@ -425,8 +424,7 @@ class Repo:
             return None
         return gh_json("issue", "view", issue, "-R", self.slug, "--json", "state")
 
-    def consider_database(self, container, found):
-        """`found` is self.issue() of the container's issue."""
+    def consider_database(self, container, issue_state):
         cid, name, issue = container
         if not self.slug:
             self.kept.append(Database(f"{name} (issue #{issue}; no GitHub checkout at {self.root})", cid))
@@ -434,9 +432,9 @@ class Repo:
         if not issue.isdigit():
             self.kept.append(Database(f"{name} (issue {issue} is no issue number)", cid))
             return
-        if not found:
+        if not issue_state:
             self.kept.append(Database(f"{name} (issue #{issue}; gh could not read it)", cid))
-        elif found.get("state") == "CLOSED":
+        elif issue_state.get("state") == "CLOSED":
             self.items.append(Database(f"{name} (issue #{issue} closed)", cid))
 
 

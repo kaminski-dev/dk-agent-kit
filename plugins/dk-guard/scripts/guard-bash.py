@@ -1390,7 +1390,7 @@ def quoted_text(cmd, pos, shell=""):
 
 
 def workspace_wide(args):
-    """True when dk-gc's arguments name --workspace (every repo, not the one it runs in), or may: a `$` word."""
+    """--workspace, or a `$` word that may hold it."""
     return any(a == "--workspace" or a.startswith("--workspace=") or "$" in a for a in args)
 
 
@@ -1408,14 +1408,17 @@ def check_dk_gc(cmd):
     return []
 
 
+INLINE_SCRIPT = ("-", "-c", "-m")  # python reads the script from stdin or the command line, not a file
+
+
 def dk_gc_words(segs):
     for seg in segs:
         _, words = command(seg)
         if words and re.fullmatch(r"python3?", os.path.basename(words[0])):
             words = words[1:]
-            while words and words[0].startswith("-") and words[0] not in ("-", "-c", "-m"):
+            while words and words[0].startswith("-") and words[0] not in INLINE_SCRIPT:
                 words = words[1:]
-            if words[:1] in (["-"], ["-c"], ["-m"]):  # the script comes from stdin or the command line
+            if words[:1] and words[0] in INLINE_SCRIPT:
                 continue
         if not words or os.path.basename(words[0]) != "dk-gc" or "--dry-run" in words or not workspace_wide(words):
             continue

@@ -23,9 +23,9 @@ plugins=(dk-guard dk)
 
 command -v jq >/dev/null || { echo "bootstrap: jq is required" >&2; exit 1; }
 
-# A user skill named like a dk skill wins its bare name: /retro ran a stale
-# user copy in place of dk:retro. A directory or link counts when it holds a
-# SKILL.md (links followed); the run stops before anything is written.
+# A user skill named like a dk skill wins its bare name over the dk one. A
+# directory or link counts when it holds a SKILL.md (links followed); the run
+# stops before anything is written.
 user_skills=${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills
 shadows=()
 for skill in "$repo"/plugins/dk/skills/*/SKILL.md; do
