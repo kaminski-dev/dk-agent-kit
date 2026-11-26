@@ -441,5 +441,44 @@ check("merged batch: dk-gc --dry-run ran in the checkout, and its list is printe
       gc == [f"--dry-run\t{ws.repo.resolve()}"] and "remove worktree ~/workspace/ledger-101" in r.stdout, (gc, r.stdout))
 ws.remove()
 
+# A commit landed on pre-main after the batch PR merged: origin's pre-main cannot fast-forward.
+ws = finish_ws()
+ws.git_in(ws.root / "github", "fetch", "-q", "origin")
+ws.git_in(ws.root / "github", "checkout", "-q", "-b", "late", "origin/pre-main")
+(ws.root / "github" / "late").write_text("late\n")
+ws.git_in(ws.root / "github", "add", "late")
+ws.git_in(ws.root / "github", "-c", "user.name=Dev", "-c", "user.email=dev@example.com", "commit", "-qm", "late")
+ws.git_in(ws.root / "github", "push", "-q", "origin", "late:pre-main")
+before = refs(ws)
+r, gc = run_finish(ws)
+check("origin's pre-main ahead of main: exits 1 and names it", r.returncode == 1 and "origin/pre-main cannot fast-forward" in r.stderr,
+      (r.returncode, r.stdout, r.stderr))
+check("origin's pre-main ahead of main: no branch moves, no setup runs, no cleanup list",
+      refs(ws) == before and not (ws.repo / "installed").exists() and gc == [], (refs(ws), before, gc))
+ws.remove()
+
+# A local commit on pre-main: checked before origin's pre-main is pushed, so origin stays too.
+ws = finish_ws()
+ws.git("checkout", "-q", "pre-main")
+ws.commit("local")
+ws.git("checkout", "-q", "main")
+before = refs(ws)
+r, gc = run_finish(ws)
+check("a local commit on pre-main: exits 1 and names it", r.returncode == 1 and "pre-main cannot fast-forward" in r.stderr,
+      (r.returncode, r.stdout, r.stderr))
+check("a local commit on pre-main: origin's pre-main and the local main stay", refs(ws) == before and gc == [],
+      (refs(ws), before, gc))
+ws.remove()
+
+# Uncommitted work on the checked-out main: a merge refused there would come after origin moved, so nothing moves.
+ws = finish_ws()
+(ws.repo / "base").write_text("edited\n")
+before = refs(ws)
+r, gc = run_finish(ws)
+check("uncommitted change on the checked-out main: exits 1, nothing moves, the change stays",
+      r.returncode == 1 and "uncommitted" in r.stderr and refs(ws) == before
+      and (ws.repo / "base").read_text() == "edited\n", (r.returncode, r.stderr, refs(ws), before))
+ws.remove()
+
 print(f"{len(failures)} failures")
 sys.exit(1 if failures else 0)
