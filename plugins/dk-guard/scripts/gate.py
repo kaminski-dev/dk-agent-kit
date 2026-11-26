@@ -23,7 +23,8 @@ $CLAUDE_CONFIG_DIR when set). A hand run does not get the hooks'
 CLAUDE_PLUGIN_DATA, so both sides use this fixed path.
 
 At most DK_GATE_SLOTS gates (default 2) run at once on the machine, hand
-runs and push runs alike. A run that needs the gate takes a slot first: an
+runs and push runs alike; sessions with another CLAUDE_CONFIG_DIR have their
+own cache and so their own slots. A run that needs the gate takes a slot first: an
 exclusive flock on one of the files slot-0.lock, slot-1.lock, ... in the
 cache's slots/ directory, which the kernel releases when the holder dies, so
 a killed run leaves no stale slot. With every slot held it waits up to
@@ -182,6 +183,9 @@ def key(root):
     for rel in (GATE, *LOCKFILES):
         h.update(b"input\0" + rel.encode() + b"\0")
         _hash_file(h, os.path.join(root, rel))
+        if os.path.islink(os.path.join(root, rel)):  # a gate linked to an ignored script runs that script
+            h.update(b"target\0")
+            _hash_file(h, os.path.realpath(os.path.join(root, rel)))
     for ref in BASE_REFS:
         mb = (git(root, "merge-base", "HEAD", ref) or "").strip() if head else ""
         h.update(f"base {ref} {mb or '-'}\0".encode())
@@ -202,6 +206,13 @@ def cached_pass(root, k):
     """The stored pass for `root` when its key is `k`, else None."""
     entry = last_pass(root) if k is not None else None
     return entry if entry and entry.get("key") == k else None
+
+
+def forget(root):
+    try:
+        os.remove(entry_path(root))
+    except FileNotFoundError:
+        pass
 
 
 def store_pass(root, k, seconds):
@@ -293,6 +304,8 @@ def check(root, timeout=None, capture=True, fresh=False, wait=None, on_wait=None
             entry = cached_pass(root, before)
             if entry:
                 return "cached", "", entry
+        if fresh:  # the run checks an input the key cannot see, so the older pass no longer vouches for this tree
+            forget(root)
         run_start = time.monotonic()
         left = None if timeout is None else max(1, round(timeout - (run_start - start)))
         failure, output = run_gate(gate, root, left, capture)

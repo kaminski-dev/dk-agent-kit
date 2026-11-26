@@ -69,9 +69,10 @@ CHECKS = [
     skill("setup"),
     skill("triage"),
     skill("verify"),
-    # It also reads every SKILL.md's disable-model-invocation line; a skill that changes that line alone
-    # runs it in CI only.
+    # It also reads every SKILL.md's disable-model-invocation line, and grades briefs on those of the skills
+    # below; another skill that changes that line alone runs it in CI only.
     Check("tests/test_evals.py", ["tests/evals/*", "plugins/dk/evals/*", SKILLS + "issue-flow/*",
+                                  *(SKILLS + f"{s}/SKILL.md" for s in ("tdd", "verify", "code-review", "pr")),
                                   SKILLS + "triage/ready.py", SKILLS + "setup/issue-tracker.md",
                                   "docs/agents/issue-tracker.md"]),
     Check("tests/test_retro_extract.py", [SKILLS + "retro/extract.py"], fast=True),
@@ -119,8 +120,9 @@ def changed(base, cwd=ROOT):
     """Repo-relative paths changed since the merge base of base and HEAD: committed, staged, unstaged, untracked."""
     merge_base = git(cwd, "merge-base", base, "HEAD").strip()
     diff = git(cwd, "diff", "--name-only", "--no-renames", "-z", merge_base, "--")
+    staged = git(cwd, "diff", "--cached", "--name-only", "--no-renames", "-z", merge_base, "--")
     untracked = git(cwd, "ls-files", "--others", "--exclude-standard", "-z")
-    return sorted({p for p in (diff + untracked).split("\0") if p})
+    return sorted({p for p in (diff + staged + untracked).split("\0") if p})
 
 
 def run(checks, out=sys.stdout, cwd=ROOT):
