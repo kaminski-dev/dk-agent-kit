@@ -37,8 +37,9 @@ Look for the originating spec, in this order:
 
 Read `CODING_STANDARDS.md` first (at the root and nearest to the changed files), then every doc it links or names. Then add `CONTRIBUTING.md`, the `AGENTS.md` sections that set rules for code, and any other doc in the repo on how code should be written, such as a skill `AGENTS.md` requires for edits. Those paths are the list the Standards sub-agent gets, so it reads them instead of guessing where standards live.
 
-On top of whatever the repo documents, the Standards axis always carries the **smell baseline** below: a fixed set of Fowler code smells (_Refactoring_, ch.3) that applies even when a repo documents nothing. Two rules bind it:
+On top of whatever the repo documents, the Standards axis always carries the **smell baseline** below: a fixed set of Fowler code smells (_Refactoring_, ch.3) that applies even when a repo documents nothing. Three rules bind it:
 
+- **Large diffs only.** It applies only to a diff over 200 changed lines, never to test files, and yields at most two findings.
 - **The repo overrides.** A documented repo standard always wins; where it endorses something the baseline would flag, suppress the smell.
 - **Always a nit.** Each smell is a labelled heuristic ("possible Feature Envy"), never a `should` or a `blocker`. Like any standard here, skip anything tooling already enforces.
 
@@ -57,7 +58,7 @@ Each smell reads *what it is* → *how to fix*; match it against the diff:
 - **Middle Man**: a class or function that mostly just delegates onward. → cut it, call the real target direct.
 - **Refused Bequest**: a subclass or implementer that ignores or overrides most of what it inherits. → drop the inheritance, use composition.
 
-The baseline also covers what agents add that Fowler's list misses. Same two rules apply:
+The baseline also covers what agents add that Fowler's list misses. The same rules apply:
 
 - **Defensive Interior**: `try/catch`, nil checks, retries or re-validation deep inside internal code whose inputs a boundary (handler, CLI, config, external API) already validated. A guard is right only when the state it handles is legitimate, one the system may really be in; a guard against a state that should never exist hides the bug where it surfaced. → find what produced the state and fix it there; handle errors at the boundary; let internal code trust its types.
 - **Swallowed Error**: a catch or error branch that logs-and-continues, returns a default, clamps a value, or drops the error without a reason the caller can see. → when the state it handles is legitimate, handle it there and name why; otherwise propagate it and fix what produced it.
@@ -73,14 +74,14 @@ Issue all four sub-agent calls together, in the foreground, and aggregate the re
 **Standards sub-agent prompt** should include:
 
 - The full diff command and commit list.
-- The list of standards-source files you found in step 3, **plus the smell baseline from step 3** pasted in full (the sub-agent has no other access to it).
-- The brief: "Report, per file/hunk where relevant, (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. A clear breach of a documented standard is at least a `should`, one whose rule needs judgement to apply is a `nit`, and a baseline smell is always a `nit`; a documented repo standard overrides the baseline. Skip anything tooling enforces. Whether a test can fail is the Correctness axis's question unless a documented standard rules on it. Under 400 words."
+- The list of standards-source files you found in step 3, plus, when `git diff --shortstat` counts over 200 changed lines, **the smell baseline from step 3** pasted in full (the sub-agent has no other access to it).
+- The brief: "Report, per file/hunk where relevant, (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. A clear breach of a documented standard is at least a `should`, one whose rule needs judgement to apply is a `nit`, and a baseline smell is always a `nit`; a documented repo standard overrides the baseline. Skip anything tooling enforces. Whether a test can fail is the Correctness axis's question unless a documented standard rules on it. Comment wording is the Comments axis's. Under 400 words."
 
 **Spec sub-agent prompt** should include:
 
 - The diff command and commit list.
 - The path or fetched contents of the spec.
-- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep), where recorded scope amendments count as asked for; (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
+- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep), where recorded scope amendments count as asked for; (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. A criterion only a PR can meet (PR-body evidence, screenshots, a test seen red before the fix) is no finding: name each in one closing line, `PR must carry: …`. Under 400 words."
 
 **Correctness sub-agent prompt** should include:
 

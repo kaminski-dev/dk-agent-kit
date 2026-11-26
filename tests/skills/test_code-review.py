@@ -33,6 +33,21 @@ if not re.search(r"Whether a test can fail is the Correctness axis's question un
                  standards_brief.group(0) if standards_brief else ""):
     errors.append("skills/code-review: the Standards brief must hand whether a test can fail to the Correctness axis, "
                   "keeping documented test rules")
+# The baseline's 713 findings were about 30% fixed, and 190 of 472 Duplicated Code findings sat in test files (#172).
+for what, pattern in (("its scope: diffs over 200 changed lines", r"over 200 changed lines"),
+                      ("test files left out", r"never (to|in) test files"),
+                      ("at most two findings", r"at most two (baseline )?findings")):
+    if not re.search(pattern, baseline.group(0) if baseline else ""):
+        errors.append(f"skills/code-review: the smell baseline does not name {what}")
+if not re.search(r"over 200 changed lines[^\n]*smell baseline", standards_brief.group(0) if standards_brief else ""):
+    errors.append("skills/code-review: the Standards prompt must carry the smell baseline only for a diff over 200 changed lines")
+if not re.search(r"Comment wording is the Comments axis's", standards_brief.group(0) if standards_brief else ""):
+    errors.append("skills/code-review: the Standards brief must leave comment wording to the Comments axis (#172)")
+spec_brief = re.search(r"^\*\*Spec sub-agent prompt\*\*.*?(?=^\*\*Correctness sub-agent prompt\*\*)", review, re.M | re.S)
+spec_brief = spec_brief.group(0) if spec_brief else ""
+if not re.search(r"PR-body evidence, screenshots[^.]*is no finding[^.]*`PR must carry: …`", spec_brief):
+    errors.append("skills/code-review: the Spec brief must put criteria that need a PR (PR-body evidence, screenshots, "
+                  "a test seen red) in one closing `PR must carry: …` line, not in findings (#172: 328 such findings)")
 test_question = re.search(r"^  - \*\*Test\*\*:.*$", review, re.M)
 test_question = test_question.group(0) if test_question else ""
 for what, pattern in (
@@ -91,12 +106,23 @@ comment_reviewer = agents["comment-reviewer"].read_text()
 if "<!-- Adapted from cursor/plugins pstack@" not in comment_reviewer:
     errors.append("agents/comment-reviewer: lost its pstack provenance marker")
 for what, pattern in (
-    ("the finding line", r"`<id> \[should\|nit\] <file>:<line> "),
-    ("findings as nits unless the comment states something false", r"`nit` unless the comment states something false"),
-    ("Stale as a should", r"^- \*\*Stale\*\*:[^\n]*`should`"),
+    ("the finding line", r"`<id> \[nit\] <file>:<line> "),
+    ("every finding as a nit", r"^Each finding is a `nit`"),
+    ("Stale as a nit", r"^- \*\*Stale\*\*:[^\n]*`nit`"),
 ):
     if not re.search(pattern, comment_reviewer, re.M):
         errors.append(f"agents/comment-reviewer: does not name {what}")
+# 38 stale comments labelled should forced a round each (#172); the stop condition reopens only for Correctness or Spec.
+if re.search(r"`should`", comment_reviewer):
+    errors.append("agents/comment-reviewer: still labels a finding `should`; every Comments finding is a nit (#172)")
+# A report carries every blocker and should, at most three nits, and the rest in one "also" line (#172: 90% of
+# 3,923 findings were nits, each a ledger row).
+ALSO = re.escape("`also: <file>:<line> <fix>; …`")
+for name, text, cap in (("agents/reviewer", reviewer, r"[Ee]very blocker and should[^.]*at most three nits"),
+                        ("agents/comment-reviewer", comment_reviewer, r"at most three findings")):
+    for what, pattern in (("the cap on nits", cap), ("the closing also line", ALSO)):
+        if not re.search(pattern, text):
+            errors.append(f"{name}: does not name {what}")
 for name, text in (("agents/reviewer", reviewer), ("agents/comment-reviewer", comment_reviewer),
                    ("skills/code-review", review)):
     if re.search(r"hard violation|judgement call|\bHard\.|hard or judgement", text, re.I):
