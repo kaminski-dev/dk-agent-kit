@@ -11,8 +11,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: guard-bash fixture matrix
         run: python3 -I tests/hooks/test_guard_bash.py
-      - name: stop gate fixtures
-        run: python3 -I tests/hooks/test_stop_gate.py
       - name: push gate fixtures
         run: python3 -I tests/hooks/test_push_gate.py
       - name: require-worktree fixtures
@@ -37,6 +35,8 @@ jobs:
         run: bash tests/test_dk_pg.sh
       - name: dk-gc against fixture repos
         run: bash tests/test_dk_gc.sh
+      - name: dk-gate against fixture repos
+        run: python3 -I tests/test_dk_gate.py
       - name: dk-assets against a local origin
         run: bash tests/test_dk_assets.sh
       - name: upstream sync against fixture repos

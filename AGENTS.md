@@ -1,6 +1,6 @@
 # dk-agent-kit
 
-A Claude Code marketplace with two plugins: `dk-guard` (hooks and the `dk-pg`, `dk-gc` and `dk-assets` commands, always on) and `dk` (skills and agents). `README.md` covers install and layout.
+A Claude Code marketplace with two plugins: `dk-guard` (hooks and the `dk-gate`, `dk-pg`, `dk-gc` and `dk-assets` commands, always on) and `dk` (skills and agents). `README.md` covers install and layout.
 
 ## Rules
 
@@ -16,4 +16,4 @@ Issues live in GitHub Issues and move issue → worktree → PR into `main`. The
 
 ## Checks
 
-`python3 -I tests/hooks/test_guard_bash.py`, `python3 -I tests/hooks/test_stop_gate.py`, `python3 -I tests/hooks/test_push_gate.py`, `python3 -I tests/hooks/test_require_worktree.py`, `python3 -I tests/hooks/test_session_baseline.py`, `python3 -I tests/hooks/test_fork_guard.py`, `python3 -I tests/test_skills.py`, `python3 -I tests/test_evals.py`, `python3 -I tests/test_retro_extract.py`, `python3 -I tests/test_pr_wait.py`, `python3 -I tests/test_batch_pr.py`, `bash tests/test_bootstrap.sh`, `bash tests/test_dk_pg.sh`, `bash tests/test_dk_gc.sh`, `bash tests/test_dk_assets.sh`, `bash tests/test_sync.sh`, `claude plugin validate .` (the only expected warning is the missing `version`, once per plugin, left out on purpose so installs track commits).
+`python3 -I tests/hooks/test_guard_bash.py`, `python3 -I tests/hooks/test_push_gate.py`, `python3 -I tests/hooks/test_require_worktree.py`, `python3 -I tests/hooks/test_session_baseline.py`, `python3 -I tests/hooks/test_fork_guard.py`, `python3 -I tests/test_skills.py`, `python3 -I tests/test_evals.py`, `python3 -I tests/test_retro_extract.py`, `python3 -I tests/test_pr_wait.py`, `python3 -I tests/test_batch_pr.py`, `python3 -I tests/test_dk_gate.py`, `bash tests/test_bootstrap.sh`, `bash tests/test_dk_pg.sh`, `bash tests/test_dk_gc.sh`, `bash tests/test_dk_assets.sh`, `bash tests/test_sync.sh`, `claude plugin validate .` (the only expected warning is the missing `version`, once per plugin, left out on purpose so installs track commits).
