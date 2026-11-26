@@ -63,13 +63,16 @@ def code_at(base, tree):
     if tree is None:
         return lines + [f"git worktree add --detach <dir> {sha}"]
     path = pathlib.Path(tree).expanduser().resolve()
-    git("worktree", "prune")  # a worktree whose directory is gone is added again below
     on_branch = {}
     for block in git("worktree", "list", "--porcelain").split("\n\n"):
-        lines = block.splitlines()
-        if lines and lines[0].startswith("worktree "):
-            on_branch[pathlib.Path(lines[0].removeprefix("worktree ")).resolve()] = any(
-                line.startswith("branch ") for line in lines)
+        entry = block.splitlines()
+        if entry and entry[0].startswith("worktree "):
+            on_branch[pathlib.Path(entry[0].removeprefix("worktree ")).resolve()] = any(
+                line.startswith("branch ") for line in entry)
+    if path in on_branch and not path.exists():
+        # its directory is gone: drop this one record, locked or not, and add it again below
+        git("worktree", "remove", "--force", "--force", str(path))
+        del on_branch[path]
     if on_branch.get(path):
         sys.exit(f"--worktree {tree}: is on a branch; name a detached worktree or a new path.")
     if path in on_branch:
