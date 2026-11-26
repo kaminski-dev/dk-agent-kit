@@ -16,9 +16,15 @@ happens. A directory known only at run time (`cd "$(…)" && git push`, or `$WT`
 when the call does not set it or may have switched the checkout's branch), or
 missing before the call, runs no gate either, and the agent is told so.
 
-It fails open: a gate that outlives TIMEOUT is killed and the push goes through
-with a message to the user. A crash, or the hook's own timeout in hooks.json,
-lets the push through too.
+The gate takes one of the machine's gate slots first (gate.py). The wait for
+a slot counts against TIMEOUT; when no slot frees within DK_GATE_WAIT, or in
+time to leave the gate the seconds its last pass took, the push is denied with
+a message that the gates are busy and to push again, since the gate did not
+run.
+
+It fails open otherwise: a gate that outlives TIMEOUT is killed and the push
+goes through with a message to the user. A crash, or the hook's own timeout in
+hooks.json, lets the push through too.
 """
 import importlib.util
 import json
@@ -100,7 +106,18 @@ def main():
     for root in roots:
         if not os.access(os.path.join(root, gate.GATE), os.X_OK):
             continue
-        status, output, _ = gate.check(root, TIMEOUT)
+        status, output, entry = gate.check(root, TIMEOUT)
+        if status == gate.BUSY:
+            head = (f"dk-guard: gates are busy ({', '.join(entry)} held every slot), "
+                    f"so {gate.GATE} in {root} did not run")
+            guard.log({"session": data.get("session_id"), "cwd": cwd, "decision": "deny",
+                       "reason": "push gate: " + head, "command": cmd[:500]})
+            print(json.dumps({"hookSpecificOutput": {
+                "hookEventName": "PreToolUse", "permissionDecision": "deny",
+                "permissionDecisionReason": f"{head} and the push is blocked. Nothing is wrong with the change: "
+                                            "push again in a minute, or run dk-gate there first, which waits for "
+                                            "a slot."}}))
+            return
         failure = None if status.startswith("passed") or status == "cached" else status
         tail = gate.tail(output)
         head = f"dk-guard: {gate.GATE} in {root} " + ("passed on this tree before (cached)" if status == "cached"

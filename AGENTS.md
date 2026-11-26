@@ -16,4 +16,4 @@ Issues live in GitHub Issues and move issue → worktree → PR into `main`. The
 
 ## Checks
 
-`python3 -I tests/run.py <base>` runs the checks the changes since `<base>` need (the branch's base, `origin/main` unless the work branched elsewhere), plus the always-on ones; `python3 -I tests/run.py` runs every check, as CI does. A new test file needs its row in the map in `tests/run.py`; `tests/test_run.py` fails until it has one. `claude plugin validate .` is one of the checks: its only expected warning is the missing `version`, once per plugin, left out on purpose so installs track commits.
+`python3 -I tests/run.py <base>` runs the checks the changes since `<base>` need (the branch's base, `origin/main` unless the work branched elsewhere), plus the always-on ones; `python3 -I tests/run.py` runs every check, as CI does. A new test file needs its row in the map in `tests/run.py`. `claude plugin validate .` is one of the checks: its only expected warning is the missing `version`, once per plugin, left out on purpose so installs track commits.
