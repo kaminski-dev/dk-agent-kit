@@ -391,8 +391,8 @@ echo "dk-gc stand-in: remove worktree ~/workspace/ledger-101"
 SETUP_LINE = "- **Fresh-worktree setup**: `touch installed`, then `echo routes > generated.txt`.\n"
 
 
-def finish_ws(setup_line=SETUP_LINE):
-    """main checked out with workflow.md, pre-main one commit ahead; the batch PR merged on origin from another clone."""
+def finish_ws(setup_line=SETUP_LINE, batch=None):
+    """main checked out with workflow.md, pre-main one commit ahead (or batch's); the batch PR merged on origin from another clone."""
     ws = Workspace()
     (ws.repo / "docs" / "agents").mkdir(parents=True)
     (ws.repo / "docs" / "agents" / "workflow.md").write_text("# Workflow\n\n## Worktree\n\n" + setup_line)
@@ -400,7 +400,7 @@ def finish_ws(setup_line=SETUP_LINE):
     ws.git("commit", "-qm", "workflow")
     ws.git("branch", "pre-main")
     ws.git("checkout", "-q", "pre-main")
-    ws.commit("first")
+    (batch or (lambda ws: ws.commit("first")))(ws)
     ws.push()
     ws.git("checkout", "-q", "main")
     ws.git_in(ws.root, "clone", "-q", "--branch", "main", ORIGIN, "github")
@@ -521,6 +521,58 @@ r, gc = run_finish(ws)
 check("untracked file the merge would overwrite: exits 1 and names it, nothing moves, the file stays",
       r.returncode == 1 and "first" in r.stderr and refs(ws) == before
       and (ws.repo / "first").read_text() == "mine\n", (r.returncode, r.stderr, refs(ws), before))
+ws.remove()
+
+def commit_paths(ws, message, files):
+    """Writes each path with its text, or git-mvs it there when the text is "<- old"."""
+    for path, text in files.items():
+        if text.startswith("<- "):
+            ws.git("mv", text[3:], path)
+            continue
+        (ws.repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (ws.repo / path).write_text(text)
+        ws.git("add", path)
+    ws.git("commit", "-qm", message)
+
+
+def refused_before_moving(name, ws, path, text, why):
+    """The finish exits 1 naming the path, no ref moves, and the local file keeps its text."""
+    before = refs(ws)
+    r, gc = run_finish(ws)
+    check(f"{name}: exits 1 and names {path}, nothing moves, the file stays",
+          r.returncode == 1 and path in r.stderr and refs(ws) == before and gc == []
+          and (ws.repo / path).read_text() == text, (why, r.returncode, r.stdout, r.stderr, refs(ws), before))
+
+
+# The batch renames base to renamed, and an untracked renamed sits in the checked-out main.
+ws = finish_ws(batch=lambda ws: commit_paths(ws, "rename", {"renamed": "<- base"}))
+(ws.repo / "renamed").write_text("mine\n")
+refused_before_moving("untracked rename destination", ws, "renamed", "mine\n", "a rename is no A in git diff")
+ws.remove()
+
+# The batch adds assets/routes.json, and an untracked file assets sits where its directory goes.
+ws = finish_ws(batch=lambda ws: commit_paths(ws, "routes", {"assets/routes.json": "{}\n"}))
+(ws.repo / "assets").write_text("mine\n")
+refused_before_moving("untracked file where the batch adds a directory", ws, "assets", "mine\n", "file/directory")
+ws.remove()
+
+# The batch adds config.local.json, which the checkout ignores and holds: a fast-forward overwrites ignored files.
+ws = finish_ws(batch=lambda ws: commit_paths(ws, "config", {"config.local.json": "{}\n"}))
+(ws.repo / ".git" / "info" / "exclude").write_text("config.local.json\n")
+(ws.repo / "config.local.json").write_text("mine\n")
+refused_before_moving("ignored file the batch adds", ws, "config.local.json", "mine\n", "ignored")
+ws.remove()
+
+# Ignored files the batch does not add stay permitted, an ignored directory it adds a file into among them.
+ws = finish_ws(batch=lambda ws: commit_paths(ws, "build", {"build/out.js": "out\n"}))
+(ws.repo / ".git" / "info" / "exclude").write_text("build/\n*.log\n")
+(ws.repo / "build").mkdir()
+(ws.repo / "build" / "cache").write_text("cache\n")
+(ws.repo / "debug.log").write_text("log\n")
+r, gc = run_finish(ws)
+check("unrelated ignored files: exits 0, the branches move, the ignored files stay",
+      r.returncode == 0 and refs(ws) == [ws.merged] * 4 and (ws.repo / "build" / "cache").read_text() == "cache\n"
+      and (ws.repo / "build" / "out.js").exists() and (ws.repo / "debug.log").exists(), (r.returncode, r.stdout, r.stderr))
 ws.remove()
 
 print(f"{len(failures)} failures")
