@@ -253,4 +253,49 @@ if not step2 or not re.search(r"When the base is `main`, there is no batch PR: `
                               r"and step 6's batch-PR note and step 7's batch-review bullet do not apply\.", step2.group(0)):
     errors.append("skills/issue-flow/SKILL.md: step 2 does not say what lapses when the base is main")
 
+# #177: a correction goes through dk-comment-edit, which the product repos' ask rules on `gh api` PATCH never reach.
+if "`dk-comment-edit <comment id> <file>`" not in note or not re.search(r"dk-comment-edit[^.]*own[^.]*attribution note", note):
+    errors.append("skills/issue-flow: step 6's **Comments.** paragraph must correct a posted comment with "
+                  "`dk-comment-edit <comment id> <file>`, which edits only your own comment with the attribution note")
+if re.search(r"(?:-X|--method)[ =]?['\"]?(?:PATCH|patch)", flow):
+    errors.append("skills/issue-flow: a comment edit goes through dk-comment-edit, never a raw `gh api` PATCH")
+
+# #177: the customer reply is posted once the review loop has ended and the PR passed the gate, so it is never
+# reworded after it is posted.
+reply = re.search(r"^\*\*Customer reply\.\*\*.*?(?=^\*\*[A-Z]|^## )", step6, re.M | re.S)
+reply = reply.group(0) if reply else ""
+before_gate = step6[:step6.find("**Ready gate.**")]
+if not reply or step6.find("**Customer reply.**") < step6.find("**Ready gate.**"):
+    errors.append("skills/issue-flow: step 6 needs a **Customer reply.** paragraph after the **Ready gate.**")
+elif not re.search(r"gate passes[^.]*review loop", reply) or "workflow.md" not in reply or "**Blocked**" not in reply:
+    errors.append("skills/issue-flow: step 6's **Customer reply.** waits for the gate to pass and the review loop to "
+                  "end, posts as `workflow.md` describes, and posts nothing on **Blocked**")
+if re.search(r"customer reply on the issue", before_gate):
+    errors.append("skills/issue-flow: step 6 writes the customer reply before the review loop; it belongs after the gate")
+
+# #177: on a repo the maintainer does not own, nothing carries the kit's attribution, and each draft goes to the
+# maintainer first. tests/test_repo_owner.py runs the check the paragraph names.
+step1 = re.search(r"^## 1\..*?(?=^## 2\.)", flow, re.M | re.S)
+owner = re.search(r"^\*\*Ownership\.\*\*.*?(?=^\*\*[A-Z]|^## )", step1.group(0) if step1 else "", re.M | re.S)
+owner = owner.group(0) if owner else ""
+for what, pattern in (
+    ("the check it runs", r"`python3 -I <base directory>/repo-owner`"),
+    ("the check for a comment that goes to another repo", r"`python3 -I <base directory>/repo-owner <owner>/<repo>`"),
+    ("its two answers", r"`own: `.*`not own: `"),
+    ("no attribution note on comments", r"no attribution note"),
+    ("no attribution lines in commits", r"commit[^.;]*no `Co-Authored-By`"),
+    ("no attribution line in the PR body", r"PR body[^.;]*no[^.;]*Generated with"),
+    ("each draft shown to the maintainer before it is posted", r"draft[^.]*maintainer[^.]*their word"),
+    ("an exit 2 read as not own", r"exit 2[^.]*`not own`"),
+):
+    if not re.search(pattern, owner, re.S):
+        errors.append(f"skills/issue-flow: step 1 needs an **Ownership.** paragraph naming {what}")
+if not re.search(r"\*\*Ownership\.\*\*", re.search(r"^## 4\..*?(?=^## 5\.)", flow, re.M | re.S).group(0)):
+    errors.append("skills/issue-flow: step 4's commits point at step 1's **Ownership.** for their attribution lines")
+if not re.search(r"\*\*Ownership\.\*\*", note):
+    errors.append("skills/issue-flow: step 6's **Comments.** must leave the note out where step 1's **Ownership.** says")
+if not re.search(r"\*\*Ownership\.\*\*[^.]*`comment from <login>`", watch):
+    errors.append("skills/issue-flow: step 6's watch must say that on a repo not your own your comments carry no note, "
+                  "so `comment from <login>` may be your own")
+
 lib.finish("dk:issue-flow")
