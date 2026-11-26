@@ -50,4 +50,21 @@ for what, pattern, text in (
     if not re.search(pattern, text):
         errors.append(f"skills/implement: does not name {what}")
 
+# A wave hands each PR over as its implementer returns, and the dry-merge comes in a later message, with a merge
+# order for each conflicting pair (#175).
+several = re.search(r"^## Several tickets\n.*?(?=^## |\Z)", implement, re.M | re.S)
+several = several.group(0) if several else ""
+for what, pattern in (
+    ("implementers launched in the background, so each return wakes the orchestrator",
+     r"in the background[^.]*each[^.]*return[^.]*wakes"),
+    ("each PR handed over in its own message as its implementer returns",
+     r"[Aa]s each implementer returns[^.]*own message[^.]*verdict"),
+    ("the dry-merge in a later message, after the last implementer returns",
+     r"last implementer returns[^.]*dry-merge|dry-merge[^.]*last implementer returns"),
+    ("the merge order for a conflicting pair", r"merge order[^.]*merges first"),
+    ("who rebases the later branch, and when", r"[Yy]ou rebase the later branch[^.]*once the first[^.]*merged"),
+):
+    if not re.search(pattern, several, re.S):
+        errors.append(f"skills/implement: its ## Several tickets section does not name {what}")
+
 lib.finish("dk:implement")

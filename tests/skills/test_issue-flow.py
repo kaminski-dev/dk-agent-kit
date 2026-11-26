@@ -215,6 +215,13 @@ if not waits or not re.search(r"every background wait", waits.group(0)) or not r
     errors.append("skills/issue-flow: step 2's fan-out rules need a **Waits** rule: every background wait has a "
                   "deadline (20 minutes unless the step says otherwise) and reports when it expires")
 
+# A wave's width counts the reviewers each implementer starts, so their reviews find a free slot (#175).
+wave = re.search(r"^- \*\*Waves\*\*:.*$", fan_out.group(0) if fan_out else "", re.M)
+wave = wave.group(0) if wave else ""
+if not re.search(r"counts[^.]*reviewers[^.]*`dk:code-review`", wave) or "four implementers" not in wave:
+    errors.append("skills/issue-flow: step 2's **Waves** rule must count each implementer's `dk:code-review` "
+                  "reviewers against the 20, so a wave runs at most four implementers")
+
 worktrees = re.search(r"^- \*\*Worktrees\*\*:.*$", fan_out.group(0) if fan_out else "", re.M)
 worktrees = worktrees.group(0) if worktrees else ""
 if FRESH not in worktrees or "`isolation`" not in worktrees or '`subagent_type: "fork"`' not in worktrees:
