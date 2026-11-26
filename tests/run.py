@@ -7,8 +7,8 @@
     python3 -I tests/run.py --list <base>    print what <base> selects, run nothing
 
 The changed paths are those committed since the merge base with <base>, plus staged, unstaged and untracked ones.
-A changed path no check maps runs every check, so the map fails closed; tests/test_run.py fails on a check file
-the map does not name. Each check prints its seconds, a failing one its output, and the run exits 1 when any fails.
+A changed path no check maps and UNCHECKED does not list runs every check, so the map fails closed;
+tests/test_run.py fails on a check file the map does not name. Each check prints its seconds, a failing one its output, and the run exits 1 when any fails.
 """
 import fnmatch
 import os
@@ -92,7 +92,7 @@ CHECKS = [
 ]
 
 # Paths no check reads; they still run the always-on set.
-UNCHECKED = ["tests/hooks/replay_history.py", "CLAUDE.md", "LICENSE", ".out-of-scope/*", "docs/agents/*"]
+UNCHECKED = ["tests/hooks/replay_history.py", "CLAUDE.md", "LICENSE", ".out-of-scope/*", "docs/agents/triage-labels.md"]
 
 
 def unmapped(paths):

@@ -34,9 +34,9 @@ machine, with cores left for the sessions) in its environment, for the gate
 script to pass to its tools (`go test -p`, `vitest --maxWorkers`, ...); a gate
 that ignores it runs as before.
 
-A hand run prints the gate's output as it comes and exits with the gate's
-code, 3 when the gates stay busy; a checkout without an executable gate exits
-0 and says so.
+A hand run prints the gate's output as it comes and exits 0 on a pass, 1 on
+a failure and 3 when the gates stay busy; a checkout without an executable
+gate exits 0 and says so.
 """
 import datetime
 import fcntl
@@ -231,13 +231,15 @@ def drop_gone(directory):
             if isinstance(root, str) and not os.path.isdir(root):
                 os.remove(os.path.join(directory, name))
         except (OSError, ValueError, AttributeError):
-            pass
+            pass  # an entry another run is replacing or removing; the next pass looks at it again
 
 
 def run_gate(gate, root, timeout=None, capture=True):
-    """Run the gate in its own process group; return (failure or None, combined output).
+    """Run the gate; return (failure or None, combined output).
 
-    With capture=False the output goes to this process's stdout as it comes and the returned output is empty."""
+    With capture the gate runs in its own process group, so a timeout kills its test runners with it. With
+    capture=False it shares this process's group, so Ctrl-C reaches it, and the output goes to this process's
+    stdout as it comes; the returned output is empty."""
     env = {**os.environ, "DK_GATE_WORKERS": str(setting("DK_GATE_WORKERS", 4))}
     try:
         proc = subprocess.Popen([gate], cwd=root, stdin=subprocess.DEVNULL, env=env,
@@ -334,7 +336,8 @@ def main(argv):
     elif status == "passed":
         print(f"{head} passed; a push of this same tree reuses the pass.")
     elif status.startswith("passed"):
-        print(f"{head} passed, but the tree changed while it ran, so the pass is not cached.")
+        print(f"{head} passed, but the pass is not cached: the tree changed while it ran, or the cache could not "
+              "be written.")
     else:
         print(f"{head} {status}.")
         return 1
