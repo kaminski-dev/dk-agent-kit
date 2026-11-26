@@ -10,6 +10,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 cat > "$tmp/settings.json" <<'EOF'
 {
   "model": "opus",
+  "env": { "BASH_DEFAULT_TIMEOUT_MS": "1800000", "KEEP_ME": "1" },
   "permissions": { "defaultMode": "auto", "deny": ["Bash(git push * main)", "Bash(rm -rf /)"],
                    "allow": ["Bash(npm test)", "Bash(git push -u origin HEAD)"] },
   "autoMode": { "soft_deny": ["$defaults", "Bash(psql:*) needs confirmation"], "environment": ["kept as is"] }
@@ -92,6 +93,9 @@ cp "$aliases_file" "$tmp/aliases.applied"
 
 s="$tmp/settings.json"
 [[ "$(jq -r .model "$s")" == opus ]] || fail "model lost"
+# a Bash call with no timeout stops at 10 minutes; one that needs longer names its timeout, up to 30
+[[ "$(jq -c '[.env.BASH_DEFAULT_TIMEOUT_MS, .env.BASH_MAX_TIMEOUT_MS, .env.KEEP_ME]' "$s")" == '["600000","1800000","1"]' ]] ||
+  fail "Bash timeouts not set from the fragment: $(jq -c .env "$s")"
 [[ "$(jq -r .permissions.defaultMode "$s")" == auto ]] || fail "defaultMode lost"
 [[ "$(jq '[.permissions.deny[] | select(. == "Bash(git push * main)")] | length' "$s")" == 1 ]] || fail "deny entry duplicated"
 jq -e '.permissions.deny | index("Bash(rm -rf /)")' "$s" >/dev/null || fail "existing deny entry lost"
