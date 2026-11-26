@@ -1387,8 +1387,8 @@ def quoted_text(cmd, pos, shell=""):
 
 
 def workspace_wide(args):
-    """True when dk-gc's arguments name --workspace: every repo, not the one it runs in."""
-    return any(a == "--workspace" or a.startswith("--workspace=") for a in args)
+    """True when dk-gc's arguments name --workspace (every repo, not the one it runs in), or may: a `$` word."""
+    return any(a == "--workspace" or a.startswith("--workspace=") or "$" in a for a in args)
 
 
 def check_dk_gc(cmd):
