@@ -515,7 +515,7 @@ class Watcher:
         checks = self.fetch_checks()
         head = pr["headRefOid"]
         short = head[:7]
-        if head != self.head:  # a push restarts the deadline, except the until-merged one
+        if head != self.head:  # a push restarts the deadline
             self.head, self.head_seen = head, time.monotonic()
             if self.until != "merged":
                 deadline = self.head_seen + self.minutes * 60
@@ -663,14 +663,17 @@ class Watcher:
             if green and self.until == "green":
                 self.reported.add(checks_key)
                 self.finish(0, [f"green on {short}: {summary}{self.behind(base, base_oid, head)}"])
+        # ready waits for the review bot's verdict only on a base it reviews.
+        bot_stuck = gating and verdict in ("rate limited", "paused")
+        reviewed_ok = green and (verdict or not gating) and not bot_stuck
+        s = "" if len(unresolved) == 1 else "s"
+        blocked_line = f"blocked by {len(unresolved)} unresolved thread{s} on {short}: {' '.join(unresolved)}"
         if self.until == "ready":
-            if gating and verdict in ("rate limited", "paused"):
+            if bot_stuck:
                 self.finish(1, bot_lines)
-            # ready waits for the review bot's verdict only on a base it reviews.
-            if green and (verdict or not gating):
+            if reviewed_ok:
                 if unresolved:
-                    s = "" if len(unresolved) == 1 else "s"
-                    self.finish(1, bot_lines + [f"blocked by {len(unresolved)} unresolved thread{s} on {short}: {' '.join(unresolved)}"])
+                    self.finish(1, bot_lines + [blocked_line])
                 if merge_state == "BEHIND":
                     self.finish(1, bot_lines + [behind_line])
                 if unread_lines:
@@ -678,10 +681,12 @@ class Watcher:
                 if merge_state and merge_state != "UNKNOWN":  # GitHub has not computed it yet: keep polling
                     self.reported.update((checks_key, ready_key))  # a merged watch after this one says it no more
                     self.finish(0, bot_lines + [ready_line + self.behind(base, base_oid, head)])
-        if self.until == "merged" and green and (verdict or not gating) and not unresolved and not unread_lines \
-                and merge_state not in (None, "UNKNOWN", "BEHIND", "DIRTY"):
-            self.reported.add(checks_key)
-            self.emit(ready_key, ready_line)
+        if self.until == "merged" and reviewed_ok:
+            if unresolved:
+                self.emit(f"blocked:{head}:{' '.join(unresolved)}", blocked_line)
+            elif not unread_lines and merge_state not in (None, "UNKNOWN", "BEHIND", "DIRTY"):
+                self.reported.add(checks_key)
+                self.emit(ready_key, ready_line)
         if all_done and (stable or self.baseline):
             self.emit(checks_key, f"checks finished on {short}: {summary}")
         if self.until == "any-change" and self.events:

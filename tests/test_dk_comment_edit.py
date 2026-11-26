@@ -37,6 +37,9 @@ root = pathlib.Path(tempfile.mkdtemp(prefix="dk-comment-edit-"))
 (root / ".bin").mkdir()
 (root / ".tracker").mkdir()
 (root / "repo").mkdir()
+for args in (["init", "-q", "-b", "main"], ["remote", "add", "origin", "https://github.com/acme/app.git"]):
+    subprocess.run(["git", *args], cwd=root / "repo", check=True, capture_output=True,
+                   env={**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null"})
 shutil.copy(GH, root / ".bin" / "gh")
 env = {"PATH": os.pathsep.join([str(root / ".bin"), os.environ["PATH"]]), "HOME": str(root), "TERM": "dumb"}
 STATE = root / ".tracker" / "state.json"
@@ -62,8 +65,9 @@ def body(cid):
     return next(c["body"] for c in held if c["id"] == cid)
 
 
-def edit(*args):
-    return subprocess.run([str(CMD), *map(str, args)], cwd=root / "repo", env=env, capture_output=True, text=True)
+def edit(*args, extra=None):
+    return subprocess.run([str(CMD), *map(str, args)], cwd=root / "repo", env={**env, **(extra or {})},
+                          capture_output=True, text=True)
 
 
 new = root / "reply.md"
@@ -78,6 +82,13 @@ check("own PR comment: replaced", r.returncode == 0 and body(201) == new.read_te
 r = edit(302, new)
 check("own thread reply: replaced", r.returncode == 0 and body(302) == new.read_text()
       and r.stdout.strip() == "https://github.com/acme/app/pull/12#discussion_r302", (r.returncode, r.stdout, r.stderr))
+
+# gh would resolve {owner}/{repo} to GH_REPO or a fork's upstream; the edit pins origin's repo, as pr-wait does.
+(root / ".tracker" / "repos.log").write_text("")
+r = edit(201, new, extra={"GH_REPO": "kaminski-dev/dk-agent-kit"})
+asked = {line.split("\t", 1)[0] for line in (root / ".tracker" / "repos.log").read_text().splitlines()}
+check("an inherited GH_REPO: the edit asks gh about origin's acme/app",
+      r.returncode == 0 and asked == {"acme/app"}, (r.returncode, r.stderr, asked))
 
 r = edit(102, new)
 check("another author's comment: refused and left as it was",
@@ -108,7 +119,7 @@ r = edit(101, root / "missing.md")
 check("a missing file: fails and names it", r.returncode == 1 and "missing.md" in r.stderr, (r.returncode, r.stderr))
 
 calls = (root / ".tracker" / "calls.log").read_text()
-check("a refusal sends no PATCH", calls.count("PATCH") == 3, calls)
+check("a refusal sends no PATCH", calls.count("PATCH") == 4, calls)
 
 watcher = re.search(r'^ATTRIBUTION = re\.compile\(r"([^"\n]+)"\)$', WATCHER.read_text(), re.M)
 own = re.search(r'^ATTRIBUTION = re\.compile\(r"([^"\n]+)"\)$', CMD.read_text(), re.M)

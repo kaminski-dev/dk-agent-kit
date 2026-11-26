@@ -823,6 +823,8 @@ head = git(ws, "app", "-C", str(tree), "rev-parse", "HEAD").stdout.strip()
 attached = git(ws, "app", "-C", str(tree), "symbolic-ref", "-q", "HEAD").returncode == 0
 check("ready.py: --worktree adds a detached worktree at origin/pre-main",
       r.returncode == 0 and head == moved and not attached and f"worktree: {tree}" in code, (code, r.stderr, head))
+check("ready.py: with --worktree, the Code section still names origin/pre-main and its commit",
+      f"origin/pre-main at {moved}" in code, code)
 r, code = code_section(f"--base main --worktree '{tree}'")
 head = git(ws, "app", "-C", str(tree), "rev-parse", "HEAD").stdout.strip()
 check("ready.py: an existing --worktree moves to the new ref", r.returncode == 0 and head == main_sha,
@@ -830,7 +832,23 @@ check("ready.py: an existing --worktree moves to the new ref", r.returncode == 0
 (ws / "not-a-tree").mkdir()
 r, code = code_section(f"--worktree '{ws / 'not-a-tree'}'")
 check("ready.py: a --worktree path that is no worktree of this repo fails", r.returncode == 1, (r.stdout, r.stderr))
+branch = git(ws, "app", "symbolic-ref", "-q", "HEAD").stdout.strip()
+r, code = code_section(f"--worktree '{ws / 'app'}'")
+check("ready.py: a --worktree on a branch, the main checkout here, fails and stays on its branch",
+      r.returncode == 1 and git(ws, "app", "symbolic-ref", "-q", "HEAD").stdout.strip() == branch,
+      (r.returncode, r.stderr, branch))
+other = ws / "other-tree"
+git(ws, "app", "worktree", "add", "-q", "--detach", str(other), moved)
+shutil.rmtree(other)  # another worktree's directory gone, as on an unmounted volume
+git(ws, "app", "worktree", "lock", str(tree))
+shutil.rmtree(tree)
+r, code = code_section(f"--worktree '{tree}'")
+check("ready.py: a registered --worktree whose directory is gone, locked too, is added again",
+      r.returncode == 0 and (tree / ".git").exists() and "Traceback" not in r.stderr, (r.returncode, r.stderr))
+check("ready.py: re-adding the named worktree keeps the record of another worktree whose directory is gone",
+      str(other) in git(ws, "app", "worktree", "list", "--porcelain").stdout, r.stderr)
 git(ws, "app", "worktree", "remove", "--force", str(tree))
+git(ws, "app", "worktree", "prune")
 
 repos_log = ws / ".tracker" / "repos.log"
 repos_log.write_text("")

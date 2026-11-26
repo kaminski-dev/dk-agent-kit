@@ -2,7 +2,7 @@
 
 For the session that hands a PR over to the maintainer, before its handoff (`dk:issue-flow` step 6). `<base directory>` is the skill's base directory, the folder this file sits in, written out literally.
 
-**Ready gate.** The PR goes to the maintainer once it passes this gate on the latest commit. Read the live PR with `gh pr view <PR> --json headRefOid,state,isDraft,reviewDecision,mergeable,mergeStateStatus`: it is open, not a draft, and on its `headRefOid`:
+The PR goes to the maintainer once it passes this gate on the latest commit. Read the live PR with `gh pr view <PR> --json headRefOid,state,isDraft,reviewDecision,mergeable,mergeStateStatus`: it is open, not a draft, and on its `headRefOid`:
 
 - your proof (step 5) covers every change in the diff, the review fixes included;
 - required checks are green;
@@ -18,4 +18,4 @@ For the session that hands a PR over to the maintainer, before its handoff (`dk:
 
 **Customer reply.** When the change is one the customer sees, post the reply on the issue once the gate passes, before the handoff: the review loop is over by then, so the reply describes what merges and stays as posted. Write it as `workflow.md` describes. A handoff that ends **Blocked** posts none yet.
 
-Then start the watch to the merge ([watch.md](watch.md)) as you send the handoff.
+Then the watch to the merge ([watch.md](watch.md)) starts as the handoff goes out: you start it for your own PR, and a subagent leaves it to its orchestrator, which starts it as it hands the subagent's PR over.

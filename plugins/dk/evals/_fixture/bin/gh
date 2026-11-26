@@ -10,7 +10,7 @@ State lives in <workspace>/.tracker/state.json. Every call is logged to .tracker
 the highest PR number, in whatever order their checks finish.
 Calls hold a lock on the state, so parallel agents do not lose each other's writes; `pr create` lets
 go of it while the acceptance check runs (at most CHECK_TIMEOUT seconds per run).
-An issue's "blocked_by" lists its native blockers, read by `is:blocked` in a
+An issue's "blocked_by" lists its native blockers (another repo's as "owner/repo#N"), read by `is:blocked` in a
 search and by `gh api .../dependencies/blocked_by`, and added by a POST there, by
 `gh issue create --blocked-by` or by `gh issue edit --add-blocked-by`.
 That read pages at 30 as GitHub does: --paginate prints every page as its own JSON array
@@ -142,8 +142,16 @@ def issue_json(state, num):
     }
 
 
+def ref_state(state, ref):
+    """The state of a blocker or sub-issue: this repo's by number, another repo's "owner/repo#N" from other_repos."""
+    if isinstance(ref, str) and "#" in ref:
+        other, n = ref.split("#")
+        return state.get("other_repos", {}).get(other, {})[n]
+    return state["issues"][str(ref)]["state"]
+
+
 def open_blockers(state, num):
-    return [b for b in state["issues"][num].get("blocked_by", []) if state["issues"][str(b)]["state"] == "open"]
+    return [b for b in state["issues"][num].get("blocked_by", []) if ref_state(state, b) == "open"]
 
 
 def blockers_from(flag, o, state):
@@ -566,6 +574,12 @@ def cmd_api(args, state):
                 "labels": [{"name": l} for l in i["labels"]],
                 "issue_dependencies_summary": {"blocked_by": len(open_blockers(state, n)),
                                                "total_blocked_by": len(i.get("blocked_by", []))}}
+    def any_issue(s):
+        if isinstance(s, str) and "#" in s:
+            other, n = s.split("#")
+            return {"number": int(n), "title": f"{other} issue {n}", "body": "", "labels": [],
+                    "state": ref_state(state, s), "repository_url": f"https://api.github.com/repos/{other}"}
+        return rest_issue(str(s))
     if method == "POST" and parts[5:] == ["dependencies", "blocked_by"]:
         blocker = str(int(api_fields(o).get("issue_id", "0")) - 900000)
         if blocker not in state["issues"]:
@@ -578,16 +592,9 @@ def cmd_api(args, state):
     elif parts[5:] == []:
         emit(rest_issue(num), o)
     elif parts[5:] == ["sub_issues"]:
-        def sub_issue(s):
-            if isinstance(s, int):
-                return rest_issue(str(s))
-            other, n = s.split("#")
-            return {"number": int(n), "title": f"{other} issue {n}", "body": "", "labels": [],
-                    "state": state.get("other_repos", {}).get(other, {})[n],
-                    "repository_url": f"https://api.github.com/repos/{other}"}
-        emit_pages([sub_issue(s) for s in state["issues"][num].get("sub_issues", [])], o)
+        emit_pages([any_issue(s) for s in state["issues"][num].get("sub_issues", [])], o)
     elif parts[5:] == ["dependencies", "blocked_by"]:
-        emit_pages([rest_issue(str(b)) for b in state["issues"][num].get("blocked_by", [])], o)
+        emit_pages([any_issue(b) for b in state["issues"][num].get("blocked_by", [])], o)
     else:
         fail(f"gh api {'/'.join(parts)}: not supported by this repo's tracker stand-in")
 

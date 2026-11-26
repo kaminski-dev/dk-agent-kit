@@ -341,6 +341,15 @@ CASES = {
     "until merged: a failed check is an event, not the end": (dict(
         polls=[READY, READY, READY, pr(state="MERGED")], check_polls=[GREEN, GREEN, FAILED], args=["--until", "merged"]),
         0, ["check failed: test https://ci/test\n#1 merged:"], "deadline"),
+    "until merged: a rate-limited bot on the head prints no ready on": (dict(
+        polls=[pr(comments=[summary(reviewed(OLD), rate_limited(HEAD))])] * 2 + [pr(state="MERGED")], checks=GREEN,
+        args=["--until", "merged"]),
+        0, ["#1 merged:"], "ready on"),
+    "until merged: an unresolved thread prints its blocked line, not ready on": (dict(
+        polls=[pr(reviews=[review(7, "Two findings.")])]
+        + [pr(reviews=[review(7, "Two findings.")], threads=[thread(inline(7))])] * 2 + [pr(state="MERGED")],
+        checks=GREEN, args=["--until", "merged"]),
+        0, ["blocked by 1 unresolved thread on 1111111", "#1 merged:"], "ready on"),
     "until merged: its deadline passing exits 3": (dict(polls=[READY], checks=GREEN, args=["--until", "merged", *QUIET]),
                                                    3, ["deadline passed: no merge after"], "merged:"),
     "until merged: a restart keeps the deadline the first run set": (dict(

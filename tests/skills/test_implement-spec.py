@@ -57,9 +57,15 @@ ISSUES = {
     "508": ticket("Waits on another repo", body="Blocked by: acme/infra#7"),
     "599": ticket("Closed blocker", state="closed"),
     "600": ticket("Another spec's last ticket"),
+    "520": ticket("Spec with a ticket another repo's #501 blocks", labels=("spec",)),
+    "521": ticket("Natively blocked by acme/infra#501", blocked_by=["acme/infra#501"]),
+    "530": ticket("Spec whose ticket names this repo's #501 by owner/repo", labels=("spec",)),
+    "531": ticket("Blocked by this repo's #501, written out", body="Blocked by: ACME/ledger#501"),
 }
 ISSUES["500"]["sub_issues"] = [501, 502, 503, 504, 505, 506, 507, 508, "acme/infra#9", "acme/infra#8"]
 ISSUES["510"]["sub_issues"] = [501, 502, 506, 507]
+ISSUES["520"]["sub_issues"] = [501, 521]
+ISSUES["530"]["sub_issues"] = [501, 531]
 
 ws = pathlib.Path(tempfile.mkdtemp(prefix="dk-preflight-"))
 try:
@@ -68,7 +74,7 @@ try:
     shutil.copy(GH, ws / ".bin" / "gh")
     (ws / ".tracker" / "state.json").write_text(json.dumps(
         {"repo": "acme/ledger", "labels": [], "issues": ISSUES, "prs": [],
-         "other_repos": {"acme/infra": {"7": "open", "8": "closed", "9": "open"}}}))
+         "other_repos": {"acme/infra": {"7": "open", "8": "closed", "9": "open", "501": "open"}}}))
     (ws / "repo").mkdir()
     env = {"PATH": os.pathsep.join([str(ws / ".bin"), os.environ["PATH"]]), "HOME": str(ws),
            "GIT_CONFIG_GLOBAL": "/dev/null", "GH_REPO": "kaminski-dev/dk-agent-kit"}
@@ -114,6 +120,16 @@ try:
         lib.errors.append(f"implement-spec preflight: spec 510's frontier must be #501 and #507: {got}")
     if not re.search(r"#501", got.get("Waits inside the spec", {}).get(502, "")):
         lib.errors.append(f"implement-spec preflight: #502 must wait on #501 inside the spec: {got}")
+    # A native blocker in another repo is outside the spec, even when its number is a spec ticket's (#178).
+    code, got, err = preflight("520")
+    if code != 3 or not re.search(r"acme/infra#501.*outside the spec", got.get("Cannot finish", {}).get(521, "")):
+        lib.errors.append(f"implement-spec preflight: #521's native blocker acme/infra#501 is another repo's, so it "
+                          f"cannot finish; got {code}: {got}")
+    # A body blocker written as this repo's owner/repo#n, in any case, is a spec ticket (#178).
+    code, got, err = preflight("530")
+    if code != 0 or not re.search(r"#501", got.get("Waits inside the spec", {}).get(531, "")):
+        lib.errors.append(f"implement-spec preflight: #531's `Blocked by: ACME/ledger#501` is this repo's #501, "
+                          f"inside the spec; got {code}: {got} {err}")
     log = ws / ".tracker" / "repos.log"
     asked = {line.split("\t", 1)[0] for line in log.read_text().splitlines()} if log.exists() else set()
     if not asked or not asked <= {"acme/ledger", "acme/infra"}:

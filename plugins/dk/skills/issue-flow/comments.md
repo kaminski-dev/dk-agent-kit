@@ -2,7 +2,7 @@
 
 For any session about to post a comment or thread reply, on a PR or an issue, or to correct one it posted (`dk:issue-flow` step 6).
 
-**Comments.** You post under the maintainer's gh account, so every comment and thread reply you post, on a PR or an issue, in step 6 and step 7, opens with this attribution note, then a blank line, then the reply:
+You post under the maintainer's gh account, so every comment and thread reply you post, on a PR or an issue, in step 6 and step 7, opens with this attribution note, then a blank line, then the reply:
 
 ```md
 > [!NOTE]
