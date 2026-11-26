@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """dk-guard PreToolUse hook for Bash: runs the pushed checkout's .claude/gate.sh before a git push.
 
-Sessions start in the main checkout and work in a linked worktree, and agents
-commit before they stop, so the Stop gate, which gates uncommitted changes in
-the session's cwd, rarely sees the work. This hook gates the push instead. For
-each `git push` in the command it takes the directory the push runs in (the
-`cd` or `git -C` target, resolved as guard-bash.py resolves it) and runs that
-checkout's executable .claude/gate.sh from its root. A failing gate denies the
-push with the gate's last lines; a passing gate is silent.
+Agents work in a linked worktree and commit as they go, so the push is where
+the gate runs. For each `git push` in the command it takes the directory the
+push runs in (the `cd` or `git -C` target, resolved as guard-bash.py resolves
+it) and runs that checkout's executable .claude/gate.sh from its root through
+gate.py, the code behind `dk-gate`: when the gate already passed on the same
+tree, by hand or at an earlier push, the pass is reused and the gate does not
+run. A failing gate denies the push with the gate's last lines; a passing or
+cached gate is silent.
 
 Pushes of verify-assets/*, branch deletes and pushes guard-bash.py denies
 anyway run no gate. A checkout without a gate, or no checkout at all: nothing
@@ -69,7 +70,7 @@ def gated(rest, path, guard):
     return False
 
 
-def push_roots(cmd, cwd, guard, stop):
+def push_roots(cmd, cwd, guard, gate):
     """(the checkout roots of the command's gated pushes, in order, without repeats; whether a gated push runs in a
     directory known only at run time, or one that does not exist yet)."""
     roots, unknown = [], False
@@ -80,7 +81,7 @@ def push_roots(cmd, cwd, guard, stop):
         if path is None or not os.path.isdir(path):
             unknown = True
             continue
-        root = (stop.git(path, "rev-parse", "--show-toplevel") or "").strip()
+        root = gate.toplevel(path)
         if root and root not in roots:
             roots.append(root)
     return roots, unknown
@@ -92,17 +93,18 @@ def main():
     if "push" not in cmd:
         return
     guard = load("guard_bash", "guard-bash.py")
-    stop = load("stop_gate", "stop-gate.py")
+    gate = load("gate", "gate.py")
     cwd = data.get("cwd") or os.getcwd()
     notes = []
-    roots, unknown = push_roots(cmd, cwd, guard, stop)
+    roots, unknown = push_roots(cmd, cwd, guard, gate)
     for root in roots:
-        gate = os.path.join(root, stop.GATE)
-        if not os.access(gate, os.X_OK):
+        if not os.access(os.path.join(root, gate.GATE), os.X_OK):
             continue
-        failure, output = stop.run_gate(gate, root, TIMEOUT)
-        tail = stop.tail(output)
-        head = f"dk-guard: {stop.GATE} in {root} {failure or 'passed'}"
+        status, output, _ = gate.check(root, TIMEOUT)
+        failure = None if status.startswith("passed") or status == "cached" else status
+        tail = gate.tail(output)
+        head = f"dk-guard: {gate.GATE} in {root} " + ("passed on this tree before (cached)" if status == "cached"
+                                                        else status)
         timed_out = bool(failure) and failure.startswith("timed out")
         guard.log({"session": data.get("session_id"), "cwd": cwd, "decision": "deny" if failure and not timed_out
                    else "allow", "reason": "push gate: " + head, "command": cmd[:500]})
@@ -120,7 +122,7 @@ def main():
     if unknown:
         out["hookSpecificOutput"] = {
             "hookEventName": "PreToolUse",
-            "additionalContext": f"dk-guard: {stop.GATE} did not run for this push: its directory is known only at "
+            "additionalContext": f"dk-guard: {gate.GATE} did not run for this push: its directory is known only at "
                                  "run time, or does not exist before the call. Push in a call of its own with the "
                                  "worktree path written literally (`cd <worktree> && git push`), or run the gate "
                                  "there by hand."}

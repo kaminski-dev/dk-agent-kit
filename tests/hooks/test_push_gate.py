@@ -9,6 +9,7 @@ whether the worktree's gate ran.
 """
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -16,6 +17,10 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK = os.path.join(HERE, "..", "..", "plugins", "dk-guard", "scripts", "push-gate.py")
+DK_GATE = os.path.join(HERE, "..", "..", "plugins", "dk-guard", "bin", "dk-gate")
+# The gate cache of every run, so no case reads or writes the real one under ~/.claude. Cases differ in their
+# worktree paths, and the cache keys a pass on its worktree, so one directory serves them all.
+CACHE = tempfile.mkdtemp(prefix="dk-gate-cache-")
 
 PASS = "#!/bin/sh\necho 'lint ok'\ntouch .gate-ran\n"
 FAIL = ("#!/bin/sh\ntouch .gate-ran\necho 'first line, scrolled away'\n"
@@ -65,12 +70,18 @@ def run(cwd, command, env=None):
     payload = {"session_id": "test", "cwd": cwd, "hook_event_name": "PreToolUse", "tool_name": "Bash",
                "tool_input": {"command": command}}
     out = subprocess.run([sys.executable, "-I", HOOK], input=json.dumps(payload),
-                         capture_output=True, text=True, env={"PATH": os.environ["PATH"], **(env or {})})
+                         capture_output=True, text=True,
+                         env={"PATH": os.environ["PATH"], "DK_GATE_CACHE": CACHE, **(env or {})})
     return out.returncode, json.loads(out.stdout) if out.stdout.strip() else None, out.stderr
 
 
-def gate_ran(repo):
-    return os.path.exists(os.path.join(repo, ".gate-ran"))
+def gate_ran(repo, forget=False):
+    """Whether the repo's gate ran; with forget, clears the record so the next check sees only later runs."""
+    marker = os.path.join(repo, ".gate-ran")
+    ran = os.path.exists(marker)
+    if ran and forget:
+        os.remove(marker)
+    return ran
 
 
 def within_a_budget(attempt):
@@ -99,6 +110,31 @@ def case_passing_gate_in_the_pushed_worktree_allows(root):
     main, wt = make_checkout(root, "passing", PASS)
     assert run(main, f"cd {wt} && git push -u origin feat/passing") == (0, None, "")
     assert gate_ran(wt)
+
+
+def case_second_push_of_an_unchanged_tree_reuses_the_pass(root):
+    main, wt = make_checkout(root, "unchanged", PASS)
+    assert run(main, f"cd {wt} && git push") == (0, None, "") and gate_ran(wt, forget=True)
+    assert run(main, f"cd {wt} && git push") == (0, None, "")
+    assert not gate_ran(wt), "the second push ran the gate again on the same tree"
+    with open(os.path.join(wt, "src.txt"), "w") as f:
+        f.write("new\n")
+    assert run(main, f"cd {wt} && git push") == (0, None, "") and gate_ran(wt), "a changed tree must be gated"
+
+
+def case_push_after_a_hand_run_of_dk_gate_reuses_its_pass(root):
+    main, wt = make_checkout(root, "by-hand", PASS)
+    hand = subprocess.run([DK_GATE], cwd=wt, capture_output=True, text=True,
+                          env={"PATH": os.environ["PATH"], "DK_GATE_CACHE": CACHE})
+    assert hand.returncode == 0 and gate_ran(wt, forget=True), hand
+    assert run(main, f"cd {wt} && git push") == (0, None, "")
+    assert not gate_ran(wt), "the push ran the gate again after a hand pass on the same tree"
+
+
+def case_failing_gate_runs_again_on_the_next_push(root):
+    main, wt = make_checkout(root, "fails-twice", FAIL)
+    assert denial(run(main, f"cd {wt} && git push")[1]) and gate_ran(wt, forget=True)
+    assert denial(run(main, f"cd {wt} && git push")[1]) and gate_ran(wt)
 
 
 def case_git_dash_c_push_runs_the_worktree_gate(root):
@@ -221,6 +257,7 @@ def main():
             except Exception as e:
                 failed += 1
                 print(f"FAIL {case.__name__[5:]}: {e!r}")
+    shutil.rmtree(CACHE, ignore_errors=True)
     print(f"\n{len(CASES) - failed}/{len(CASES)} passed")
     sys.exit(1 if failed else 0)
 
