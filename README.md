@@ -17,7 +17,7 @@ Claude Code only for now. Codex and other hosts will follow.
 | `plugins/dk` | The skills, called as `/dk:<name>`. You start: `triage`, `implement`, `implement-spec`, `batch-pr`, `to-spec`, `to-tickets`, `research-codebase`, `grill-with-docs`, `improve-codebase-architecture`, `teach`, `prototype`, `retro`, `verify-doc-check`, `handoff`, `modernize`, `setup`. Other skills call: `issue-flow`, `verify`, `diagnosing-bugs`, `post-deploy-check`, `tdd`, `code-review`, `pr`, `blast-radius`, `research`, `grilling`, `domain-modeling`, `codebase-design`, `writing-for-agents`. Agents: the read-only reviewers `reviewer` and `comment-reviewer`, and HumanLayer's `codebase-locator`, `codebase-analyzer`, `codebase-pattern-finder`. Each repo supplies its facts in adapter files that `/dk:setup` writes. |
 | `upstream/` | `UPSTREAM.md` records the commit and changes for every adapted file; `sync.sh` shows what mattpocock/skills, pstack, HumanLayer and tstack changed since in those files. |
 | `settings/user.fragment.json` | What a plugin cannot ship: permission allow (the sanctioned pushes), deny and ask rules, and `autoMode.hard_deny` lines. Merged into `~/.claude/settings.json` by `bootstrap.sh`. |
-| `bootstrap.sh` | Shows the settings diff, the zsh options block for `~/.zshenv`, the zsh alias-name list for `dk-guard` and the `--isolated` change to the `playwright` MCP server; `--apply` backs both files up, writes them and the list, installs the plugins from this checkout and re-registers the server. |
+| `bootstrap.sh` | Stops on a user skill in `~/.claude/skills` named like a dk skill, naming the path to remove. Otherwise shows the settings diff, the zsh options block for `~/.zshenv`, the zsh alias-name list for `dk-guard` and the `--isolated` change to the `playwright` MCP server; `--apply` backs both files up, writes them and the list, installs the plugins from this checkout and re-registers the server. |
 | `tests/` | The guard's case matrix (taken from real incidents), fixture repos for the Stop gate, the push gate and the session hooks, a `dk-pg` run against Docker, a `dk-gc` run against fixture repos with stubbed `gh` and `docker`, a `dk-assets` run against a local origin, a bootstrap test with a stubbed `claude` and `zsh`, an `upstream/sync.sh` run against fixture upstream repos, a check of the skill-eval fixtures, a run of the `dk:retro` extraction script against fixture transcripts, runs of the `dk:batch-pr` collection and review scripts against a fixture repo with the stubbed `gh` and `coderabbit`, a run of `dk:issue-flow`'s `pr-wait` watcher against a stubbed `gh`, fixtures for the fork guard, and `replay_history.py` for checking the guard against past transcripts. |
 | `THIRD_PARTY/` | Licenses and commits of the projects material is adapted from. |
 
@@ -196,6 +196,15 @@ bootstrap merges that file last, and it never enters this repo.
 
 Merge rules: objects merge key by key, arrays gain the entries they lack and
 nothing is removed, scalars from the fragment win. A second run is a no-op.
+
+A user skill named like a dk skill wins the bare name: `/retro` ran a stale
+copy in `~/.claude/skills/retro` in place of `dk:retro`. Before it shows or
+writes anything, bootstrap looks in `~/.claude/skills`
+(`$CLAUDE_CONFIG_DIR/skills` when set) for a directory or link, followed to
+its target, that holds a `SKILL.md` and has the name of a skill in
+`plugins/dk/skills`. It lists each one, with a link's target and the `rm`
+that clears it, and exits 1. Remove those paths (a link alone, not its
+target, which other tools may still use), then rerun bootstrap.
 
 The Bash tool runs zsh, and agents write bash. Bootstrap appends a marked
 block to `~/.zshenv` (`$ZDOTDIR/.zshenv` when set) with `setopt NO_NOMATCH`
