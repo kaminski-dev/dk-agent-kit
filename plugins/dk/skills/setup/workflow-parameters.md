@@ -24,4 +24,4 @@ A change that touches one of these paths is risky at any size. Each bullet's bac
 - Routes and API contracts: `*routes*`, `*router*`, `api/*`, `*/api/*`, `*openapi*`, `*swagger*`, `*.proto`, `*graphql*`
 - Mail, SMS and push: `*mail*`, `*sms*`, `*push*`, `*notif*`
 - CI and Dockerfiles: `.github/workflows/*`, `.gitlab-ci*`, `*dockerfile*`, `*compose.y*ml`
-- Lockfiles: `*.lock`, `*-lock.json`, `*-lock.yaml`, `go.sum`
+- Lockfiles: `*.lock`, `*-lock.json`, `*-lock.yaml`, `go.sum`, `*/go.sum`

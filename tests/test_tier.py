@@ -197,7 +197,7 @@ if section:
     for path in ("db/migrations/0003_users.sql", "prisma/schema.prisma", "internal/auth/session.go",
                  "src/billing/invoice.ts", "src/payments/stripe.ts", "api/routes/users.ts", "openapi.yaml",
                  "src/mail/send.ts", "src/sms/twilio.ts", "src/push/fcm.ts", ".github/workflows/ci.yml",
-                 "Dockerfile", "api/Dockerfile.prod", "package-lock.json", "pnpm-lock.yaml", "go.sum",
+                 "Dockerfile", "api/Dockerfile.prod", "package-lock.json", "pnpm-lock.yaml", "go.sum", "tools/lint/go.sum",
                  "uv.lock"):
         d = repo(workflow="# Workflow\n\n" + section.group(0))
         write(d, path, 1)
