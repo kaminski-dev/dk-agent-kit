@@ -321,6 +321,7 @@
   {"why": "#169 review: input given to a group, a subshell or a loop reaches the cat inside it", "cmd": "{ cat; } < notes.md", "expect": "allow"},
   {"cmd": "(cat) < notes.md", "expect": "allow"},
   {"cmd": "echo a | (cat)", "expect": "allow"},
+  {"cmd": "echo y | (dk-gc --workspace)", "expect": "ask"},
   {"cmd": "while read l; do cat; done < f", "expect": "allow"},
   {"cmd": "if true; then cat; fi <<< hi", "expect": "allow"},
   {"cmd": "(cat); echo done", "expect": "deny"},

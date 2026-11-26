@@ -100,10 +100,10 @@ def main():
             sys.exit(f"{name} cannot fast-forward to origin/{DEFAULT}: it holds {ahead} commit(s) origin/{DEFAULT} "
                      f"lacks. Has the batch PR merged, and as a merge commit? Nothing was changed.")
         tree = trees.get(ref[len("refs/heads/"):]) if ref.startswith("refs/heads/") else None
-        if tree and git("status", "--porcelain", "--untracked-files=no", cwd=tree).stdout.strip():
-            sys.exit(f"{name} is checked out in {tree} with uncommitted changes, so it cannot fast-forward. "
-                     "Nothing was changed.")
         if tree:
+            if git("status", "--porcelain", "--untracked-files=no", cwd=tree).stdout.strip():
+                sys.exit(f"{name} is checked out in {tree} with uncommitted changes, so it cannot fast-forward. "
+                         "Nothing was changed.")
             added = set(git("diff", "-z", "--name-only", "--diff-filter=A", old, target).stdout.split("\0"))
             untracked = git("ls-files", "-z", "--others", "--exclude-standard", cwd=tree).stdout.split("\0")
             if in_the_way := sorted(added.intersection(untracked) - {""}):
