@@ -76,7 +76,7 @@ CHECKS = [
                                   "docs/agents/issue-tracker.md"]),
     Check("tests/test_retro_extract.py", [SKILLS + "retro/extract.py"], fast=True),
     Check("tests/test_pr_wait.py", [SKILLS + "issue-flow/pr-wait"]),
-    Check("tests/test_repo_owner.py", [SKILLS + "issue-flow/repo-owner", "plugins/dk/evals/_fixture/bin/gh"], fast=True),
+    Check("tests/test_repo_owner.py", [SKILLS + "issue-flow/repo-owner", "plugins/dk/evals/_fixture/bin/gh"]),
     Check("tests/test_batch_pr.py", [SKILLS + "batch-pr/*.py", "plugins/dk/evals/_fixture/bin/gh"]),
     Check("tests/test_run.py", ["tests/run.py", "AGENTS.md", "README.md", "docs/agents/workflow.md",
                                 ".github/workflows/test.yml"], fast=True),
