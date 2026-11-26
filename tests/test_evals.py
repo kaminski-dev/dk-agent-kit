@@ -580,8 +580,8 @@ check("388 review: the id grader exempts the id-less also and PR must carry line
       "`also:`" in ids and "`PR must carry:`" in ids, ids)
 check("re-review: it replays the #388 correctness fixture",
       (EVALS / "code-review-rereview" / "scaffold.sh").read_text() == (EVALS / "code-review-correctness" / "scaffold.sh").read_text())
-check("re-review: round 2 is Correctness and at most Spec, and Comments does not rerun",
-      reviewer_counts("code-review-rereview") == {"second-round-at-most-two-reviewers": (4, 5), "one-comments-reviewer": (1, 1),
+check("re-review: a second round runs, and Comments does not rerun",
+      reviewer_counts("code-review-rereview") == {"a-second-round": (4, None), "one-comments-reviewer": (1, 1),
                                                   "second-round-on-fix-diff": (1, None)},
       reviewer_counts("code-review-rereview"))
 fix_diff = input_matches("code-review-rereview").get("second-round-on-fix-diff", "(?!)")

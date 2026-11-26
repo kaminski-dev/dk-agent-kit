@@ -6,8 +6,9 @@ description: >
   changes behaviour code. dk:code-review then runs a second round on the fix diff
   (`git diff <round 1's HEAD>`): Correctness, plus Spec only when Spec raised a blocker or should
   whose fix changed behaviour code (it may flag `send-mail` stopping at the first failed send),
-  never Standards or Comments, whose findings here are nits or doc fixes; and it stops within its
-  two-round budget (#172).
+  never Standards or Comments, whose findings here are nits or doc fixes (#172). The fixture's
+  two hosts share a lease, so the budget's concurrency extension may add a third round while a
+  should stays open; any such round follows the same rule.
 tags: [code-review]
 runs: 2
 context:
@@ -17,12 +18,11 @@ execution:
   timeout_seconds: 2400
   allowed_tools: [Read, Glob, Grep, Skill, Agent, TodoWrite, Bash, Write, Edit]
 graders:
-  - name: second-round-at-most-two-reviewers
+  - name: a-second-round
     type: tool_used
     tool: Agent
     input_match: '"subagent_type"\s*:\s*"dk:reviewer"'
     min: 4
-    max: 5
   - name: one-comments-reviewer
     type: tool_used
     tool: Agent
@@ -41,7 +41,10 @@ graders:
       Correctness, Comments), and round 2 after a fix to the crash window in `Outbox.send_next`
       (the provider call between the claim's commit and the sent mark's, or the missing idempotency
       key). Round 2 runs Correctness, plus Spec only when the report shows a Spec blocker or should
-      whose fix changed behaviour code (code outside tests, comments and docs). PASS when it reports
-      exactly two rounds and round 2 ran Correctness and no axis beyond that rule; FAIL when it
-      reports one round or three or more, when round 2 left out Correctness, or when it also ran
-      Standards or Comments, or Spec with no such Spec finding.
+      whose fix changed behaviour code (code outside tests, comments and docs). A third or later
+      round is allowed only under the budget's extension for concurrency, which the report names,
+      with a should open after the round before it, and follows the same rule. PASS when it reports
+      two or more rounds and every round after the first ran Correctness and no axis beyond that
+      rule; FAIL when it reports one round, when a later round left out Correctness or also ran
+      Standards or Comments, or Spec with no such Spec finding, or when a round past the second
+      names no open should and no extension.
