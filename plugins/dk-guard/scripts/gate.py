@@ -22,10 +22,24 @@ $DK_GATE_CACHE when set (tests), else the dk-guard plugin's data directory
 $CLAUDE_CONFIG_DIR when set). A hand run does not get the hooks'
 CLAUDE_PLUGIN_DATA, so both sides use this fixed path.
 
+At most DK_GATE_SLOTS gates (default 2) run at once on the machine, hand
+runs and push runs alike. A run that needs the gate takes a slot first: an
+exclusive flock on one of the files slot-0.lock, slot-1.lock, ... in the
+cache's slots/ directory, which the kernel releases when the holder dies, so
+a killed run leaves no stale slot. With every slot held it waits up to
+DK_GATE_WAIT seconds (default 240), then gives up and says the gates are busy;
+the gate does not run, and nothing counts as passed. A cached pass takes no
+slot. The gate runs with DK_GATE_WORKERS (default 4: two gates on a 12-core
+machine, with cores left for the sessions) in its environment, for the gate
+script to pass to its tools (`go test -p`, `vitest --maxWorkers`, ...); a gate
+that ignores it runs as before.
+
 A hand run prints the gate's output as it comes and exits with the gate's
-code; a checkout without an executable gate exits 0 and says so.
+code, 3 when the gates stay busy; a checkout without an executable gate exits
+0 and says so.
 """
 import datetime
+import fcntl
 import hashlib
 import json
 import os
@@ -42,6 +56,16 @@ BASE_REFS = ("origin/pre-main", "origin/main", "origin/master")
 LOCKFILES = ("bun.lock", "bun.lockb", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "go.sum", "Cargo.lock",
              "uv.lock", "poetry.lock", "Gemfile.lock", "composer.lock")
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+BUSY = "busy"
+
+
+def setting(name, default):
+    """A positive whole number from the environment, else `default`."""
+    try:
+        value = int(os.environ.get(name, ""))
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 
 def git(cwd, *args):
@@ -65,6 +89,49 @@ def cache_dir():
         return os.environ["DK_GATE_CACHE"]
     config = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
     return os.path.join(config, "plugins", "data", "dk-guard-dk-agent-kit", "gate-cache")
+
+
+def slots_dir():
+    return os.path.join(cache_dir(), "slots")
+
+
+def take_slot(root, wait, on_wait=None):
+    """Hold one of the machine's gate slots: returns (open slot file or None, the roots that held the slots when
+    none freed within `wait` seconds). The slot is held while the file stays open. A slot file that cannot be made
+    is no reason to block a gate: the result is then (None, None) and the gate runs uncapped."""
+    count = setting("DK_GATE_SLOTS", 2)
+    try:
+        os.makedirs(slots_dir(), exist_ok=True)
+        files = [open(os.path.join(slots_dir(), f"slot-{i}.lock"), "a+") for i in range(count)]
+    except OSError:
+        return None, None
+    deadline, told = time.monotonic() + wait, False
+    while True:
+        for f in files:
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                continue
+            for other in files:
+                if other is not f:
+                    other.close()
+            f.seek(0)
+            f.truncate()
+            f.write(f"{os.getpid()} {root}\n")
+            f.flush()
+            return f, None
+        holders = []
+        for f in files:
+            f.seek(0)
+            holders.append(f.read().strip().partition(" ")[2] or "?")
+        if time.monotonic() >= deadline:
+            for f in files:
+                f.close()
+            return None, holders
+        if on_wait and not told:
+            on_wait(holders)
+            told = True
+        time.sleep(0.2)
 
 
 def entry_path(root):
@@ -167,8 +234,9 @@ def run_gate(gate, root, timeout=None, capture=True):
     """Run the gate in its own process group; return (failure or None, combined output).
 
     With capture=False the output goes to this process's stdout as it comes and the returned output is empty."""
+    env = {**os.environ, "DK_GATE_WORKERS": str(setting("DK_GATE_WORKERS", 4))}
     try:
-        proc = subprocess.Popen([gate], cwd=root, stdin=subprocess.DEVNULL,
+        proc = subprocess.Popen([gate], cwd=root, stdin=subprocess.DEVNULL, env=env,
                                 stdout=subprocess.PIPE if capture else None,
                                 stderr=subprocess.STDOUT if capture else None, start_new_session=capture)
     except OSError as e:
@@ -192,23 +260,38 @@ def run_gate(gate, root, timeout=None, capture=True):
     return failure, (out or b"").decode("utf-8", errors="replace")
 
 
-def check(root, timeout=None, capture=True, fresh=False):
-    """Gate `root`: returns (status, output, entry). status is "cached", "passed", "passed, not cached" or the
-    failure ("failed (exit 1)", "timed out after 540 s", ...); entry is the cached pass for "cached"."""
+def check(root, timeout=None, capture=True, fresh=False, wait=None, on_wait=None):
+    """Gate `root`: returns (status, output, entry). status is "cached", "passed", "passed, not cached", BUSY or
+    the failure ("failed (exit 1)", "timed out after 540 s", ...); entry is the cached pass for "cached", and for
+    BUSY the roots whose gates held the slots. `timeout` covers the wait for a slot and the run together; the wait
+    is at most `wait` seconds (default DK_GATE_WAIT), and on_wait(holders) is called once when it starts."""
     gate = os.path.join(root, GATE)
-    before = key(root)
     if not fresh:
-        entry = cached_pass(root, before)
+        entry = cached_pass(root, key(root))
         if entry:
             return "cached", "", entry
     start = time.monotonic()
-    failure, output = run_gate(gate, root, timeout, capture)
-    if failure:
-        return failure, output, None
-    after = key(root)
-    if before is not None and after == before and store_pass(root, before, time.monotonic() - start):
-        return "passed", output, None
-    return "passed, not cached", output, None
+    slot, holders = take_slot(root, setting("DK_GATE_WAIT", 240) if wait is None else wait, on_wait)
+    if holders is not None:
+        return BUSY, "", holders
+    try:
+        before = key(root)  # the tree may have changed during the wait, or a gate in the queue passed it
+        if not fresh:
+            entry = cached_pass(root, before)
+            if entry:
+                return "cached", "", entry
+        run_start = time.monotonic()
+        left = None if timeout is None else max(1, round(timeout - (run_start - start)))
+        failure, output = run_gate(gate, root, left, capture)
+        if failure:
+            return failure, output, None
+        after = key(root)
+        if before is not None and after == before and store_pass(root, before, time.monotonic() - run_start):
+            return "passed", output, None
+        return "passed, not cached", output, None
+    finally:
+        if slot:
+            slot.close()
 
 
 def main(argv):
@@ -224,8 +307,16 @@ def main(argv):
         print(f"dk-gate: {root} has no executable {GATE}; nothing to run")
         return 0
     sys.stdout.flush()
-    status, _, entry = check(root, capture=False, fresh="--fresh" in argv)
+
+    def on_wait(holders):
+        print(f"dk-gate: {len(holders)} gates are running ({', '.join(holders)}); waiting for a slot.", flush=True)
+
+    status, _, entry = check(root, capture=False, fresh="--fresh" in argv, on_wait=on_wait)
     head = f"dk-gate: {GATE} in {root}"
+    if status == BUSY:
+        print(f"dk-gate: gates are busy ({', '.join(entry)} held every slot), so {GATE} in {root} did not run. "
+              "Run dk-gate again in a minute.")
+        return 3
     if status == "cached":
         print(f"{head} passed at {entry['passed_at']} on this same tree, so it did not run again (cached). "
               "`dk-gate --fresh` runs it anyway.")

@@ -221,7 +221,8 @@ def case_a_pass_drops_the_entries_of_worktrees_that_are_gone(root):
     run(kept, cache=cache)
     subprocess.run(["rm", "-rf", gone], check=True)
     run(make_repo(root, "later"), cache=cache)
-    assert len(os.listdir(cache)) == 2, os.listdir(cache)
+    entries = [n for n in os.listdir(cache) if n.endswith(".json")]
+    assert len(entries) == 2, os.listdir(cache)
     assert CACHED in run(kept, cache=cache)[1]
 
 
