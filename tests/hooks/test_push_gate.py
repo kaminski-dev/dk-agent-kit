@@ -14,6 +14,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOOK = os.path.join(HERE, "..", "..", "plugins", "dk-guard", "scripts", "push-gate.py")
@@ -230,6 +231,30 @@ def case_gate_that_hangs_lets_the_push_through_and_says_so(root):
         assert "starting tests" in message, out
         return True
     within_a_budget(attempt)
+
+
+def case_push_that_gets_no_gate_slot_is_denied_as_busy(root):
+    flag = os.path.join(root, "busy-holder.started")
+    _, holder = make_checkout(root, "busy-holder", f"#!/bin/sh\necho $$ > {flag}\nexec sleep 30\n")
+    env = {"DK_GATE_SLOTS": "1", "DK_GATE_WAIT": "1"}
+    hand = subprocess.Popen([DK_GATE], cwd=holder, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            env={"PATH": os.environ["PATH"], "DK_GATE_CACHE": CACHE, **env})
+    try:
+        deadline = time.monotonic() + 20
+        while not os.path.exists(flag):
+            assert time.monotonic() < deadline, "the holding gate never started"
+            time.sleep(0.05)
+        main, wt = make_checkout(root, "busy", PASS)
+        code, out, err = run(main, f"cd {wt} && git push", env=env)
+        reason = denial(out)
+        assert code == 0 and reason, (code, out, err)
+        assert "gates are busy" in reason and holder in reason and "push again" in reason, reason
+        assert "Fix the failure" not in reason and not gate_ran(wt), reason
+    finally:
+        hand.kill()
+        with open(flag) as f:
+            os.kill(int(f.read()), 9)
+        hand.wait()
 
 
 def case_decisions_go_to_the_guard_log(root):
