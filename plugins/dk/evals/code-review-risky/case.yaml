@@ -29,7 +29,7 @@ graders:
   - name: reports-risky-tier
     type: llm
     criteria: >
-      The final message states the tier as risky because `ledger/audit_store.py` matches a risk
-      path (the tier script's line), and reports all four axes, Standards, Spec, Correctness and
-      Comments, each with findings or as clean. PASS when both hold; FAIL when the tier is missing or
-      not risky, or an axis is missing or reported as skipped.
+      The final message names the tier as risky and gives the reason, `ledger/audit_store.py` being on
+      the repo's risk-path list, in the tier script's words or its own. It reports all four axes,
+      Standards, Spec, Correctness and Comments, each with findings or as clean. PASS when both hold;
+      FAIL when the tier is missing or not risky, or an axis is missing or reported as skipped.

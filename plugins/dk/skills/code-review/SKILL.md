@@ -114,7 +114,7 @@ If the spec is missing, skip the Spec sub-agent and note this in the final repor
 
 ### 5. Aggregate
 
-Present the reports under `## Standards`, `## Spec`, `## Correctness` and `## Comments` headings, verbatim or lightly cleaned; an axis the tier or a missing comment line left out keeps its heading, with one line on why. Do **not** merge or rerank findings, because the axes are deliberately separate (see _Why separate axes_).
+Present the reports under `## Standards`, `## Spec`, `## Correctness` and `## Comments` headings, verbatim or lightly cleaned; an axis left out, by the tier or by a diff that adds no comment, keeps its heading, with one line on why. Do **not** merge or rerank findings, because the axes are deliberately separate (see _Why separate axes_).
 
 End with the tier line and a one-line summary: findings per axis and severity, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes: that's the reranking the separation exists to prevent.
 
