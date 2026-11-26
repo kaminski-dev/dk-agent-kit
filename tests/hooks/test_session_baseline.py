@@ -154,7 +154,7 @@ def case_five_linked_worktrees_point_to_dk_gc(root):
     wt = add_worktrees(make_repo(root, "five"), 5)
     code, out, err = run(wt, make_stubs(root, "five"))
     assert code == 0, (code, err)
-    assert "5 linked worktrees; dk-gc --dry-run lists the finished ones" in out, out
+    assert "5 linked worktrees; dk-gc --dry-run lists this repo's finished ones" in out, out
 
 
 def case_four_linked_worktrees_say_nothing_about_them(root):
