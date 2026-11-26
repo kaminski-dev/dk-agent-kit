@@ -22,6 +22,28 @@ private=${DK_PRIVATE_SETTINGS:-$HOME/.config/dk-agent-kit/private.json}
 plugins=(dk-guard dk)
 
 command -v jq >/dev/null || { echo "bootstrap: jq is required" >&2; exit 1; }
+
+# A user skill named like a dk skill wins its bare name: /retro ran a stale
+# user copy in place of dk:retro. A directory or link counts when it holds a
+# SKILL.md (links followed); the run stops before anything is written.
+user_skills=${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills
+shadows=()
+for skill in "$repo"/plugins/dk/skills/*/SKILL.md; do
+  name=$(basename "$(dirname "$skill")")
+  p=$user_skills/$name
+  [[ -f "$p/SKILL.md" ]] || continue
+  printf -v q '%q' "$p"
+  if [[ -L "$p" ]]; then
+    shadows+=("$p -> $(readlink "$p")  (rm $q)")
+  else
+    shadows+=("$p  (rm -r $q)")
+  fi
+done
+if ((${#shadows[@]})); then
+  echo "bootstrap: these user skills are named like dk skills and shadow them; remove them, then rerun:" >&2
+  printf '  %s\n' "${shadows[@]}" >&2
+  exit 1
+fi
 # a missing settings file merges as {}; only --apply writes it
 current='{}'
 [[ -f "$settings" ]] && current=$(cat "$settings")
