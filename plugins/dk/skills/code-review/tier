@@ -52,8 +52,7 @@ def risk_globs(root):
     return globs or None
 
 
-def measure(root, merge_base):
-    """Changed lines and the touched paths, committed and uncommitted, since merge_base."""
+def changed_lines_and_paths(root, merge_base):
     lines, paths = 0, set()
     numstat = git("diff", "--numstat", "--no-renames", "-z", merge_base, "--").stdout
     for record in filter(None, numstat.split("\0")):
@@ -79,7 +78,7 @@ def main(argv):
     root = pathlib.Path(git("rev-parse", "--show-toplevel").stdout.strip())
     os.chdir(root)
     merge_base = git("merge-base", base, "HEAD").stdout.strip()
-    lines, paths = measure(root, merge_base)
+    lines, paths = changed_lines_and_paths(root, merge_base)
     size = f"{lines} changed lines in {len(paths)} files"
     globs = risk_globs(root)
     for path in paths:
