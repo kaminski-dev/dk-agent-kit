@@ -11,7 +11,7 @@ function named like one of the user's zsh aliases) or blocked the session (a CI
 or merge wait outside run_in_background) or dropped the issue body (`gh issue
 view --comments`) or a dk:verify run's evidence (`rm` inside a verify.XXXXXX run
 directory) or ran a Markdown code span (a backtick span in an unquoted here-doc
-body), ask for
+body) or hung on stdin (a `cat` with no file and no input), ask for
 rewriting the shared pre-main branch, a push to the current branch when the
 guard cannot tell which branch that is, or answering dk-gc's question for the
 human across the workspace (--workspace with --yes or piped input), and
@@ -1725,9 +1725,9 @@ VERIFY_RM = ("deny", "This deletes inside a dk:verify run directory (verify.XXXX
              "while the earlier runs stay as evidence. The control worktree goes with `git worktree remove`.")
 
 
-def rm_operands(rm_words):
+def operands(words):
     options = True
-    for w in rm_words[1:]:
+    for w in words[1:]:
         if options and w == "--":
             options = False
         elif not (options and w.startswith("-") and len(w) > 1):
@@ -1736,7 +1736,7 @@ def rm_operands(rm_words):
 
 def removes_run(words, walk, seg):
     return bool(words) and os.path.basename(words[0]) == "rm" \
-        and any(RUN_DIR.search(walk.guess(t, seg)) for t in rm_operands(words))
+        and any(RUN_DIR.search(walk.guess(t, seg)) for t in operands(words))
 
 
 def verify_rm_words(segs, cwd):
@@ -1757,6 +1757,29 @@ def check_verify_rm(cmd, cwd):
                 and removes_run(tokens, *raw_walk(cwd, [move for move in moves if move[0] < offset])):
             return [VERIFY_RM]
     return []
+
+
+STDIN_CAT = ("deny", "This cat has no file to read and nothing piped, redirected or here-doc'd into it, so it waits on "
+             "stdin until the call times out. Write the file with the Write tool, or give cat its text as a "
+             "here-doc: `cat > <file> <<'EOF'`, the text, then `EOF` on a line of its own.")
+INPUT_REDIRECTS = {"<", "<<", "<<-", "<<<", "<>", "<&"}
+# a cat whose words after it are only options and output redirections, at the start of a command a pipe does not feed
+RAW_STDIN_CAT = re.compile(r"(?:^|[;\n(]|(?<!\|)&|\|\||\$\(|\b(?:then|do|else)\s)\s*" + PREFIX + r"(?:[\w./~-]*/)?(cat)"
+                           r"(?:\s+(?:-\w*|\d*>>?[&|!]?\s*[^\s;&|<>()]+|&>>?\s*[^\s;&|<>()]+))*\s*(?=$|[;&|\n)`])")
+
+
+def reads_stdin(seg):
+    wrappers, words = command(seg)
+    return bool(words) and os.path.basename(words[0]) == "cat" and "xargs" not in wrappers and not seg.piped_in \
+        and not any(op in INPUT_REDIRECTS for op, _ in seg.redirects) and all(w == "-" for w in operands(words))
+
+
+def check_stdin_cat(cmd):
+    return [STDIN_CAT] if any(not quoted_text(cmd, m.start(1)) for m in RAW_STDIN_CAT.finditer(cmd)) else []
+
+
+def stdin_cat_words(segs):
+    return [STDIN_CAT] if any(map(reads_stdin, segs)) else []
 
 
 UNESCAPED_BACKTICK = re.compile(r"(?<!\\)(?:\\\\)*`(?:([^`]*)`)?")
@@ -1787,12 +1810,12 @@ def decide(cmd, cwd, background=False):
         findings = check_docker(raw) + check_git(raw, cwd) + check_credentials(raw) + check_gh(raw) \
             + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw) + check_waits(raw) \
             + check_modifiers(raw) + check_command_variable(raw) + check_function_names(raw) \
-            + check_verify_rm(raw, cwd) + check_heredoc_backticks(cmd)
+            + check_verify_rm(raw, cwd) + check_heredoc_backticks(cmd) + check_stdin_cat(raw)
     else:
         findings = docker_words(segs) + git_words(segs, cwd) + credential_words(segs) + gh_words(segs) \
             + postgres_words(segs) + dk_gc_words(segs) + zsh_name_words(segs) + wait_words(segs) \
             + modifier_words(segs) + command_variable_words(segs) + function_name_words(segs) \
-            + verify_rm_words(segs, cwd) + heredoc_backtick_words(segs)
+            + verify_rm_words(segs, cwd) + heredoc_backtick_words(segs) + stdin_cat_words(segs)
     findings += check_worktree_loop(cmd) if segs is None else worktree_loop_words(segs)
     if background:  # the same wait started with run_in_background blocks nothing
         findings = [f for f in findings if f is not FOREGROUND_WAIT]
