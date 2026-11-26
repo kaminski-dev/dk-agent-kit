@@ -1,6 +1,6 @@
 # dk-agent-kit
 
-A Claude Code marketplace with two plugins: `dk-guard` (hooks and the `dk-gate`, `dk-pg`, `dk-gc` and `dk-assets` commands, always on) and `dk` (skills and agents). `README.md` covers install and layout.
+A Claude Code marketplace with two plugins: `dk-guard` (hooks and the `dk-gate`, `dk-pg`, `dk-gc`, `dk-assets` and `dk-comment-edit` commands, always on) and `dk` (skills and agents). `README.md` covers install and layout.
 
 ## Rules
 
