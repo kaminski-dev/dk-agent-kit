@@ -247,6 +247,10 @@ for what, pattern in (
 ):
     if not re.search(pattern, merge_watch, re.S):
         errors.append(f"skills/issue-flow: step 6's **Watch to the merge.** paragraph does not name {what}")
+# A subagent's watcher would hold the PR's lock past its run, so the orchestrator's could not start (#176).
+if not re.search(r"watch to the merge \(\[watch\.md\]\(watch\.md\)\)[^.]*subagent leaves it to its orchestrator", ref["ready-gate"]):
+    errors.append("skills/issue-flow/ready-gate.md: the gate's last line must leave a subagent's watch to the merge "
+                  "to its orchestrator")
 for line in ("deadline passed: no merge after", '"merged"'):
     if line not in watcher:
         errors.append(f"skills/issue-flow/pr-wait: the watcher lacks `{line}`, which step 6's **Watch to the merge.** names")

@@ -18,4 +18,4 @@ For the session that hands a PR over to the maintainer, before its handoff (`dk:
 
 **Customer reply.** When the change is one the customer sees, post the reply on the issue once the gate passes, before the handoff: the review loop is over by then, so the reply describes what merges and stays as posted. Write it as `workflow.md` describes. A handoff that ends **Blocked** posts none yet.
 
-Then start the watch to the merge ([watch.md](watch.md)) as you send the handoff.
+Then the watch to the merge ([watch.md](watch.md)) starts as the handoff goes out: you start it for your own PR, and a subagent leaves it to its orchestrator, which starts it as it hands the subagent's PR over.
