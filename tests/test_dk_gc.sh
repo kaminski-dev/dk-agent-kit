@@ -293,6 +293,26 @@ else
   echo "dk-gc: skipped the ignored name that is not UTF-8: this file system refuses it"
 fi
 
+# Without --workspace, dk-gc cleans the repo it runs in: the same app lines as the workspace run, and
+# nothing of another repo or of a database another checkout started. A worktree's checkout counts as its repo.
+group() { awk -v head="$1" '/^[^ ]/ { on = index($0, head) == 1 } on && /^  /' <<<"$2"; }
+wide=$("$dkgc" --dry-run --workspace "$ws")
+for dir in "$app" "$ws/app-pre-main"; do
+  out=$(cd "$dir" && "$dkgc" --dry-run) || fail "a dry run in $dir failed: $out"
+  [[ "$(group "app (acme/app)" "$out")" == "$(group "app (acme/app)" "$wide")" ]] \
+    || fail "a dry run in $dir listed other app lines than the workspace run:"$'\n'"$out"
+  lacks "$out" "other (acme/other)"
+  lacks "$out" "dk-pg-gone-9"
+  has "$out" "Dry run: nothing changed."
+done
+[[ "$(state)" == "$before" ]] || fail "a dry run in one repo changed something"
+# Outside any repo it stops and names the flag for the whole workspace.
+out=$(cd "$ws" && "$dkgc" --dry-run 2>&1) && fail "a dry run outside any repo exited 0"
+has "$out" "--workspace"
+# --workspace with no folder scans ~/workspace.
+out=$("$dkgc" --dry-run --workspace 2>&1) && fail "--workspace without a folder found a workspace in an empty HOME"
+has "$out" "dk-gc: no workspace at $HOME/workspace"
+
 # When lsof cannot run, no worktree goes on a guess.
 mkdir -p "$fx/no-lsof"
 printf '#!/bin/sh\nexit 1\n' >"$fx/no-lsof/lsof"
