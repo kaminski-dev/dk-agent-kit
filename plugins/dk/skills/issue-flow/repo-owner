@@ -5,7 +5,7 @@
 
 Run it in the checkout. With no argument it reads origin and the upstream remote; with one it reads that repo,
 the one a `--repo` comment goes to. The repo is the maintainer's own when the gh user (`gh api user`) owns each
-repo read, and each is no fork of another owner's repo (GitHub's `parent`). Prints one line:
+repo read, and origin (or the named repo) is no fork of another owner's repo (GitHub's `parent`). Prints one line:
 
   own: <login> owns <owner/repo>[, ...]
   not own: <owner/repo> (<where>) belongs to <owner>, not <login>
@@ -14,6 +14,7 @@ and exits 0 either way; 2 when git or gh cannot tell, so an unreadable repo is n
 """
 import json
 import re
+from collections import namedtuple
 import subprocess
 import sys
 
@@ -21,6 +22,9 @@ import sys
 def die(msg):
     print(f"repo-owner: {msg}", file=sys.stderr)
     sys.exit(2)
+
+
+Read = namedtuple("Read", "repo where ask_parent")
 
 
 def run(*args):
@@ -40,10 +44,9 @@ def main(argv):
     if code or not login:
         die(f"gh api user failed: {err}")
 
-    # (repo, where it was found, whether GitHub is asked for its fork parent)
     read = []
     if argv:
-        read.append((argv[0], "named", True))
+        read.append(Read(argv[0], "named", True))
     else:
         for remote in ("origin", "upstream"):
             code, url, _ = run("git", "remote", "get-url", remote)
@@ -54,7 +57,7 @@ def main(argv):
             slug = slug_of(url)
             if not slug:
                 die(f"{remote} is not a GitHub repo: {url}")
-            read.append((slug, f"the {remote} remote", remote == "origin"))
+            read.append(Read(slug, f"the {remote} remote", remote == "origin"))
 
     seen = []
     for slug, where, ask in read:
