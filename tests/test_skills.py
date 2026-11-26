@@ -172,4 +172,13 @@ for path in trackers:
         errors.append(f"{rel}: Blocking must use `gh issue create --blocked-by` and `gh issue edit <child> "
                       "--add-blocked-by <blocker>` (gh 2.94+), with the API POST as the older-gh fallback")
 
+# The skills a subagent's brief names load on every implementer, so each main file keeps under its word cap, counted
+# as `wc -w` counts; a branch only some readers reach moves to a reference file beside it (#179).
+WORD_CAPS = {"issue-flow": 1500, "tdd": 650, "verify": 1700, "pr": 1350, "code-review": 3100}
+for name, cap in WORD_CAPS.items():
+    words = len(skills[name].read_text().split())
+    if words > cap:
+        errors.append(f"skills/{name}/SKILL.md: {words} words, over its cap of {cap}; move a branch only some "
+                      "readers reach to a reference file behind a pointer")
+
 lib.finish(f"{len(skills)} skills, {len(agents)} agents,")
