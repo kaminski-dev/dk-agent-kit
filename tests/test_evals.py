@@ -689,6 +689,43 @@ got = ready_py()
 check("ready.py: leaves out the native-blocked #371 and the body-blocked #375",
       got == ([370, 372, 373, 376], {371: [372], 375: [372]}), got)
 
+# Triage reads code at the fetched origin/<base>: the listing names it, and hands out a detached worktree there.
+def code_section(args=""):
+    r = run(ws, f"python3 -I '{READY_PY}' {args}", cwd=ws / "app")
+    code = r.stdout.split("## Code\n", 1)[-1].split("\n## ", 1)[0] if "## Code\n" in r.stdout else ""
+    return r, code
+
+
+stale = git(ws, "app", "rev-parse", "origin/pre-main").stdout.strip()
+git(ws, "app", "commit", "-q", "--allow-empty", "-m", "'pre-main moves on'")
+git(ws, "app", "push", "-q", "origin", "HEAD:pre-main")
+git(ws, "app", "reset", "-q", "--hard", stale)
+git(ws, "app", "update-ref", "refs/remotes/origin/pre-main", stale)
+moved = git(ws, "app", "ls-remote", "origin", "refs/heads/pre-main").stdout.split()[0]
+r, code = code_section()
+check("ready.py: names the fetched origin/pre-main, not the stale local ref",
+      r.returncode == 0 and f"origin/pre-main at {moved}" in code and stale not in code, (r.returncode, code, r.stderr))
+check("ready.py: without --worktree, prints the detached worktree command for it",
+      f"git worktree add --detach <dir> {moved}" in code, code)
+main_sha = git(ws, "app", "ls-remote", "origin", "refs/heads/main").stdout.split()[0]
+r, code = code_section("--base main")
+check("ready.py: --base main names origin/main", r.returncode == 0 and f"origin/main at {main_sha}" in code,
+      (code, r.stderr))
+tree = ws / "triage-code"
+r, code = code_section(f"--worktree '{tree}'")
+head = git(ws, "app", "-C", str(tree), "rev-parse", "HEAD").stdout.strip()
+attached = git(ws, "app", "-C", str(tree), "symbolic-ref", "-q", "HEAD").returncode == 0
+check("ready.py: --worktree adds a detached worktree at origin/pre-main",
+      r.returncode == 0 and head == moved and not attached and f"worktree: {tree}" in code, (code, r.stderr, head))
+r, code = code_section(f"--base main --worktree '{tree}'")
+head = git(ws, "app", "-C", str(tree), "rev-parse", "HEAD").stdout.strip()
+check("ready.py: an existing --worktree moves to the new ref", r.returncode == 0 and head == main_sha,
+      (code, r.stderr, head))
+(ws / "not-a-tree").mkdir()
+r, code = code_section(f"--worktree '{ws / 'not-a-tree'}'")
+check("ready.py: a --worktree path that is no worktree of this repo fails", r.returncode == 1, (r.stdout, r.stderr))
+git(ws, "app", "worktree", "remove", "--force", str(tree))
+
 repos_log = ws / ".tracker" / "repos.log"
 repos_log.write_text("")
 r = run(ws, f"GH_REPO=kaminski-dev/dk-agent-kit python3 -I '{READY_PY}'", cwd=ws / "app")

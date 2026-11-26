@@ -61,7 +61,7 @@ CHECKS = [
     skill("diagnosing-bugs"),
     skill("handoff"),
     skill("implement"),
-    skill("implement-spec"),
+    skill("implement-spec", "plugins/dk/evals/_fixture/bin/gh"),
     skill("issue-flow"),
     skill("modernize"),
     skill("pr", SKILLS + "to-spec/*", SKILLS + "research-codebase/*"),

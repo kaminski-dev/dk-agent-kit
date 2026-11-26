@@ -17,6 +17,8 @@ That read pages at 30 as GitHub does: --paginate prints every page as its own JS
 (--jq runs on each), or one array of pages with --slurp.
 "search_qualifiers": false makes a search with is:blocked fail, as on a GitHub without it.
 "other_repos" maps "owner/repo" to {number: state}, for `gh issue view N --repo owner/repo`.
+An issue's "sub_issues" lists its sub-issues, read by `gh api .../issues/N/sub_issues` and paged as above: this
+repo's as numbers, another repo's as "owner/repo#N", its state from "other_repos".
 A PR may hold isDraft, mergeable, mergeStateStatus, reviewDecision and headRefOid (origin's head when it
 holds none), "checks" as rows of `gh pr checks` ({name, bucket, link}), "comments" ({author, body}),
 "reviews" ({author, state, body, commit, databaseId}; without a commit, of whatever the head is) and "threads" ({path, line, isResolved, comments}, where
@@ -511,7 +513,8 @@ def cmd_api(args, state):
 
     def rest_issue(n):
         i = state["issues"][n]
-        return {"number": int(n), "id": 900000 + int(n), "title": i["title"], "state": i["state"],
+        return {"number": int(n), "id": 900000 + int(n), "title": i["title"], "body": i["body"], "state": i["state"],
+                "repository_url": f"https://api.github.com/repos/{state['repo']}",
                 "labels": [{"name": l} for l in i["labels"]],
                 "issue_dependencies_summary": {"blocked_by": len(open_blockers(state, n)),
                                                "total_blocked_by": len(i.get("blocked_by", []))}}
@@ -526,6 +529,15 @@ def cmd_api(args, state):
         fail(f"gh api POST {'/'.join(parts)}: not supported by this repo's tracker stand-in")
     elif parts[5:] == []:
         emit(rest_issue(num), o)
+    elif parts[5:] == ["sub_issues"]:
+        def sub_issue(s):
+            if isinstance(s, int):
+                return rest_issue(str(s))
+            other, n = s.split("#")
+            return {"number": int(n), "title": f"{other} issue {n}", "body": "", "labels": [],
+                    "state": state.get("other_repos", {}).get(other, {})[n],
+                    "repository_url": f"https://api.github.com/repos/{other}"}
+        emit_pages([sub_issue(s) for s in state["issues"][num].get("sub_issues", [])], o)
     elif parts[5:] == ["dependencies", "blocked_by"]:
         emit_pages([rest_issue(str(b)) for b in state["issues"][num].get("blocked_by", [])], o)
     else:
