@@ -231,6 +231,16 @@ check("wave: the handover grader leaves out the implementers' own reports",
       handed.search("\n".join([handover(353), handover(376)] + [
           trace_line({"type": "text", "text": "**PR:** x\n\n**Ready to merge**"}, parent="toolu_1"), dry_merge])) is None)
 
+# The wave's width counts each implementer's reviewers, so a run's Agent calls can pass 20 while no more than 20 run
+# at once; the grader reads the limit from the harness's own refusal instead (#175).
+limit = re.compile(grader_field("implement-wave", r"pattern: '((?:[^']|'')*)'")
+                   .get("no-concurrent-subagent-limit", "(?!)").replace("''", "'"))
+check("wave: the subagent-limit grader passes a trace that never hit the limit",
+      limit.search("\n".join([handover(353), dry_merge])) is not None)
+check("wave: the subagent-limit grader fails a trace where an Agent call hit it",
+      limit.search("\n".join([handover(353), '{"type":"user","message":{"content":[{"type":"tool_result",'
+                               '"content":"Concurrent subagent limit reached (20)","is_error":true}]}}', dry_merge])) is None)
+
 # The review fixture: a branch that fixes #353 correctly but breaks one documented standard.
 ws = scaffold("code-review-353")
 branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
