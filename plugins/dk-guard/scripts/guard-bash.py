@@ -1720,9 +1720,20 @@ def credential_words(segs):
 # Under the issue number's directory any six characters or a glob name a run; elsewhere mktemp's six are rarely all
 # lowercase, which keeps a file such as `verify.output` out.
 RUN_DIR = re.compile(r"(?:^|/)(?:verify\.(?=[a-z]{0,5}[A-Z0-9])[A-Za-z0-9]{6}|\d+/verify\.(?:[A-Za-z0-9]{6}|\*))(?:/|$)")
-VERIFY_RM = ("deny", "This deletes inside a dk:verify run directory (verify.XXXXXX), and a rerun needs no cleanup: "
-             "screenshots overwrite by name, and a rerun takes a new `mktemp -d \"$SCRATCH/<N>/verify.XXXXXX\"` "
-             "while the earlier runs stay as evidence. The control worktree goes with `git worktree remove`.")
+VERIFY_RM = ("deny", "This deletes inside a dk:verify run directory (verify.XXXXXX), whose files are the run's "
+             "evidence. Set a file aside by moving it into the run's discarded directory: `mkdir -p "
+             "\"$RUN/discarded\" && mv <file> \"$RUN/discarded/\"`. A rerun needs no cleanup: screenshots overwrite "
+             "by name, and a rerun takes a new `mktemp -d \"$SCRATCH/<N>/verify.XXXXXX\"`. Files inside the control "
+             "checkout (`$RUN/base/`) and cookie jars may go; the control checkout itself goes with "
+             "`git worktree remove`.")
+# login state a rerun starts over: cookies.txt, control-cookies.txt, control.cookies, jar, cookie-jar.txt
+COOKIE_JAR = re.compile(r"(?i)(?:^|[-_.*])(?:cookies?|jar)(?:[-_*]|\.(?!png$|jpe?g$|webp$)|$)")
+
+
+def discardable(path, run):
+    """Inside the control checkout (`$RUN/base/...`, code rather than evidence) or a cookie jar."""
+    rest = path[run.end():]
+    return rest.startswith("base/") and len(rest) > len("base/") or bool(COOKIE_JAR.search(os.path.basename(path)))
 
 
 def operands(words):
@@ -1736,7 +1747,8 @@ def operands(words):
 
 def removes_run(words, walk, seg):
     return bool(words) and os.path.basename(words[0]) == "rm" \
-        and any(RUN_DIR.search(walk.guess(t, seg)) for t in operands(words))
+        and any((run := RUN_DIR.search(path)) and not discardable(path, run)
+                for path in (walk.guess(t, seg) for t in operands(words)))
 
 
 def verify_rm_words(segs, cwd):
