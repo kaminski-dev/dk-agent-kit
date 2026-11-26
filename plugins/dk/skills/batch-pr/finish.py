@@ -7,16 +7,19 @@ origin's main and pre-main, then:
   1. fast-forwards origin's pre-main to origin/main (a plain push, never forced), and the local
      main and pre-main to it: in the worktree that has one checked out, by git merge --ff-only;
   2. runs, in each worktree that has main or pre-main checked out, every backticked command on
-     the **Fresh-worktree setup** line of its docs/agents/workflow.md, in order, through sh;
-     a workflow.md without that line skips this part;
+     the **Fresh-worktree setup** line of origin/main's docs/agents/workflow.md, in order, through
+     sh; a workflow.md without that line skips this part;
   3. runs dk-gc --dry-run in this checkout and prints its list.
 
 Nothing moves unless every branch can: pre-main on origin and both local branches must be
 ancestors of origin/main, and a worktree that has one checked out must hold no uncommitted
-change to a tracked file. Otherwise it names the branch and exits 1, having changed nothing.
+change to a tracked file. Nothing moves either when the setup line holds anything but backticked
+commands and the words between them (`, then`, `and`), since prose in backticks is no command.
+Otherwise it names the branch or the line and exits 1, having changed nothing.
 
-Exit 0: finished. Exit 1: a branch cannot fast-forward, git failed, or a setup command failed
-(it names the command; the branches have moved by then). A missing dk-gc is reported, not failed.
+Exit 0: finished. Exit 1: a branch cannot fast-forward, the setup line is prose, git failed, or a
+setup command failed (it names the command; the branches have moved by then). A missing dk-gc is
+reported, not failed.
 """
 import pathlib
 import re
@@ -25,7 +28,9 @@ import subprocess
 import sys
 
 DEFAULT, BASE = "main", "pre-main"
-SETUP_LINE = re.compile(r"^.*\*\*Fresh-worktree setup\*\*.*$", re.M)
+SETUP_LINE = re.compile(r"^.*\*\*Fresh-worktree setup\*\*:?(.*)$", re.M)
+SPAN = re.compile(r"`([^`]+)`")
+BETWEEN = re.compile(r"[\s,;.]*(?:(?:then|and)\b[\s,;.]*)*")
 
 
 def sh(*cmd, cwd=None, ok=(0,)):
@@ -55,10 +60,17 @@ def checked_out():
     return out
 
 
-def setup_commands(tree):
-    workflow = pathlib.Path(tree) / "docs" / "agents" / "workflow.md"
-    line = SETUP_LINE.search(workflow.read_text()) if workflow.exists() else None
-    return re.findall(r"`([^`]+)`", line.group(0).split("**Fresh-worktree setup**", 1)[1]) if line else []
+def setup_commands(commit):
+    """The commands on the setup line of the commit's workflow.md, [] without one; exits on a prose line."""
+    workflow = sh("git", "show", f"{commit}:docs/agents/workflow.md", ok=(0, 128)).stdout
+    line = SETUP_LINE.search(workflow)
+    if not line:
+        return []
+    if not all(BETWEEN.fullmatch(text) for text in SPAN.split(line.group(1))[::2]):
+        sys.exit(f"The **Fresh-worktree setup** line of docs/agents/workflow.md holds more than its commands, so "
+                 f"its backticked spans are not run: {line.group(0).strip()}\nWrite it as `cmd`, then `cmd`, and "
+                 "rerun. Nothing was changed.")
+    return SPAN.findall(line.group(1))
 
 
 def main():
@@ -71,6 +83,7 @@ def main():
     if not target:
         sys.exit(f"origin has no {DEFAULT}, so there is nothing to fast-forward to.")
     trees = checked_out()
+    commands = setup_commands(target)
 
     # Every check before the first change, so a branch that cannot move leaves all of them where they were.
     moves = []  # (name, ref, old sha)
@@ -100,13 +113,10 @@ def main():
     if not moves:
         print(f"{BASE} and {DEFAULT} are level with origin/{DEFAULT} at {target[:12]}.")
 
-    for branch in (DEFAULT, BASE):
-        tree = trees.get(branch)
-        if not tree:
-            continue
-        commands = setup_commands(tree)
-        if not commands:
-            print(f"{tree}: its workflow.md names no **Fresh-worktree setup** line; no setup run.")
+    setup_trees = [trees[branch] for branch in (DEFAULT, BASE) if branch in trees]
+    if setup_trees and not commands:
+        print(f"origin/{DEFAULT}'s workflow.md names no **Fresh-worktree setup** line; no setup run.")
+    for tree in setup_trees:
         for command in commands:
             print(f"{tree}: {command}")
             r = subprocess.run(["sh", "-c", command], cwd=tree)

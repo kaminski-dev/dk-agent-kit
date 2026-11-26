@@ -493,5 +493,15 @@ check("a second run: says the branches are level and changes nothing",
       r.returncode == 0 and "level with origin/main" in r.stdout and refs(ws) == [ws.merged] * 4, (r.stdout, r.stderr))
 ws.remove()
 
+# A setup line written as prose: its backticked spans are no list of commands, so nothing runs and nothing moves.
+ws = finish_ws(setup_line="- **Fresh-worktree setup**: `touch installed`, then `cp .env .env` (or `cp .env.example .env` "
+                          "and fill `SECRET` with `openssl rand -base64 32`).\n")
+before = refs(ws)
+r, gc = run_finish(ws)
+check("a prose setup line: exits 1 and names the line, before any branch moves",
+      r.returncode == 1 and "Fresh-worktree setup" in r.stderr and refs(ws) == before
+      and not (ws.repo / "installed").exists() and gc == [], (r.returncode, r.stdout, r.stderr, refs(ws), before))
+ws.remove()
+
 print(f"{len(failures)} failures")
 sys.exit(1 if failures else 0)
