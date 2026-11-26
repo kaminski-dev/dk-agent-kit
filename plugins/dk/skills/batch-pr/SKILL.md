@@ -76,9 +76,9 @@ Runs once the batch PR has merged: when step 4's watcher prints `merged`, or whe
 python3 -I <base directory>/finish.py
 ```
 
-It fast-forwards `pre-main` to `main` on origin and the local `main` and `pre-main` with them, never forced; runs the commands on the **Fresh-worktree setup** line of `docs/agents/workflow.md` in each worktree that has one of those branches checked out (a `workflow.md` without that line skips this); and prints `dk-gc --dry-run`'s list for the repo. Act on its exit code:
+It brings `pre-main` level with `main`, runs the **Fresh-worktree setup** line of `docs/agents/workflow.md` in the checkouts that hold them, and prints the cleanup list; `--help` says how. Act on its exit code:
 
 - **0**: give the user the cleanup list as printed, and remove it with `dk-gc --yes` in the same checkout on their word (`dk:issue-flow` step 7).
-- **1**: when it says a branch cannot fast-forward, nothing moved: `pre-main` holds commits `main` lacks (the batch PR is still open, or merged by squash or rebase), a local branch holds a commit of its own, or the checkout that has it holds uncommitted changes. Show its message and stop; moving such a branch is the maintainer's call. When a setup command failed, the branches have moved: show the command and its output, and stop.
+- **1**: show its message and stop. A message ending `Nothing was changed.` names a branch that cannot fast-forward (the batch PR still open or merged by squash or rebase, a local commit, or a change in its checkout in the way) or a setup line written as prose; moving that branch or rewriting that line is the maintainer's call. One ending `The branches have moved.` names the setup command that failed: show its output too.
 
 Done when `finish.py` exited 0 and the user holds the cleanup list.
