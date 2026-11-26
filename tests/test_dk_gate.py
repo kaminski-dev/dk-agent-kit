@@ -233,6 +233,23 @@ def case_a_fresh_run_that_fails_drops_the_older_pass(root):
     assert code == 1 and CACHED not in out and runs(repo) == 5, (code, out)
 
 
+def case_a_failed_run_on_another_tree_drops_the_older_pass(root):
+    repo, cache = make_repo(root, "fails-elsewhere"), os.path.join(root, "cache-fails-elsewhere")
+    with open(os.path.join(repo, ".gitignore"), "a") as f:
+        f.write("gate.conf\n")
+    write(repo, ".claude/gate.sh", PASS + "test -e gate.conf || exit 1\n", executable=True)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "gate reads an ignored config")
+    write(repo, "gate.conf", "ok\n")
+    assert run(repo, cache=cache)[0] == 0 and runs(repo) == 1
+    os.remove(os.path.join(repo, "gate.conf"))  # an input the key cannot see
+    write(repo, "src/a.ts", "export const a = 2\n")
+    assert run(repo, cache=cache)[0] == 1 and runs(repo) == 2
+    write(repo, "src/a.ts", "export const a = 1\n")  # back on the tree of the older pass
+    code, out = run(repo, cache=cache)
+    assert code == 1 and CACHED not in out and runs(repo) == 3, (code, out)
+
+
 def case_a_tree_that_changes_while_the_gate_runs_is_not_cached(root):
     repo, cache = make_repo(root, "racing", PASS + "echo x > src/generated.ts\n"), os.path.join(root, "cache-racing")
     code, out = run(repo, cache=cache)
