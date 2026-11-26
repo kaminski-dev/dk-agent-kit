@@ -1408,7 +1408,7 @@ def check_dk_gc(cmd):
     return []
 
 
-INLINE_SCRIPT = ("-", "-c", "-m")  # python reads the script from stdin or the command line, not a file
+INLINE_SCRIPT = ("-", "-c", "-m")  # python runs stdin, a -c string or a -m module, so a later dk-gc is an argument
 
 
 def dk_gc_words(segs):
