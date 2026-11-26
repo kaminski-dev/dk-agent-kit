@@ -262,10 +262,11 @@ if re.search(r"(?:-X|--method)[ =]?['\"]?(?:PATCH|patch)", flow):
 
 # #177: the customer reply is posted once the review loop has ended and the PR passed the gate, so it is never
 # reworded after it is posted.
-reply = re.search(r"^\*\*Customer reply\.\*\*.*?(?=^\*\*[A-Z]|^## )", step6, re.M | re.S)
+reply = re.search(r"^\*\*Customer reply\.\*\*.*?(?=^\*\*[A-Z]|^## |\Z)", step6, re.M | re.S)
+after_gate = bool(reply) and reply.start() > step6.find("**Ready gate.**") >= 0
 reply = reply.group(0) if reply else ""
 before_gate = step6[:step6.find("**Ready gate.**")]
-if not reply or step6.find("**Customer reply.**") < step6.find("**Ready gate.**"):
+if not after_gate:
     errors.append("skills/issue-flow: step 6 needs a **Customer reply.** paragraph after the **Ready gate.**")
 elif not re.search(r"gate passes[^.]*review loop", reply) or "workflow.md" not in reply or "**Blocked**" not in reply:
     errors.append("skills/issue-flow: step 6's **Customer reply.** waits for the gate to pass and the review loop to "
@@ -276,12 +277,12 @@ if re.search(r"customer reply on the issue", before_gate):
 # #177: on a repo the maintainer does not own, nothing carries the kit's attribution, and each draft goes to the
 # maintainer first. tests/test_repo_owner.py runs the check the paragraph names.
 step1 = re.search(r"^## 1\..*?(?=^## 2\.)", flow, re.M | re.S)
-owner = re.search(r"^\*\*Ownership\.\*\*.*?(?=^\*\*[A-Z]|^## )", step1.group(0) if step1 else "", re.M | re.S)
+owner = re.search(r"^\*\*Ownership\.\*\*.*?(?=^\*\*[A-Z]|^## |\Z)", step1.group(0) if step1 else "", re.M | re.S)
 owner = owner.group(0) if owner else ""
 for what, pattern in (
     ("the check it runs", r"`python3 -I <base directory>/repo-owner`"),
     ("the check for a comment that goes to another repo", r"`python3 -I <base directory>/repo-owner <owner>/<repo>`"),
-    ("its two answers", r"`own: `.*`not own: `"),
+    ("its two answers", r"`own: [^`]*`.*`not own: [^`]*`"),
     ("no attribution note on comments", r"no attribution note"),
     ("no attribution lines in commits", r"commit[^.;]*no `Co-Authored-By`"),
     ("no attribution line in the PR body", r"PR body[^.;]*no[^.;]*Generated with"),
