@@ -13,8 +13,9 @@ origin's main and pre-main (a repo whose origin has no pre-main skips origin's),
 
 Nothing moves unless every branch can: pre-main on origin and both local branches must be
 ancestors of origin/main, and a worktree that has one checked out must hold no uncommitted
-change to a tracked file or an untracked file the fast-forward adds. Nothing moves either when the setup line holds anything but backticked
-commands and the words between them (`, then`, `and`), since prose in backticks is no command.
+change to a tracked file and no untracked file the fast-forward adds. Nothing moves either
+when the setup line holds anything but backticked commands and the words between them
+(`, then`, `and`), since prose in backticks is no command.
 Otherwise it names the branch or the line and exits 1, having changed nothing.
 
 Exit 0: finished. Exit 1: a branch cannot fast-forward, the setup line is prose, git failed, or a
