@@ -1774,12 +1774,30 @@ def reads_stdin(seg):
         and not any(op in INPUT_REDIRECTS for op, _ in seg.redirects) and all(w == "-" for w in operands(words))
 
 
+def in_function_body(cmd, pos):
+    starts = [m.end() for m in FUNCTION_RAW.finditer(cmd, 0, pos)]
+    return bool(starts) and cmd.count("{", starts[-1], pos) > cmd.count("}", starts[-1], pos)
+
+
 def check_stdin_cat(cmd):
-    return [STDIN_CAT] if any(not quoted_text(cmd, m.start(1)) for m in RAW_STDIN_CAT.finditer(cmd)) else []
+    return [STDIN_CAT] if any(not quoted_text(cmd, m.start(1)) and not in_function_body(cmd, m.start(1))
+                              for m in RAW_STDIN_CAT.finditer(cmd)) else []
 
 
 def stdin_cat_words(segs):
-    return [STDIN_CAT] if any(map(reads_stdin, segs)) else []
+    """A cat in a function body reads what the call feeds the function, so the body's segments are skipped: from the
+    one after the name until its braces close."""
+    depth = None
+    for seg in segs:
+        if seg.defines:
+            depth = 0
+            continue
+        if depth is None and reads_stdin(seg):
+            return [STDIN_CAT]
+        if depth is not None:
+            depth += seg.words.count("{") - seg.words.count("}")
+            depth = depth if depth > 0 else None
+    return []
 
 
 UNESCAPED_BACKTICK = re.compile(r"(?<!\\)(?:\\\\)*`(?:([^`]*)`)?")
