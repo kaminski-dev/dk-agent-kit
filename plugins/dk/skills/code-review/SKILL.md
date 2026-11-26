@@ -24,6 +24,8 @@ Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so th
 
 Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and there is something to review: a non-empty branch diff, a non-empty `git diff HEAD`, or untracked files. A bad ref or an empty change should fail here, not inside four parallel sub-agents.
 
+**Tier.** Run `python3 -I <base directory>/tier <fixed-point>`, with `<base directory>` the one this skill's header names, written out literally. Its one line starts with the tier, `small`, `standard` or `risky`, and says why (its `--help` gives the thresholds). The tier sets which sub-agents run (step 4) and the round budget (step 6); keep the line for the report.
+
 ### 2. Identify the spec source
 
 Look for the originating spec, in this order:
@@ -69,7 +71,13 @@ The **comment policy** is the part of `AGENTS.md` or `CODING_STANDARDS.md` (root
 
 ### 4. Spawn the sub-agents in parallel
 
-Issue all four sub-agent calls together, in the foreground, and aggregate the reports they return: Standards, Spec and Correctness with `subagent_type: "dk:reviewer"`, Comments with `subagent_type: "dk:comment-reviewer"`. Both types are read-only, so the reviewers can share one worktree. They give each finding its id and severity; each prompt hands its axis the id prefix, so ids stay unique across the four reports: `ST` for Standards, `SP` for Spec, `CO` for Correctness, `CM` for Comments.
+The tier from step 1 sets the calls:
+
+- **Small**: one `dk:reviewer` call carrying the Spec and Correctness prompts below together, with both id prefixes, reporting under a heading per axis. Standards does not run. Without a spec, the call carries Correctness alone.
+- **Standard** and **risky**: Standards, Spec and Correctness, each its own `dk:reviewer` call.
+- **Comments**, in every tier: one `dk:comment-reviewer` call, only when the diff adds a comment line (an added line holding a comment or docstring).
+
+Issue the calls together, in the foreground, and aggregate the reports they return. Both agent types are read-only, so the reviewers can share one worktree. They give each finding its id and severity; each prompt hands its axis the id prefix, so ids stay unique across the reports: `ST` for Standards, `SP` for Spec, `CO` for Correctness, `CM` for Comments.
 
 **Standards sub-agent prompt** should include:
 
@@ -106,15 +114,15 @@ If the spec is missing, skip the Spec sub-agent and note this in the final repor
 
 ### 5. Aggregate
 
-Present the four reports under `## Standards`, `## Spec`, `## Correctness` and `## Comments` headings, verbatim or lightly cleaned. Do **not** merge or rerank findings, because the axes are deliberately separate (see _Why separate axes_).
+Present the reports under `## Standards`, `## Spec`, `## Correctness` and `## Comments` headings, verbatim or lightly cleaned; an axis the tier or a missing comment line left out keeps its heading, with one line on why. Do **not** merge or rerank findings, because the axes are deliberately separate (see _Why separate axes_).
 
-End with a one-line summary: findings per axis and severity, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes: that's the reranking the separation exists to prevent.
+End with the tier line and a one-line summary: findings per axis and severity, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes: that's the reranking the separation exists to prevent.
 
 ### 6. Answer findings
 
 When you wrote the change (`dk:implement` sends you here), or the user asks you to fix what the review found, answer every finding; otherwise step 5's report ends the review.
 
-**Budget.** 2 rounds, steps 4 and 5 being round 1. Extend to 5 only when the change touches security, permissions, auth, data loss or concurrency and a blocker or should stays open with evidence, or when the user asks.
+**Budget.** 2 rounds, steps 4 and 5 being round 1; 1 round in the small tier. Outside it, extend to 5 only when the change touches security, permissions, auth, data loss or concurrency and a blocker or should stays open with evidence, or when the user asks.
 
 **Also line.** Apply the nits in each report's closing "also" line without ledger rows, skipping any you judge wrong.
 
@@ -130,7 +138,7 @@ When you wrote the change (`dk:implement` sends you here), or the user asks you 
 
 Done when every id has its ledger outcome and no round the stop condition opens is left to run. Stuck when an id stays disputed after two replies, or the budget ends with a blocker or should open: show both sides in 2-3 lines each, and the user decides. Budget end is not approval.
 
-Report the rounds run, the axes each round ran, the ledger, the diff's shortstat before and after, and the issue number of each declined finding that scope intake filed.
+Report the tier line, the rounds run, the axes each round ran, the ledger, the diff's shortstat before and after, and the issue number of each declined finding that scope intake filed.
 
 ## Why separate axes
 

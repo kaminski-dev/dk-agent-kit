@@ -175,11 +175,38 @@ for what, pattern in (
 if re.search(r"behaviour code changed since the last round|round brings only nits", answer):
     errors.append("skills/code-review: its Answer findings step still reopens review whenever behaviour code changed "
                   "since the last round; only a behaviour fix to a Correctness or Spec blocker or should does (#172)")
-if not re.search(r"Report the rounds run, the axes each round ran", answer):
+if not re.search(r"the rounds run, the axes each round ran", answer):
     errors.append("skills/code-review: its Answer findings report must name the axes each round ran, "
                   "so the stop condition can be checked from the report (#172)")
 if not re.search(r"\*\*Also line\.\*\*[^\n]*without ledger rows", answer):
     errors.append("skills/code-review: its Answer findings step must apply each report's \"also\" line without ledger rows")
+
+# The tier sets the review's size: PRs of 60 lines or fewer brought 0 blocking findings out of 167, and a 3-line PR
+# got four reviewers and 73k output tokens (#173).
+pin = re.search(r"^### 1\. Pin the fixed point\n.*?(?=^### 2)", review, re.M | re.S)
+pin = pin.group(0) if pin else ""
+if not re.search(r"`python3 -I <base directory>/tier <fixed-point>`", pin):
+    errors.append("skills/code-review: step 1 does not run the tier script on the fixed point")
+spawn = re.search(r"^### 4\. Spawn the sub-agents.*?(?=^\*\*Standards sub-agent prompt\*\*)", review, re.M | re.S)
+spawn = spawn.group(0) if spawn else ""
+for what, pattern in (
+    ("the small tier's one dk:reviewer call for Spec and Correctness",
+     r"^- \*\*Small\*\*: one `dk:reviewer` call carrying the Spec and Correctness prompts"),
+    ("Standards left out of the small tier", r"^- \*\*Small\*\*:[^\n]*Standards does not run"),
+    ("the standard and risky tiers' three dk:reviewer calls",
+     r"^- \*\*Standard\*\* and \*\*risky\*\*: Standards, Spec and Correctness, each its own `dk:reviewer` call"),
+    ("the Comments axis running, in every tier, only when the diff adds a comment line",
+     r"^- \*\*Comments\*\*, in every tier: [^\n]*only when the diff adds a comment line"),
+):
+    if not re.search(pattern, spawn, re.M):
+        errors.append(f"skills/code-review: step 4 does not name {what}")
+if not re.search(r"\*\*Budget\.\*\*[^\n]*1 round in the small tier", answer):
+    errors.append("skills/code-review: its budget does not give the small tier one round")
+if not re.search(r"Report the tier line, the rounds run", answer):
+    errors.append("skills/code-review: its Answer findings report does not state the tier")
+aggregate = re.search(r"^### 5\. Aggregate\n.*?(?=^### 6)", review, re.M | re.S)
+if not re.search(r"left out[^.]*heading[^.]*why", aggregate.group(0) if aggregate else ""):
+    errors.append("skills/code-review: step 5 does not give an axis left out its heading and the reason")
 
 if FRESH in review:
     errors.append(f"skills/code-review: launches named agent types, which never fork; it skips the {FRESH} line")
