@@ -58,8 +58,8 @@ def commit(d):
     sh(d, "git", "commit", "-qm", "change")
 
 
-def tier(d, *args):
-    out = subprocess.run([sys.executable, "-I", str(TIER), *args], cwd=d, capture_output=True, text=True)
+def tier(d, *args, cwd=None):
+    out = subprocess.run([sys.executable, "-I", str(TIER), *args], cwd=cwd or d, capture_output=True, text=True)
     return out.returncode, out.stdout.strip(), out.stderr.strip()
 
 
@@ -162,6 +162,11 @@ expect("31 unstaged and 30 untracked lines: standard", d, "standard")
 d = repo()
 write(d, "notes/mail-draft.txt", 1)
 expect("an untracked file on a risk path: risky", d, "risky")
+d = repo()
+write(d, "other/mailout.txt", 70)
+code, out, err = tier(d, "base", cwd=d / "src")
+check("run from a subdirectory, an untracked file outside it on a risk path: risky", out.startswith("risky")
+      and "other/mailout.txt" in out, out + err)
 
 # The base: the argument, or origin/pre-main when origin has it, else origin/main.
 d = repo()
@@ -192,7 +197,7 @@ if section:
     for path in ("db/migrations/0003_users.sql", "prisma/schema.prisma", "internal/auth/session.go",
                  "src/billing/invoice.ts", "src/payments/stripe.ts", "api/routes/users.ts", "openapi.yaml",
                  "src/mail/send.ts", "src/sms/twilio.ts", "src/push/fcm.ts", ".github/workflows/ci.yml",
-                 "Dockerfile", "api/Dockerfile.prod", "package-lock.json", "pnpm-lock.yaml", "go.sum",
+                 "Dockerfile", "api/Dockerfile.prod", "package-lock.json", "pnpm-lock.yaml", "go.sum", "tools/lint/go.sum",
                  "uv.lock"):
         d = repo(workflow="# Workflow\n\n" + section.group(0))
         write(d, path, 1)

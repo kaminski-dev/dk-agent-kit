@@ -86,7 +86,7 @@ tier = tier.group(0) if tier else ""
 for what, pattern in (
     ("the tier script, run from dk:code-review", r"`python3 -I <base directory>/\.\./code-review/tier <base>`"),
     ("the skills that read it", r"`dk:verify`, `dk:code-review` and `dk:pr` each read it"),
-    ("what the small tier changes", r"[Ss]mall[^.]*red/green test[^.]*one reviewer[^.]*one round[^.]*short PR body"),
+    ("what the small tier changes", r"[Ss]mall[^.]*red/green test[^.]*one reviewer[^.]*one round[^.]*reopen[^.]*short PR body"),
 ):
     if not re.search(pattern, tier):
         errors.append(f"skills/implement: its **Tier.** paragraph does not name {what}")

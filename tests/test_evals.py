@@ -67,14 +67,14 @@ def pull_on(ws, num, ref):
 
 
 def tier(ws):
-    """The tier script's line for the workspace's app branch against origin/pre-main."""
     r = run(ws, f"python3 -I '{TIER}' origin/pre-main", cwd=ws / "app")
     return r.stdout.strip() or r.stderr.strip()
 
 
 def comment_lines(ws):
     diff = git(ws, "app", "diff", "origin/pre-main...HEAD").stdout
-    return [l for l in diff.splitlines() if re.match(r'\+\s*(#|"""|--|//)', l) and not l.startswith("+++")]
+    return [l for l in diff.splitlines() if not l.startswith("+++")
+            and (re.match(r'\+\s*(#|"""|--|//)', l) or re.match(r'\+.*\S\s+(#|//) ', l))]
 
 
 # --- #353 fixture: Customer History order -------------------------------------------------------
@@ -673,7 +673,8 @@ check("re-review: a second round runs, and Comments does not rerun",
 fix_diff = input_matches("code-review-rereview").get("second-round-on-fix-diff", "(?!)")
 for prompt, want in (("Correctness. Diff: `git diff 1a2b3c4`; open ids CO1.", True),
                      ("Correctness. Diff: `git diff 1a2b3c4d5e6f..HEAD`; open ids CO1.", True),
-                     ("Correctness. Diff: `git diff origin/pre-main...HEAD`.", False)):
+                     ("Correctness. Diff: `git diff origin/pre-main...HEAD`.", False),
+                     ("Correctness. Diff: `git diff 1a2b3c4...HEAD`.", False)):
     got = re.search(fix_diff, brief(prompt, subagent_type="dk:reviewer")) is not None
     check(f"re-review: the fix-diff grader {'matches' if want else 'passes over'} {prompt!r}", got == want, fix_diff)
 check("re-review: the fix-diff grader passes over a Comments call on the fix diff",
