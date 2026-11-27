@@ -45,6 +45,24 @@ for what, pattern in (
     if perf and not re.search(pattern, perf):
         errors.append(f"skills/verify: step 1's Performance claim row does not name {what}")
 
+# A fix with no correct test seam is proven by the control run (dk:diagnosing-bugs Phase 5), and a reader of dk:verify
+# alone must tell when that holds, or it reports the proof missing or writes the shallow test Phase 5 warns against (#151).
+bugfix = re.search(r"^\| Bug fix .*$", owe.group(0) if owe else "", re.M)
+bugfix = bugfix.group(0) if bugfix else ""
+if not bugfix:
+    errors.append("skills/verify: step 1's proof table has no Bug fix row")
+for what, pattern in (
+    ("the regression test seen red before its green run", r"regression test seen \*\*red\*\*[^|]*before its green run counts"),
+    ("what makes a seam too shallow, without dk:diagnosing-bugs loaded", r"[Nn]o correct seam[^|]*shallower than the bug"),
+    ("the control run on the original scenario in the test's place",
+     r"control run \(step 4[^)]*\) on the original scenario[^|]*in the test's place"),
+    ("the control run owed in every tier then", r"control run \(step 4, owed then in every tier\)"),
+    ("the missing seam recorded in the report and the PR", r"report and the PR name the missing seam"),
+    ("the regression test owed without that record", r"with no such record, the regression test is owed"),
+):
+    if bugfix and not re.search(pattern, bugfix):
+        errors.append(f"skills/verify: step 1's Bug fix row does not name {what}")
+
 # Verify was 25% of a small PR's time; a small change owes a red/green test or one phone-width screenshot (#173).
 tier = re.search(r"^\*\*Tier\.\*\*.*$", owe.group(0) if owe else "", re.M)
 tier = tier.group(0) if tier else ""
