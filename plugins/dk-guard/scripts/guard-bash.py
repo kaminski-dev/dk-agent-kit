@@ -718,8 +718,7 @@ def command_words(words):
 
 
 def perl_wrapper_word_count(args):
-    """`-e <script>` (also `-we`, `-e<script>`) with a script that execs @ARGV, a `--`, and a word for each `shift`
-    the script runs before the exec."""
+    """A shift after the exec never runs, so it takes no word."""
     option = re.match(r"-[A-Za-z]*?[eE]", args[0]) if args else None
     if not option:
         return 0
