@@ -54,7 +54,7 @@ START = r"(?:^|" + OPENERS + r")\s*"
 # that shifts (`alarm shift; exec @ARGV`) takes its first argument, the seconds, off the command.
 EXEC_ARGV = r"\bexec\s*(?:\(\s*)?(?:\{\s*\$ARGV\[0\]\s*\}\s*)?@ARGV\b"
 EXEC_SCRIPT = r"(?:'[^']*" + EXEC_ARGV + r"[^']*'|\"[^\"]*" + EXEC_ARGV + r"[^\"]*\")"
-SHIFTS = r"(?=(?:'[^']*\bshift\b[^']*|\"[^\"]*\bshift\b[^\"]*)" + EXEC_ARGV + r")"
+SHIFTS = r"(?=(?:'(?:(?!" + EXEC_ARGV + r")[^'])*?|\"(?:(?!" + EXEC_ARGV + r")[^\"])*?)\bshift\b)"
 PERL_EXEC = r"(?:[^\s;&|()<>'\"]*/)?perl\s+-[A-Za-z]*[eE]\s*(?:" + SHIFTS + EXEC_SCRIPT + r"(?:\s+--)?\s+\S+|" \
     + EXEC_SCRIPT + r"(?:\s+--)?)"
 PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:(?:sudo|command|exec|nohup|time|env|nice|xargs(?:\s+-\S+)*|g?timeout\s+\S+|" \
