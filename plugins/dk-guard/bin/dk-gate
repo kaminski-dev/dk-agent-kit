@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# dk-gate: run this checkout's .claude/gate.sh, or return the pass it already
+# had on the same tree. The push hook runs the same command, so a pass here is
+# the one the next push reuses. Usage and the cache key: scripts/gate.py.
+exec python3 -I "$(dirname "${BASH_SOURCE[0]}")/../scripts/gate.py" "$@"
