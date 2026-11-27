@@ -6,7 +6,9 @@ to .gate-runs (ignored, so the record never changes the tree it gates), runs
 `dk-gate` in it with the cache in a temp directory (DK_GATE_CACHE), and checks
 the exit code, what it printed and how many times the gate ran.
 """
+import json
 import os
+import shutil
 import signal
 import stat
 import subprocess
@@ -16,6 +18,14 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DK_GATE = os.path.join(HERE, "..", "plugins", "dk-guard", "bin", "dk-gate")
+GATE_PY = os.path.join(HERE, "..", "plugins", "dk-guard", "scripts", "gate.py")
+# What the push hook does with gate.py: load it and call check() under a timeout. Prints [status, entry].
+CHECK = ("import importlib.util, json, sys\n"
+         "spec = importlib.util.spec_from_file_location('gate', sys.argv[1])\n"
+         "gate = importlib.util.module_from_spec(spec)\n"
+         "spec.loader.exec_module(gate)\n"
+         "status, _, entry = gate.check(sys.argv[2], timeout=float(sys.argv[3]))\n"
+         "print(json.dumps([status, entry]))\n")
 
 PASS = "#!/bin/sh\necho 'lint ok'\necho run >> .gate-runs\n"
 CACHED = "did not run again (cached)"
@@ -58,6 +68,24 @@ def gate_env(cwd, cache, env=None):
 def run(cwd, *args, cache, env=None):
     out = subprocess.run([DK_GATE, *args], cwd=cwd, capture_output=True, text=True, env=gate_env(cwd, cache, env))
     return out.returncode, out.stdout + out.stderr
+
+
+def check(repo, timeout, cache, env=None):
+    """gate.check(repo, timeout) in a process of its own, as the push hook calls it: (status, entry)."""
+    out = subprocess.run([sys.executable, "-I", "-c", CHECK, GATE_PY, repo, str(timeout)], capture_output=True,
+                         text=True, env=gate_env(repo, cache, env))
+    assert out.returncode == 0, out
+    return tuple(json.loads(out.stdout))
+
+
+def slow_hash(root, name, seconds):
+    """A PATH whose git takes `seconds` longer over `git diff` once the returned flag file exists: the tree hash
+    of a big checkout on a loaded machine."""
+    bin_dir, flag = os.path.join(root, name + "-bin"), os.path.join(root, name + ".slow")
+    os.makedirs(bin_dir)
+    write(bin_dir, "git", f"#!/bin/sh\ncase \" $* \" in *\" diff \"*) test -e {flag} && sleep {seconds};; esac\n"
+                         f"exec {shutil.which('git')} \"$@\"\n", executable=True)
+    return bin_dir + os.pathsep + os.environ["PATH"], flag
 
 
 def start(cwd, *args, cache, env=None):
@@ -327,6 +355,28 @@ def case_a_gate_that_gets_no_slot_in_its_wait_is_refused_as_busy(root):
         proc.kill()
         with open(flag) as f:
             os.kill(int(f.read()), signal.SIGKILL)
+        proc.communicate()
+
+
+def case_a_slot_that_comes_late_and_a_slow_hash_start_no_gate_the_timeout_would_kill(root):
+    # The gate's last pass took 2 s and the check has 4 s. The slot frees after 1 s, inside the wait, but the hash
+    # of the tree after it takes 2.5 s, so under 1.5 s are left: the gate must not start.
+    cache, env = os.path.join(root, "cache-late"), {"DK_GATE_SLOTS": "1"}
+    started = os.path.join(root, "late.starts")
+    repo = make_repo(root, "late", f"#!/bin/sh\necho start >> {started}\nsleep 2\necho run >> .gate-runs\n")
+    assert run(repo, cache=cache, env=env)[0] == 0 and runs(repo) == 1
+    os.remove(started)
+    tracked_edit(repo)
+    path, slow = slow_hash(root, "late", 2.5)
+    flag = os.path.join(root, "late-holder.started")
+    holder = make_repo(root, "late-holder", f"#!/bin/sh\necho $$ > {flag}\nsleep 1\ntouch {slow}\n")
+    proc = start(holder, cache=cache, env=env)
+    try:
+        wait_for(flag)
+        status, entry = check(repo, 4, cache, {**env, "PATH": path})
+        assert status == "busy" and not os.path.exists(started), (status, entry)
+        assert entry["cause"] == "late" and entry["left"] < 2 <= entry["needs"], entry
+    finally:
         proc.communicate()
 
 
