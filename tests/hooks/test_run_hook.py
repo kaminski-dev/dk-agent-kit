@@ -7,6 +7,7 @@ interpreter, so a case reads which one a hook ran: `shim` for pyenv's shim (`<py
 name for `<pyenv>/versions/<name>/bin/python3`, `plain` for a python3 no version manager owns. The process id
 shows whether the interpreter replaced the harness's `sh` or cost a process more.
 """
+import glob
 import json
 import os
 import shutil
@@ -179,6 +180,63 @@ def main():
         got = guard_run()
         check("the pyenv version is not installed and the shim fails: the guard's command fails",
               got.status != 0 and not got.stdout.strip() and got.interpreters == ["shim"], got)
+
+        # The guard's bytecode cache: written on the first call, used after it, never trusted over the source.
+        def install(name):
+            return shutil.copytree(PLUGIN, os.path.join(root, name), ignore=shutil.ignore_patterns("__pycache__"))
+
+        def cached(plugin):
+            return glob.glob(os.path.join(plugin, "scripts", "__pycache__", "guard-bash.*.pyc"))
+
+        without_pyenv = f"{plain}:{SYSTEM}"
+        fresh = install("fresh")
+        got = guard_run(path=without_pyenv, command="git push origin main", plugin=fresh)
+        check("the first call after an install, with no cache yet, denies a push to main and leaves the cache",
+              got.decision() == "deny" and len(cached(fresh)) == 1, f"{got}, cache: {cached(fresh)}")
+        written = [os.stat(f).st_mtime_ns for f in cached(fresh)]
+        got = guard_run(path=without_pyenv, command="git push origin main", plugin=fresh)
+        check("the second call decides the same and leaves the cache as it was",
+              got.decision() == "deny" and [os.stat(f).st_mtime_ns for f in cached(fresh)] == written, got)
+        got = guard_run(path=without_pyenv, plugin=fresh)
+        source = os.path.join(fresh, "scripts", "guard-bash.py")
+        entry = '\n\nif __name__ == "__main__":'
+        text = open(source).read()
+        write(source, text.replace(entry, '\n\ndef decide(cmd, cwd, background=False):\n'
+                                          '    return "deny", "edited between two calls"\n' + entry))
+        edited = guard_run(path=without_pyenv, plugin=fresh)
+        check("guard-bash.py edited between two calls: the next call runs the new code",
+              entry in text and got.decision() == "allow" and edited.decision() == "deny"
+              and "edited between two calls" in edited.stdout, f"before: {got}; after: {edited}")
+        damaged = install("damaged")
+        guard_run(path=without_pyenv, plugin=damaged)
+        for f in cached(damaged):
+            with open(f, "wb") as out:
+                out.write(b"not bytecode")
+        got = guard_run(path=without_pyenv, command="git push origin main", plugin=damaged)
+        check("a damaged cache file: the guard compiles again and denies a push to main",
+              bool(cached(damaged)) and got.decision() == "deny", got)
+        readonly = install("readonly")
+        scripts = os.path.join(readonly, "scripts")
+        os.chmod(scripts, 0o555)
+        if os.access(scripts, os.W_OK):
+            print("SKIP a plugin directory that cannot be written to: this user writes to it anyway")
+        else:
+            got = guard_run(path=without_pyenv, command="git push origin main", plugin=readonly)
+            again = guard_run(path=without_pyenv, plugin=readonly)
+            check("a plugin directory that cannot be written to: the guard compiles on each call and decides",
+                  got.decision() == "deny" and again.decision() == "allow" and not cached(readonly),
+                  f"{got}; {again}; cache: {cached(readonly)}")
+        os.chmod(scripts, 0o755)
+        broken = install("broken")
+        with open(os.path.join(broken, "scripts", "guard-bash.py"), "a") as f:
+            f.write("\ndef (:\n")
+        got = guard_run(path=without_pyenv, plugin=broken)
+        check("a guard that does not compile: the guard's command fails, which blocks the call",
+              got.status != 0 and not got.stdout.strip(), got)
+        os.remove(os.path.join(broken, "scripts", "guard-bash.py"))
+        got = guard_run(path=without_pyenv, plugin=broken)
+        check("no guard-bash.py in the plugin: the guard's command fails",
+              got.status != 0 and not got.stdout.strip(), got)
 
     print(f"\n{'FAIL' if failures else 'ok'}: {len(failures)} failed")
     sys.exit(1 if failures else 0)
