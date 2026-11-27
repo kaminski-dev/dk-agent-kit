@@ -53,7 +53,7 @@ START = r"(?:^|" + OPENERS + r")\s*"
 # `perl -e 'alarm N; exec @ARGV' <command>`: how dk:issue-flow bounds a command where `timeout` is missing. A script
 # that shifts (`alarm shift; exec @ARGV`) takes its first argument, the seconds, off the command.
 EXEC_ARGV = r"\bexec\s*(?:\(\s*)?(?:\{\s*\$ARGV\[0\]\s*\}\s*)?@ARGV\b"
-EXEC_SCRIPT = r"(?:'[^']*" + EXEC_ARGV + r"[^']*'|\"[^\"]*" + EXEC_ARGV + r"[^\"]*\")"
+EXEC_SCRIPT = r"(?:'(?=[^']*" + EXEC_ARGV + r")[^']*'|\"(?=[^\"]*" + EXEC_ARGV + r")[^\"]*\")"
 SHIFTS = r"(?=(?:'(?:(?!" + EXEC_ARGV + r")[^'])*?|\"(?:(?!" + EXEC_ARGV + r")[^\"])*?)\bshift\b)"
 PERL_EXEC = r"(?:[^\s;&|()<>'\"]*/)?perl\s+-[A-Za-z]*[eE]\s*(?:" + SHIFTS + EXEC_SCRIPT + r"(?:\s+--)?\s+\S+|" \
     + EXEC_SCRIPT + r"(?:\s+--)?)"
