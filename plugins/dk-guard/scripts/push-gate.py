@@ -16,11 +16,13 @@ happens. A directory known only at run time (`cd "$(…)" && git push`, or `$WT`
 when the call does not set it or may have switched the checkout's branch), or
 missing before the call, runs no gate either, and the agent is told so.
 
-The gate takes one of the machine's gate slots first (gate.py). The wait for
-a slot counts against TIMEOUT; when no slot frees within DK_GATE_WAIT, or in
-time to leave the gate the seconds its last pass took, the push is denied with
-a message that the gates are busy and to push again, since the gate did not
-run.
+The gate waits for any other run on the same checkout, then takes one of the
+machine's gate slots (gate.py); a hand run in flight on the checkout is waited
+for and its pass on the same tree reused. The waits count against TIMEOUT.
+When they outlast DK_GATE_WAIT, or leave the gate less than the seconds its
+last pass took once the tree is hashed, the gate does not run and the push is
+denied with a message that says which of the three happened and to push
+again.
 
 It fails open otherwise: a gate that outlives TIMEOUT is killed and the push
 goes through with a message to the user. A crash, or the hook's own timeout in
