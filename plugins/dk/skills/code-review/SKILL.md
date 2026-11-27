@@ -10,7 +10,7 @@ Four-axis review of the diff between `HEAD` and a fixed point the user supplies:
 - **Correctness**: what breaks at runtime: a crash between an effect and its commit, a failure shown as empty, an edge value, a test that cannot fail?
 - **Comments**: does each comment the diff adds earn its place?
 
-The axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings and, when you wrote the change, answers them.
+The axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings. When you wrote the change, it starts with a self-pass over the diff (step 1) and ends by answering the findings (step 5).
 
 Tracker commands are in `docs/agents/issue-tracker.md`. If it is missing, tell the user to run `/dk:setup`.
 
@@ -23,6 +23,8 @@ Whatever the user said is the fixed point (a commit SHA, branch name, tag, `HEAD
 Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). When `git status --porcelain` shows uncommitted work, review it too: add `git diff HEAD` (staged and unstaged changes) and the untracked files from `git ls-files --others --exclude-standard`, which the sub-agents read in full as new files.
 
 Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and there is something to review: a non-empty branch diff, a non-empty `git diff HEAD`, or untracked files. A bad ref or an empty change should fail here, not inside the parallel sub-agents.
+
+**Self-pass.** When you wrote the change, settle what review would otherwise spend a round on, so the tier and every reviewer see the diff after it: delete each comment that restates the code, rename a symbol where a comment explains what it holds, and update every doc line that names a symbol the change renamed or changed. Committed work gets these edits as its own commit; when the change holds uncommitted work, they stay uncommitted in the working tree beside it. A change someone else wrote gets no self-pass, and the review edits nothing before step 5.
 
 **Tier.** Run `python3 -I <base directory>/tier <fixed-point>`, with `<base directory>` the one this skill's header names, written out literally. Its one line starts with the tier, `small`, `standard` or `risky`, and says why (its `--help` gives the thresholds). The tier sets which sub-agents run (step 3) and the round budget (step 5); keep the line for the report.
 

@@ -17,8 +17,6 @@ Run typechecking regularly, single test files regularly, and the full test suite
 
 Then call the Skill tool with `dk:verify` and prove the change.
 
-**Self-pass** over the diff, so review spends no round on it: delete each comment that restates the code, rename a symbol where a comment explains what it holds, and update every doc line that names a symbol the change renamed or changed. Commit it.
-
 Then call the Skill tool with `dk:code-review` to review the work, and answer its findings by its **Answer findings** step: each id fixed, disagreed with or declined in the ledger, within its round budget. The PR body carries the ledger.
 
 Finally open the PR with the body from the `dk:pr` skill, per `dk:issue-flow`.
