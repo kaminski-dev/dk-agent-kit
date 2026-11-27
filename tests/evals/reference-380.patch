@@ -1,0 +1,47 @@
+diff --git a/ledger/__main__.py b/ledger/__main__.py
+index c3ce81e..37f70c3 100644
+--- a/ledger/__main__.py
++++ b/ledger/__main__.py
+@@ -20,10 +20,14 @@ def seed(store):
+                   "city": ("Delft", "Rotterdam")})
+ 
+ 
++def value(v):
++    return "(empty)" if v is None else v
++
++
+ def show(rows):
+     for r in rows:
+         print(f"{r['changed_at']}  {r['entity_type']}#{r['entity_id']}  {r['action']:<6}  "
+-              f"{r['field_name']:<6}  {r['old_value']} -> {r['new_value']}")
++              f"{r['field_name']:<6}  {value(r['old_value'])} -> {value(r['new_value'])}")
+ 
+ 
+ def main():
+diff --git a/tests/test_history_output.py b/tests/test_history_output.py
+new file mode 100644
+index 0000000..7fc8636
+--- /dev/null
++++ b/tests/test_history_output.py
+@@ -0,0 +1,21 @@
++import pathlib
++import subprocess
++import sys
++import tempfile
++import unittest
++
++ROOT = pathlib.Path(__file__).resolve().parent.parent
++
++
++class HistoryOutput(unittest.TestCase):
++    def test_missing_value_prints_as_empty(self):
++        db = str(pathlib.Path(tempfile.mkdtemp()) / "ledger.db")
++        for command in ("seed", "history"):
++            out = subprocess.run([sys.executable, "-m", "ledger", command, "--db", db], cwd=ROOT,
++                                 capture_output=True, text=True, check=True).stdout
++        self.assertIn("(empty) -> Jansen BV", out)
++        self.assertIn("010-1234567 -> 010-7654321", out)
++
++
++if __name__ == "__main__":
++    unittest.main()

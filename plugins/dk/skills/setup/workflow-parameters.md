@@ -5,10 +5,24 @@ The `dk:issue-flow` skill holds the shared sequence. A repo's `workflow.md` keep
 - **Worktree**: `dk:issue-flow` step 2's `git worktree add` command filled in for this repo, in backticks, since the `require-worktree` hook shows the first backticked `git worktree add` line in its deny message; the allowed branch types; and the fresh-worktree setup (installs, generated files) before gates mean anything, as one line `- **Fresh-worktree setup**: ` holding only its commands, each in backticks, in order, since `dk:batch-pr`'s `finish.py` runs every backticked command on it after a batch merges. A repo with no setup leaves the line out.
 - **CI and deploy**: which workflows run on a PR and on `main`, and how to watch a deploy. Also which workflow, if any, runs that CI against `pre-main` (a nightly), by the name `gh run list --workflow` takes, and how one of its runs shows the commit it tested, since a scheduled run's `headSha` is `main`'s. A repo with no such workflow leaves both out.
 - **Review bot**: the bases whose PRs a review bot reviews and its login, each in backticks on one line (`` - **Review bot**: `coderabbitai[bot]` on PRs into `main` ``), since `dk:issue-flow` step 6's watcher reads that line; a line naming no login means no bot.
+- **No CI**: the bases whose PRs run no CI, each in backticks on one line (`` - **No CI**: `pre-main` ``), since `dk:issue-flow` step 6's watcher reads that line and on those bases skips its 3-minute wait for checks to register. A repo whose every base runs CI leaves it out.
 - **Batch-review fixes**: `push` or `pr`, the route `dk:issue-flow` step 7 takes for batch PR review findings.
 - **Evidence specifics**: where the browser tool writes screenshots, anything repo-specific about verify assets.
 - **Post-deploy checks**: which log or error source the `awaiting-verification` query runs against.
 - **Customer reply**: language, form of address, headers, tone.
 - **Production data**: how one-off data fixes and backfills are delivered.
+- **Risk paths**: the section below, copied in and trimmed or extended to the repo's own paths. `dk:code-review`'s `tier` script reads it, so a repo without it never gets the small tier.
 
 A line `dk:issue-flow` states equally goes; a line that sharpens it for this repo stays.
+
+## Risk paths
+
+A change that touches one of these paths is risky at any size. Each bullet's backticked globs match the repo-relative path without regard to case, and `*` crosses `/`.
+
+- Migrations and schema: `*migrations/*`, `*migrate*`, `*schema*`
+- Auth: `*auth*`, `*login*`, `*permission*`, `*password*`
+- Money: `*billing*`, `*payment*`, `*invoice*`, `*stripe*`, `*checkout*`
+- Routes and API contracts: `*routes*`, `*router*`, `api/*`, `*/api/*`, `*openapi*`, `*swagger*`, `*.proto`, `*graphql*`
+- Mail, SMS and push: `*mail*`, `*sms*`, `*push*`, `*notif*`
+- CI and Dockerfiles: `.github/workflows/*`, `.gitlab-ci*`, `*dockerfile*`, `*compose.y*ml`
+- Lockfiles: `*.lock`, `*-lock.json`, `*-lock.yaml`, `go.sum`, `*/go.sum`

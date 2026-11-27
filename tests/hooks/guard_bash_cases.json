@@ -794,6 +794,8 @@
   {"why": "#133: dk:issue-flow's PR watcher in the foreground blocks the session until its deadline, 20 minutes by default", "cmd": "python3 -I ~/.claude/plugins/marketplaces/dk-agent-kit/plugins/dk/skills/issue-flow/pr-wait 42", "expect": "deny"},
   {"cmd": "cd ~/workspace/dk-agent-kit-124 && python3 -I ~/.claude/plugins/marketplaces/dk-agent-kit/plugins/dk/skills/issue-flow/pr-wait 42 --until green", "expect": "deny"},
   {"cmd": "/Users/me/workspace/dk-agent-kit/plugins/dk/skills/issue-flow/pr-wait 42 --minutes 30", "expect": "deny"},
+  {"why": "#176: the watch to the merge waits on the maintainer for hours, so it runs only in the background", "cmd": "cd ~/workspace/dk-agent-kit-176 && python3 -I ~/.claude/plugins/marketplaces/dk-agent-kit/plugins/dk/skills/issue-flow/pr-wait 42 --until merged", "expect": "deny"},
+  {"cmd": "cd ~/workspace/dk-agent-kit-176 && python3 -I ~/.claude/plugins/marketplaces/dk-agent-kit/plugins/dk/skills/issue-flow/pr-wait 42 --until merged", "background": true, "expect": "allow"},
   {"cmd": "timeout 1200 python3 ./pr-wait 7 --until ready 2>&1 | tail -5", "expect": "deny"},
   {"cmd": "bash -c 'python3 -I ./pr-wait 9'", "expect": "deny"},
   {"cmd": "python3 -I /x/issue-flow/pr-wait 42 'unterminated", "expect": "deny"},

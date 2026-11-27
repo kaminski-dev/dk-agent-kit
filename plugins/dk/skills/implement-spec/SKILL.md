@@ -17,7 +17,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 ## Steps
 
-1. Read the spec and tickets (`gh issue view <spec> --json title,body,comments` and its sub-issues) to understand the task graph.
+1. Read the spec and tickets (`gh issue view <spec> --json title,body,comments` and its sub-issues) to understand the task graph, then run the **preflight** from the repo's checkout, with `<base directory>` the one this skill's header names, written out literally: `python3 -I <base directory>/preflight.py <spec>`. It prints the tickets that can finish now (the first **frontier**), those waiting on a ticket inside the spec, and those that cannot finish, each with its reason: a blocker outside the spec, or no `ready-for-agent` label. When it exits 3, stop here with no worktree created, and tell the user each ticket under **Cannot finish** with its reason.
 
 2. (optional) Use an **exploration subagent** to conduct any exploration required by the tickets - relevant codebase files or external documentation. It saves its Markdown notes in `$SCRATCH/<spec>/notes/`, outside the repo and readable by every later subagent, so **implementer subagents** focus on implementation rather than exploration. When `docs/research/` already holds a `dk:research-codebase` document for this spec, point at it instead.
 

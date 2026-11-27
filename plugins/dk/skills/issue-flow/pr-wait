@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# Adapted from t3dotgg/tstack@1085050 skills/babysit-pr/scripts/pr-wait, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: ends at a --minutes deadline (20 by default) restarted by a push to the head; the review bot and the bases it reviews come from docs/agents/workflow.md, Greptile and Macroscope gating removed; the gh user's comments are events, only those opening with dk:issue-flow's attribution note are skipped; the bot's verdict on the head (`reviews <id>...`, `clean`, `rate limited`, `paused`) taken over from wait-review.py; the repo comes from origin when neither --repo nor a URL names it; gh calls are bounded by the deadline; a line from someone not a collaborator is tagged; a page holding less than its total blocks ready and ends an any-change wait when its count or total changes: the state file keeps the last poll's unread pages, so a restart counts only a new or changed one.
+# Adapted from t3dotgg/tstack@1085050 skills/babysit-pr/scripts/pr-wait, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: ends at a --minutes deadline (20 by default) restarted by a push to the head; the review bot and the bases it reviews come from docs/agents/workflow.md, Greptile and Macroscope gating removed; the gh user's comments are events, only those opening with dk:issue-flow's attribution note are skipped; the bot's verdict on the head (`reviews <id>...`, `clean`, `rate limited`, `paused`) taken over from wait-review.py; the repo comes from origin when neither --repo nor a URL names it; gh calls are bounded by the deadline; a line from someone not a collaborator is tagged; a page holding less than its total blocks ready and ends an any-change wait when its count or total changes: the state file keeps the last poll's unread pages, so a restart counts only a new or changed one; `--until merged` watches past ready until the merge, with a deadline of its own kept across restarts and exit 3 when it passes; a base workflow.md's **No CI** line names skips the wait for checks to register.
 """pr-wait: watch one GitHub pull request and print one line per real event (dk:issue-flow step 6).
 
-  python3 -I pr-wait <pr> [--until ready|green|any-change] [--repo owner/name] [--minutes 20] [--interval 20]
+  python3 -I pr-wait <pr> [--until ready|green|any-change|merged] [--repo owner/name] [--minutes 20] [--interval 20]
 
 <pr> is a PR number or PR URL. Without --repo, the repo comes from the URL or
 from origin's github.com URL in the current checkout, whatever GH_REPO says.
@@ -20,12 +20,23 @@ the run go to stderr.
               BEHIND, and every comment, review and thread fit the page read
               (default)
   any-change  stop after the first poll that prints an event
+  merged      keep watching past ready until the PR merges or closes: every
+              event above prints and the watch goes on, a failed check and a
+              DIRTY merge state included, and `ready on <sha>` prints once per
+              head. Its deadline (--minutes, 480 by default) counts from the
+              first run of this watch, kept in the state file, so a watcher
+              restarted after its monitor expired keeps it; a push does not
+              move it. It polls every 60 seconds by default.
 
 The review bot is the one the **Review bot** line of the checkout's
 docs/agents/workflow.md names: the first backticked login ending in [bot], on
 the bases the line names in backticks (`main` when it names none). Without
 that line it is coderabbitai[bot] on PRs into main; a line naming no login
 means no bot. `ready` on a base the bot does not review waits for no bot.
+
+A base the **No CI** line of workflow.md names in backticks runs no checks, so
+on it no checks at all count as done at once, without the 3-minute wait for
+checks to register.
 
 Exit codes
   0  the --until condition is met, or the PR merged
@@ -35,6 +46,7 @@ Exit codes
      than one page reads, or a bot that will not review the head on its own, GitHub stayed unreachable, or the deadline passed (--minutes
      after the last head change)
   2  bad arguments, unknown PR, or another pr-wait already watches this PR
+  3  --until merged: its deadline passed with the PR still open
 
 Events
   - a required check failed (name and link)
@@ -61,6 +73,7 @@ Events
     again with an event whenever the last poll, a restarted watcher's
     included, did not report that page with the same count and total
   - the PR merged or closed
+  - ready on the head (--until merged)
   - the deadline passed
 
 Comment edits are never events.
@@ -111,6 +124,9 @@ STALE_STATE_SECONDS = 6 * 3600
 # CI registers its checks a while after a push, so an empty gate counts as done only on a head seen this long ago.
 # The environment variable is the tests' clock seam.
 REGISTER_SECONDS = float(os.environ.get("PR_WAIT_REGISTER_SECONDS", 180))
+# --until merged waits on the maintainer, which can take hours, so it has its own deadline and polls less often.
+MERGED_MINUTES, MERGED_INTERVAL = 480, 60
+MERGED_DEADLINE = 3
 MAX_FAILED_POLLS = 10
 GH_TIMEOUT = 60
 TRANSIENT = re.compile(
@@ -204,13 +220,23 @@ def origin_repo():
     return m.group(1) if m else None
 
 
-def review_bot() -> tuple[str | None, set[str]]:
-    """The review bot's REST login and the bases it reviews, from the checkout's workflow.md."""
+def workflow() -> str:
+    """The checkout's docs/agents/workflow.md, empty when it has none."""
     root = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
     try:
-        text = (Path(root) / "docs" / "agents" / "workflow.md").read_text() if root else ""
+        return (Path(root) / "docs" / "agents" / "workflow.md").read_text() if root else ""
     except OSError:
-        text = ""
+        return ""
+
+
+def no_ci(text: str) -> set[str]:
+    """The bases workflow.md's **No CI** line names in backticks."""
+    line = re.search(r"^.*\*\*No CI\*\*.*$", text, re.M)
+    return set(re.findall(r"`([^`\n]+)`", line.group(0))) if line else set()
+
+
+def review_bot(text: str) -> tuple[str | None, set[str]]:
+    """The review bot's REST login and the bases it reviews, from workflow.md."""
     line = re.search(r"^.*\*\*Review bot\*\*.*$", text, re.M)
     if not line:
         return DEFAULT_BOT
@@ -339,9 +365,9 @@ def required_checks(repo: str, base: str) -> tuple[set[str], list[str]]:
 
 class Watcher:
     def __init__(self, repo: str, pr: int, until: str, interval: float, minutes: float,
-                 bot: str | None, bases: set[str]) -> None:
+                 bot: str | None, bases: set[str], no_ci: set[str]) -> None:
         self.repo, self.pr, self.until, self.interval, self.minutes = repo, pr, until, interval, minutes
-        self.bot, self.bases = bot, bases
+        self.bot, self.bases, self.no_ci = bot, bases, no_ci
         self.owner, self.name = repo.split("/")
         self.path = STATE_DIR / f"{repo.replace('/', '__')}__{pr}.json"
         state = self.load()
@@ -469,6 +495,8 @@ class Watcher:
     def poll(self) -> None:
         global deadline
         pr = self.fetch_pr()
+        if pr["state"] in ("MERGED", "CLOSED"):
+            self.state.pop("merged_since", None)  # the watch is over; a later one starts its own deadline
         if pr["state"] == "MERGED":
             self.finish(0, [f"merged: {pr['url']}"])
         if pr["state"] == "CLOSED":
@@ -489,7 +517,8 @@ class Watcher:
         short = head[:7]
         if head != self.head:  # a push restarts the deadline
             self.head, self.head_seen = head, time.monotonic()
-            deadline = self.head_seen + self.minutes * 60
+            if self.until != "merged":
+                deadline = self.head_seen + self.minutes * 60
         comments = pr["comments"]["nodes"]
         reviews = pr["reviews"]["nodes"]
         threads = pr["reviewThreads"]["nodes"]
@@ -511,7 +540,7 @@ class Watcher:
                 self.emit(f"fail:{head}:{name}:{link}", fail_lines[-1])
         watched = {name: c for name, c in checks.items() if not bot_check(name, self.bot)}
         gate_done = all(bucket(n) != "pending" for n in gate) and (
-            bool(gate) or time.monotonic() - self.head_seen >= REGISTER_SECONDS)
+            bool(gate) or base in self.no_ci or time.monotonic() - self.head_seen >= REGISTER_SECONDS)
         all_done = gate_done and all(c["bucket"] != "pending" for c in watched.values())
         # Checks appear a few seconds after a push. Two identical polls in a row
         # guard against calling a half-registered set of checks finished.
@@ -621,11 +650,12 @@ class Watcher:
             f"merge state {merge_state}",
         ]
         summary = "; ".join(p for p in parts if p)
-        checks_key = f"checks:{head}"
+        checks_key, ready_key = f"checks:{head}", f"ready:{head}"
+        ready_line = f"ready on {short}: {summary}"
 
         # Decide whether to stop. A green or ready line carries the same summary
         # as the checks line, so it marks that event as reported.
-        if self.until != "any-change":
+        if self.until in ("green", "ready"):
             if merge_state == "DIRTY":
                 self.finish(1, [dirty_line])
             if fail_lines:
@@ -633,21 +663,30 @@ class Watcher:
             if green and self.until == "green":
                 self.reported.add(checks_key)
                 self.finish(0, [f"green on {short}: {summary}{self.behind(base, base_oid, head)}"])
+        # ready waits for the review bot's verdict only on a base it reviews.
+        bot_stuck = gating and verdict in ("rate limited", "paused")
+        reviewed_ok = green and (verdict or not gating) and not bot_stuck
+        s = "" if len(unresolved) == 1 else "s"
+        blocked_line = f"blocked by {len(unresolved)} unresolved thread{s} on {short}: {' '.join(unresolved)}"
         if self.until == "ready":
-            if gating and verdict in ("rate limited", "paused"):
+            if bot_stuck:
                 self.finish(1, bot_lines)
-            # ready waits for the review bot's verdict only on a base it reviews.
-            if green and (verdict or not gating):
+            if reviewed_ok:
                 if unresolved:
-                    s = "" if len(unresolved) == 1 else "s"
-                    self.finish(1, bot_lines + [f"blocked by {len(unresolved)} unresolved thread{s} on {short}: {' '.join(unresolved)}"])
+                    self.finish(1, bot_lines + [blocked_line])
                 if merge_state == "BEHIND":
                     self.finish(1, bot_lines + [behind_line])
                 if unread_lines:
                     self.finish(1, bot_lines + unread_lines)
                 if merge_state and merge_state != "UNKNOWN":  # GitHub has not computed it yet: keep polling
-                    self.reported.add(checks_key)
-                    self.finish(0, bot_lines + [f"ready on {short}: {summary}{self.behind(base, base_oid, head)}"])
+                    self.reported.update((checks_key, ready_key))  # a merged watch after this one says it no more
+                    self.finish(0, bot_lines + [ready_line + self.behind(base, base_oid, head)])
+        if self.until == "merged" and reviewed_ok:
+            if unresolved:
+                self.emit(f"blocked:{head}:{' '.join(unresolved)}", blocked_line)
+            elif not unread_lines and merge_state not in (None, "UNKNOWN", "BEHIND", "DIRTY"):
+                self.reported.add(checks_key)
+                self.emit(ready_key, ready_line)
         if all_done and (stable or self.baseline):
             self.emit(checks_key, f"checks finished on {short}: {summary}")
         if self.until == "any-change" and self.events:
@@ -656,6 +695,9 @@ class Watcher:
     def run(self) -> NoReturn:
         global deadline
         deadline = time.monotonic() + self.minutes * 60
+        if self.until == "merged":  # counted from this watch's first run, which a restart keeps
+            since = self.state.setdefault("merged_since", time.time())
+            deadline = time.monotonic() + since + self.minutes * 60 - time.time()
         failures = 0
         while True:
             try:
@@ -674,6 +716,9 @@ class Watcher:
                     log(f"baseline recorded for {self.repo}#{self.pr}; reporting only new events")
                 self.baseline = False
             left = deadline - time.monotonic()
+            if left <= 0 and self.until == "merged":
+                self.state.pop("merged_since", None)
+                self.finish(MERGED_DEADLINE, [f"deadline passed: no merge after {self.minutes:g} minutes of watching"])
             if left <= 0:
                 goal = "event" if self.until == "any-change" else self.until
                 self.finish(1, [f"deadline passed: no {goal} on {(self.head or '?')[:7]} after {self.minutes:g} minutes"])
@@ -684,14 +729,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="pr-wait", description="Watch a GitHub PR and print one line per real event.")
     parser.add_argument("pr", nargs="?", help="PR number or URL")
     parser.add_argument("--repo", help="owner/name (default: from the URL or origin)")
-    parser.add_argument("--until", choices=("green", "ready", "any-change"), default="ready")
-    parser.add_argument("--minutes", type=float, default=20, help="deadline after the last head change (default 20)")
-    parser.add_argument("--interval", type=float, default=20, help="seconds between polls (default 20)")
+    parser.add_argument("--until", choices=("green", "ready", "any-change", "merged"), default="ready")
+    parser.add_argument("--minutes", type=float,
+                        help="deadline after the last head change (default 20); for merged, after the watch began (480)")
+    parser.add_argument("--interval", type=float, help="seconds between polls (default 20; 60 for merged)")
     args = parser.parse_args()
+    merged = args.until == "merged"
+    minutes = args.minutes if args.minutes is not None else MERGED_MINUTES if merged else 20
+    interval = args.interval if args.interval is not None else MERGED_INTERVAL if merged else 20
     repo, pr = parse_target(args.pr, args.repo)
     _lock = lock(repo, pr)
-    bot, bases = review_bot()
-    Watcher(repo, pr, args.until, max(args.interval, 0), args.minutes, bot, bases).run()
+    text = workflow()
+    bot, bases = review_bot(text)
+    Watcher(repo, pr, args.until, max(interval, 0), minutes, bot, bases, no_ci(text)).run()
 
 
 if __name__ == "__main__":

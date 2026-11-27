@@ -1,22 +1,32 @@
 #!/usr/bin/env python3
-"""List the open ready-for-agent issues no open issue blocks. Changes nothing.
+"""List the open ready-for-agent issues no open issue blocks, and the code to read them against.
+
+usage: ready.py [--base <branch>] [--worktree <dir>]
 
 Run from inside the repo: gh is asked about origin's github.com repo, whatever
-GH_REPO says. Prints, oldest first:
+GH_REPO says. Prints:
 
-  ## Ready     issues with no open blocker
+  ## Code      origin/<base> at its sha, fetched first, and a detached worktree
+               at it: <dir> with --worktree (added, or moved there when it is
+               already one of this repo's detached worktrees), else the command that adds one
+  ## Ready     issues with no open blocker, oldest first
   ## Blocked   the other ready-for-agent issues, each with its open blockers
+
+The base is pre-main when origin has one, else main, unless --base names it.
+Beside the fetch and the worktree, it changes nothing.
 
 A blocker is a native dependency or a `Blocked by: #n` line in the issue body;
 `owner/repo#n` there names another repo's issue, looked up in that repo.
 The first cut is the search `-is:blocked`, which counts only open native
 blockers. GitHub does not document that qualifier; it was checked by hand on
 2026-11-02. Where search rejects it, every issue's native blockers are read
-through the API instead, every page of them. Exit 1: gh failed, or origin is
-no github.com repo.
+through the API instead, every page of them. Exit 1: gh or git failed, origin
+is no github.com repo, or --worktree names an existing path that is no worktree
+of this repo or a worktree on a branch.
 """
 import json
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -35,6 +45,45 @@ def gh(*args, check=True):
     return r
 
 
+def git(*args, cwd=None):
+    r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit(f"git {' '.join(args)}: {r.stderr.strip() or r.returncode}")
+    return r.stdout
+
+
+def code_at(base, tree):
+    """Fetch origin's base and put a detached worktree at it; the lines of the Code section."""
+    if base is None:
+        base = "pre-main" if git("ls-remote", "--heads", "origin", "pre-main").strip() else "main"
+    # An explicit refspec, so a single-branch clone gets origin/<base> too.
+    git("fetch", "-q", "origin", f"+refs/heads/{base}:refs/remotes/origin/{base}")
+    sha = git("rev-parse", f"origin/{base}^{{commit}}").strip()
+    lines = [f"origin/{base} at {sha}: read code there, not in this checkout."]
+    if tree is None:
+        return lines + [f"git worktree add --detach <dir> {sha}"]
+    path = pathlib.Path(tree).expanduser().resolve()
+    on_branch = {}
+    for block in git("worktree", "list", "--porcelain").split("\n\n"):
+        entry = block.splitlines()
+        if entry and entry[0].startswith("worktree "):
+            on_branch[pathlib.Path(entry[0].removeprefix("worktree ")).resolve()] = any(
+                line.startswith("branch ") for line in entry)
+    if path in on_branch and not path.exists():
+        # its directory is gone: drop this one record, locked or not, and add it again below
+        git("worktree", "remove", "--force", "--force", str(path))
+        del on_branch[path]
+    if on_branch.get(path):
+        sys.exit(f"--worktree {tree}: is on a branch; name a detached worktree or a new path.")
+    if path in on_branch:
+        git("checkout", "-q", "--detach", sha, cwd=path)
+    elif path.exists():
+        sys.exit(f"--worktree {tree}: exists and is no worktree of this repo.")
+    else:
+        git("worktree", "add", "-q", "--detach", str(path), sha)
+    return lines + [f"worktree: {tree}"]
+
+
 def origin_repo():
     """None when origin is no github.com repo. Read from the configured URL, before any insteadOf rewrites it."""
     url = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True).stdout.strip()
@@ -43,13 +92,18 @@ def origin_repo():
 
 
 def main():
-    if len(sys.argv) > 1:
+    args, opts = sys.argv[1:], {"--base": None, "--worktree": None}
+    while args and args[0] in opts and len(args) > 1:
+        flag, value, *args = args
+        opts[flag] = value
+    if args:
         print(__doc__.strip())
-        return 0 if sys.argv[1] in ("-h", "--help") else 1
+        return 0 if args[0] in ("-h", "--help") else 1
 
     repo = origin_repo()
     if not repo:
         sys.exit("origin names no github.com repo, so there is no repo to ask gh about.")
+    code = code_at(opts["--base"], opts["--worktree"])
     os.environ["GH_REPO"] = repo  # an inherited GH_REPO would point gh at another repo
     issues = json.loads(gh(*LIST[1:]).stdout)
     first_cut = gh(*LIST[1:], "--search", "-is:blocked", check=False)
@@ -76,7 +130,9 @@ def main():
             open_blockers |= {f"{other}#{n}" for other, n in BLOCKER_REF.findall(line) if is_open((other, n))}
         (blocked if open_blockers else ready).append((issue, sorted(open_blockers)))
 
-    print("## Ready")
+    print("## Code")
+    print("\n".join(code))
+    print("\n## Ready")
     for issue, _ in ready:
         print(f"- #{issue['number']} {issue['title']}")
     print("\n## Blocked")

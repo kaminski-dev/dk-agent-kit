@@ -20,6 +20,7 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 EVALS = ROOT / "plugins" / "dk" / "evals"
 REFERENCE = pathlib.Path(__file__).resolve().parent / "evals"
+TIER = ROOT / "plugins" / "dk" / "skills" / "code-review" / "tier"
 
 failures = []
 
@@ -65,6 +66,17 @@ def pull_on(ws, num, ref):
     return pull.read_text() if pull.exists() else r.stderr
 
 
+def tier(ws):
+    r = run(ws, f"python3 -I '{TIER}' origin/pre-main", cwd=ws / "app")
+    return r.stdout.strip() or r.stderr.strip()
+
+
+def comment_lines(ws):
+    diff = git(ws, "app", "diff", "origin/pre-main...HEAD").stdout
+    return [l for l in diff.splitlines() if not l.startswith("+++")
+            and (re.match(r'\+\s*(#|"""|--|//)', l) or re.match(r'\+.*\S\s+(#|//) ', l))]
+
+
 # --- #353 fixture: Customer History order -------------------------------------------------------
 
 ws = scaffold("implement-353")
@@ -97,12 +109,12 @@ check("353: a failed extraction leaves no checkout in .tracker", left == [], lef
 
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
-# --- Fan-out fixture: #353 and #376 in one run, their fixes editing the same query --------------
+# --- Fan-out fixture: #353, #376 and #380 in one run; #353 and #376 edit the same query ----------
 
 ws = scaffold("implement-wave")
 ready = json.loads(run(ws, "gh issue list --label ready-for-agent --json number").stdout or "[]")
-check("wave: both tickets are briefed and ready", sorted(i["number"] for i in ready) == [353, 376], ready)
-for num in ("353", "376"):
+check("wave: the three tickets are briefed and ready", sorted(i["number"] for i in ready) == [353, 376, 380], ready)
+for num in ("353", "376", "380"):
     pr = pull_on(ws, num, "origin/pre-main")
     check(f"wave: #{num}'s acceptance fails on the pre-fix state", "acceptance: fail" in pr, pr)
     git(ws, "app", "checkout", "-q", "-b", f"reference-{num}", "origin/pre-main")
@@ -115,6 +127,11 @@ for num in ("353", "376"):
 merge = git(ws, "app", "merge-tree", "--write-tree", "--name-only", "reference-353", "reference-376")
 check("wave: the two reference fixes conflict in a dry merge",
       merge.returncode == 1 and "ledger/audit_store.py" in merge.stdout, (merge.returncode, merge.stdout, merge.stderr))
+# #380 edits the command line only, so its branch merges cleanly with both: the wave has one conflicting pair.
+for other in ("353", "376"):
+    merge = git(ws, "app", "merge-tree", "--write-tree", "--name-only", "reference-380", f"reference-{other}")
+    check(f"wave: #380's reference fix merges cleanly with #{other}'s", merge.returncode == 0,
+          (merge.returncode, merge.stdout, merge.stderr))
 # The conflict is a constraint of the tickets, not of the reference fixes alone: #353 changes the ORDER BY,
 # #376's brief has it drop the row LIMIT on the line below, and git conflicts on edits to adjacent lines.
 # So every pair of branches that meets both briefs conflicts, and the report grader can require it.
@@ -200,6 +217,42 @@ check("wave: the isolation grader catches a brief with worktree isolation",
 check("wave: the isolation grader passes a brief without it", re.search(isolated, brief("Work in ../app-353.")) is None,
       isolated)
 
+# The handover grader reads the trace, one JSON message per line: it needs three messages of the orchestrator's own
+# that end on a verdict line before its dry-merge call, so one report after the dry-merge fails, and so do the
+# implementers' own reports, which carry their parent_tool_use_id (#175).
+def trace_line(content, parent=None):
+    return json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [content]},
+                       "parent_tool_use_id": parent, "session_id": "s"}, separators=(",", ":"))
+
+
+def handover(num, verdict="Ready to merge"):
+    return trace_line({"type": "text", "text": f"## #{num}\n\n**PR:** https://github.com/acme/ledger/pull/{num}\n\n**{verdict}**"})
+
+
+dry_merge = trace_line({"type": "tool_use", "id": "t", "name": "Bash",
+                        "input": {"command": "git merge-tree --write-tree --name-only origin/a origin/b"}})
+handed = re.compile(grader_field("implement-wave", r"pattern: '((?:[^']|'')*)'")
+                    .get("hands-over-each-pr-before-the-dry-merge", "(?!)").replace("''", "'"), re.M)
+check("wave: the handover grader passes three handovers before the dry-merge",
+      handed.search("\n".join([handover(353), handover(376, "Blocked"), handover(380), dry_merge, handover(0)])) is not None)
+check("wave: the handover grader fails one report after the dry-merge",
+      handed.search("\n".join([dry_merge, handover(353), handover(376), handover(380)])) is None)
+check("wave: the handover grader fails two handovers before the dry-merge",
+      handed.search("\n".join([handover(353), handover(376), dry_merge, handover(380)])) is None)
+check("wave: the handover grader leaves out the implementers' own reports",
+      handed.search("\n".join([handover(353), handover(376)] + [
+          trace_line({"type": "text", "text": "**PR:** x\n\n**Ready to merge**"}, parent="toolu_1"), dry_merge])) is None)
+
+# The wave's width counts each implementer's reviewers, so a run's Agent calls can pass 20 while no more than 20 run
+# at once; the grader reads the limit from the harness's own refusal instead (#175).
+limit = re.compile(grader_field("implement-wave", r"pattern: '((?:[^']|'')*)'")
+                   .get("no-concurrent-subagent-limit", "(?!)").replace("''", "'"))
+check("wave: the subagent-limit grader passes a trace that never hit the limit",
+      limit.search("\n".join([handover(353), dry_merge])) is not None)
+check("wave: the subagent-limit grader fails a trace where an Agent call hit it",
+      limit.search("\n".join([handover(353), '{"type":"user","message":{"content":[{"type":"tool_result",'
+                               '"content":"Concurrent subagent limit reached (20)","is_error":true}]}}', dry_merge])) is None)
+
 # The review fixture: a branch that fixes #353 correctly but breaks one documented standard.
 ws = scaffold("code-review-353")
 branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
@@ -208,15 +261,17 @@ diff = git(ws, "app", "diff", "origin/pre-main...HEAD").stdout
 check("353 review: the diff seeds a value interpolated into SQL", "entity_type = '{entity_type}'" in diff, diff[:300])
 pr = pull_on(ws, "353", "HEAD")
 check("353 review: the seeded branch still meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr)
+check("353 review: the diff adds no comment line, so Comments does not run (#173)", not comment_lines(ws),
+      comment_lines(ws))
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
-# The ready gate's reads (#134): dk:issue-flow step 6 reads the PR through gh pr view.
+# The ready gate's reads (#134): dk:issue-flow step 6's ready gate, in ready-gate.md (#179), reads the PR through gh pr view.
 ws = scaffold("code-review-353")
 state_file = ws / ".tracker" / "state.json"
 TIP = git(ws, "app", "rev-parse", "HEAD").stdout.strip()
-issue_flow = (EVALS.parent / "skills" / "issue-flow" / "SKILL.md").read_text()
+issue_flow = (EVALS.parent / "skills" / "issue-flow" / "ready-gate.md").read_text()
 gate_fields = re.search(r"`gh pr view <PR> --json (headRefOid,[\w,]+)`", issue_flow)
-check("gate: dk:issue-flow's ready gate names its gh pr view fields", gate_fields is not None, "no such command in step 6")
+check("gate: dk:issue-flow's ready gate names its gh pr view fields", gate_fields is not None, "no such command in ready-gate.md")
 GATE = gate_fields.group(1) if gate_fields else ""
 
 
@@ -263,7 +318,7 @@ check("gate: new_pr in the state sets what a PR the agent opens carries",
       got == {"headRefOid": TIP, "state": "OPEN", "isDraft": True, "reviewDecision": "REVIEW_REQUIRED",
               "mergeable": "MERGEABLE", "mergeStateStatus": "BLOCKED", "base": "pre-main"}, got)
 blocking = re.search(r"`gh pr view <PR> (--json latestReviews --jq '[^']*')`", issue_flow)
-check("gate: dk:issue-flow's ready gate names its read of requested changes", blocking is not None, "no such command in step 6")
+check("gate: dk:issue-flow's ready gate names its read of requested changes", blocking is not None, "no such command in ready-gate.md")
 store_pr(1)
 r = run(ws, f"gh pr view 1 {blocking.group(1) if blocking else ''}", cwd=ws / "app")
 check("gate: a PR without reviews has nobody requesting changes", (r.returncode, r.stdout) == (0, ""), (r.stdout, r.stderr))
@@ -547,6 +602,98 @@ check("388 review: on the reference fix the Outbox tab's test fails when renderi
       and "TypeError" in empty.stderr, empty.stderr[-500:])
 shutil.rmtree(ws.parent.parent, ignore_errors=True)
 
+# The review loop's stop condition (#172): the author answering a nit-only first round runs no second, and a
+# behaviour fix to a Correctness should runs Correctness alone on the fix diff.
+def reviewer_counts(case):
+    """{grader name: (min, max)} for a case's tool_used graders on Agent calls."""
+    text = (EVALS / case / "case.yaml").read_text()
+    out = {}
+    for block in re.split(r"\n  - ", text)[1:]:
+        name, lo, hi = (re.search(p, block) for p in (r"name: (\S+)", r"\bmin: (\d+)", r"\bmax: (\d+)"))
+        if name and "tool: Agent" in block:
+            out[name.group(1)] = (int(lo.group(1)) if lo else 1, int(hi.group(1)) if hi else None)
+    return out
+
+
+ws = scaffold("code-review-nits")
+branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+check("nit-only review: the clean #353 fix is checked out", branch == "fix/353-ordered", branch)
+pr = pull_on(ws, "353", "HEAD")
+check("nit-only review: the branch meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr)
+stat = git(ws, "app", "diff", "--numstat", "origin/pre-main...HEAD").stdout.split()
+check("nit-only review: the diff is under the smell baseline's 200 lines",
+      stat and sum(int(n) for n in stat[0::3] + stat[1::3]) <= 200, stat)
+check("nit-only review: a repo with no risk-path list is standard, so all three dk:reviewer axes run",
+      tier(ws).startswith("standard:"), tier(ws))
+check("nit-only review: the diff adds no comment line", not comment_lines(ws), comment_lines(ws))
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+
+# The tier (#173): the same small fix gets one reviewer in a repo with a risk-path list, and all four axes when
+# it touches a risk path and adds a comment.
+ws = scaffold("code-review-small")
+check("small review: the clean #353 fix is checked out",
+      git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == "fix/353-ordered")
+check("small review: the repo keeps a risk-path list, and the fix is small", tier(ws).startswith("small:"), tier(ws))
+check("small review: the diff adds no comment line", not comment_lines(ws), comment_lines(ws))
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+check("small review: one dk:reviewer call and no dk:comment-reviewer",
+      reviewer_counts("code-review-small") == {"one-reviewer": (1, 1), "no-comments-reviewer": (0, 0),
+                                                "short-round-one-prompts": (0, 0)},
+      reviewer_counts("code-review-small"))
+ws = scaffold("code-review-risky")
+check("risky review: the commented #353 fix is checked out",
+      git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == "fix/353-commented")
+stat = git(ws, "app", "diff", "--numstat", "origin/pre-main...HEAD").stdout.split()
+check("risky review: the diff is small by size: 60 lines or fewer in 3 files or fewer",
+      stat and sum(int(n) for n in stat[0::3] + stat[1::3]) <= 60 and len(stat) // 3 <= 3, stat)
+check("risky review: it touches the repo's risk path, so it is risky",
+      tier(ws).startswith("risky: ledger/audit_store.py matches"), tier(ws))
+check("risky review: the diff adds a comment line", comment_lines(ws), comment_lines(ws))
+pr = pull_on(ws, "353", "HEAD")
+check("risky review: the branch meets #353's acceptance", "acceptance: pass" in pr and "unit tests: pass" in pr, pr)
+shutil.rmtree(ws.parent.parent, ignore_errors=True)
+check("risky review: all four axes, three dk:reviewer calls and one dk:comment-reviewer",
+      reviewer_counts("code-review-risky") == {"three-reviewers": (3, None), "comments-reviewer": (1, None)},
+      reviewer_counts("code-review-risky"))
+check("nit-only review: one round is three dk:reviewer calls, and no dk:comment-reviewer for a diff with no comment",
+      reviewer_counts("code-review-nits") == {"three-reviewers-one-round": (3, 3), "no-comments-reviewer": (0, 0)},
+      reviewer_counts("code-review-nits"))
+for case in ("code-review-nits", "code-review-rereview"):
+    prompt = (EVALS / case / "prompt.md").read_text()
+    check(f"{case}: the prompt has the author answer the findings", "Answer findings" in prompt, prompt)
+ids = criteria("code-review-correctness").get("findings-carry-id-and-severity", "")
+check("388 review: the id grader exempts the id-less also and PR must carry lines (#172)",
+      "`also:`" in ids and "`PR must carry:`" in ids, ids)
+check("re-review: it replays the #388 correctness fixture",
+      (EVALS / "code-review-rereview" / "scaffold.sh").read_text() == (EVALS / "code-review-correctness" / "scaffold.sh").read_text())
+check("re-review: a second round runs, and Comments does not rerun",
+      reviewer_counts("code-review-rereview") == {"a-second-round": (4, None), "one-comments-reviewer": (1, 1),
+                                                  "second-round-on-fix-diff": (1, None)},
+      reviewer_counts("code-review-rereview"))
+fix_diff = input_matches("code-review-rereview").get("second-round-on-fix-diff", "(?!)")
+for prompt, want in (("Correctness. Diff: `git diff 1a2b3c4`; open ids CO1.", True),
+                     ("Correctness. Diff: `git diff 1a2b3c4d5e6f..HEAD`; open ids CO1.", True),
+                     ("Correctness. Diff: `git diff origin/pre-main...HEAD`.", False),
+                     ("Correctness. Diff: `git diff 1a2b3c4...HEAD`.", False)):
+    got = re.search(fix_diff, brief(prompt, subagent_type="dk:reviewer")) is not None
+    check(f"re-review: the fix-diff grader {'matches' if want else 'passes over'} {prompt!r}", got == want, fix_diff)
+check("re-review: the fix-diff grader passes over a Comments call on the fix diff",
+      re.search(fix_diff, brief("`git diff 1a2b3c4`", subagent_type="dk:comment-reviewer")) is None, fix_diff)
+
+# Each axis's brief lives in its agent, so a round-one prompt carries only what changes per run: 600 characters
+# of template plus the spec reference (#174: the parent retyped 739 to 3,976 characters per dk:reviewer call).
+SHORT = ("code-review-353", "code-review-correctness", "code-review-small")
+for case in SHORT:
+    long_prompt = input_matches(case).get("short-round-one-prompts")
+    check(f"{case}: a grader fails any dk:reviewer prompt of 900 characters or more",
+          long_prompt is not None and reviewer_counts(case).get("short-round-one-prompts") == (0, 0), long_prompt)
+long_prompt = input_matches(SHORT[0]).get("short-round-one-prompts", "(?!)")
+for size, kind, want in ((899, "dk:reviewer", False), (900, "dk:reviewer", True), (2000, "dk:comment-reviewer", False)):
+    prompt = "Axis: Spec, ids SP. \"Quoted\"\n" + "x" * (size - 29)
+    got = re.search(long_prompt, brief(prompt, subagent_type=kind)) is not None
+    check(f"short prompts: the grader {'matches' if want else 'passes over'} a {size}-character {kind} prompt",
+          len(prompt) == size and got == want, (len(prompt), long_prompt))
+
 # The verify fixture: a clean #353 fix in a repo whose verify doc says there is no database to start.
 ws = scaffold("verify-no-db")
 branch = git(ws, "app", "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
@@ -647,6 +794,61 @@ check("ready: #373's only blocker is closed", summary == {"blocked_by": 0, "tota
 got = ready_py()
 check("ready.py: leaves out the native-blocked #371 and the body-blocked #375",
       got == ([370, 372, 373, 376], {371: [372], 375: [372]}), got)
+
+# Triage reads code at the fetched origin/<base>: the listing names it, and hands out a detached worktree there.
+def code_section(args=""):
+    r = run(ws, f"python3 -I '{READY_PY}' {args}", cwd=ws / "app")
+    code = r.stdout.split("## Code\n", 1)[-1].split("\n## ", 1)[0] if "## Code\n" in r.stdout else ""
+    return r, code
+
+
+stale = git(ws, "app", "rev-parse", "origin/pre-main").stdout.strip()
+git(ws, "app", "commit", "-q", "--allow-empty", "-m", "'pre-main moves on'")
+git(ws, "app", "push", "-q", "origin", "HEAD:pre-main")
+git(ws, "app", "reset", "-q", "--hard", stale)
+git(ws, "app", "update-ref", "refs/remotes/origin/pre-main", stale)
+moved = git(ws, "app", "ls-remote", "origin", "refs/heads/pre-main").stdout.split()[0]
+r, code = code_section()
+check("ready.py: names the fetched origin/pre-main, not the stale local ref",
+      r.returncode == 0 and f"origin/pre-main at {moved}" in code and stale not in code, (r.returncode, code, r.stderr))
+check("ready.py: without --worktree, prints the detached worktree command for it",
+      f"git worktree add --detach <dir> {moved}" in code, code)
+main_sha = git(ws, "app", "ls-remote", "origin", "refs/heads/main").stdout.split()[0]
+r, code = code_section("--base main")
+check("ready.py: --base main names origin/main", r.returncode == 0 and f"origin/main at {main_sha}" in code,
+      (code, r.stderr))
+tree = ws / "triage-code"
+r, code = code_section(f"--worktree '{tree}'")
+head = git(ws, "app", "-C", str(tree), "rev-parse", "HEAD").stdout.strip()
+attached = git(ws, "app", "-C", str(tree), "symbolic-ref", "-q", "HEAD").returncode == 0
+check("ready.py: --worktree adds a detached worktree at origin/pre-main",
+      r.returncode == 0 and head == moved and not attached and f"worktree: {tree}" in code, (code, r.stderr, head))
+check("ready.py: with --worktree, the Code section still names origin/pre-main and its commit",
+      f"origin/pre-main at {moved}" in code, code)
+r, code = code_section(f"--base main --worktree '{tree}'")
+head = git(ws, "app", "-C", str(tree), "rev-parse", "HEAD").stdout.strip()
+check("ready.py: an existing --worktree moves to the new ref", r.returncode == 0 and head == main_sha,
+      (code, r.stderr, head))
+(ws / "not-a-tree").mkdir()
+r, code = code_section(f"--worktree '{ws / 'not-a-tree'}'")
+check("ready.py: a --worktree path that is no worktree of this repo fails", r.returncode == 1, (r.stdout, r.stderr))
+branch = git(ws, "app", "symbolic-ref", "-q", "HEAD").stdout.strip()
+r, code = code_section(f"--worktree '{ws / 'app'}'")
+check("ready.py: a --worktree on a branch, the main checkout here, fails and stays on its branch",
+      r.returncode == 1 and git(ws, "app", "symbolic-ref", "-q", "HEAD").stdout.strip() == branch,
+      (r.returncode, r.stderr, branch))
+other = ws / "other-tree"
+git(ws, "app", "worktree", "add", "-q", "--detach", str(other), moved)
+shutil.rmtree(other)  # another worktree's directory gone, as on an unmounted volume
+git(ws, "app", "worktree", "lock", str(tree))
+shutil.rmtree(tree)
+r, code = code_section(f"--worktree '{tree}'")
+check("ready.py: a registered --worktree whose directory is gone, locked too, is added again",
+      r.returncode == 0 and (tree / ".git").exists() and "Traceback" not in r.stderr, (r.returncode, r.stderr))
+check("ready.py: re-adding the named worktree keeps the record of another worktree whose directory is gone",
+      str(other) in git(ws, "app", "worktree", "list", "--porcelain").stdout, r.stderr)
+git(ws, "app", "worktree", "remove", "--force", str(tree))
+git(ws, "app", "worktree", "prune")
 
 repos_log = ws / ".tracker" / "repos.log"
 repos_log.write_text("")

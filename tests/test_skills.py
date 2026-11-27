@@ -143,11 +143,19 @@ for repo, license_name, commit in re.findall(rf"^## (\S+) .*?\(([^()]+)\) @ {PIN
 
 # Each skill ships its own copy, since `python3 -I` keeps a script's folder off sys.path; the copies stay one.
 copies = {}
-for script in ("batch-pr/batch.py", "issue-flow/pr-wait", "triage/ready.py"):
+for script in ("batch-pr/batch.py", "issue-flow/pr-wait", "implement-spec/preflight.py", "triage/ready.py",
+               "../../dk-guard/bin/dk-comment-edit"):
     m = re.search(r"^def origin_repo\(\):\n(?:    .*\n)+", (DK / "skills" / script).read_text(), re.M)
     copies.setdefault(m.group(0) if m else None, []).append(script)
 if len(copies) != 1 or None in copies:
     errors.append("skills: origin_repo() differs between " + " | ".join(", ".join(v) for v in copies.values()))
+# The spec preflight reads blockers as dk:triage's ready list does, so the two blocker patterns stay one.
+blocker_lines = {}
+for script in ("implement-spec/preflight.py", "triage/ready.py"):
+    lines = re.findall(r"^(?:BODY_BLOCKER|BLOCKER_REF) = .*$", (DK / "skills" / script).read_text(), re.M)
+    blocker_lines.setdefault(tuple(lines) if len(lines) == 2 else None, []).append(script)
+if len(blocker_lines) != 1 or None in blocker_lines:
+    errors.append("skills: BODY_BLOCKER and BLOCKER_REF differ between " + " | ".join(", ".join(v) for v in blocker_lines.values()))
 # dk-gc reads origin through its own git() helper, so only the pattern line is shared.
 dkgc_pattern_line = re.search(r"^def slug_of\(root\):\n(?:    .*\n)*?(    m = re\.search\(.*\n)",
                       (ROOT / "plugins" / "dk-guard" / "bin" / "dk-gc").read_text(), re.M)
@@ -171,5 +179,14 @@ for path in trackers:
             "--method POST")):
         errors.append(f"{rel}: Blocking must use `gh issue create --blocked-by` and `gh issue edit <child> "
                       "--add-blocked-by <blocker>` (gh 2.94+), with the API POST as the older-gh fallback")
+
+# The skills a subagent's brief names load on every implementer, so each main file keeps under its word cap, counted
+# as `wc -w` counts; a branch only some readers reach moves to a reference file beside it (#179).
+WORD_CAPS = {"issue-flow": 1500, "tdd": 650, "verify": 1700, "pr": 1350, "code-review": 3100}
+for name, cap in WORD_CAPS.items():
+    words = len(skills[name].read_text().split())
+    if words > cap:
+        errors.append(f"skills/{name}/SKILL.md: {words} words, over its cap of {cap}; move a branch only some "
+                      "readers reach to a reference file behind a pointer")
 
 lib.finish(f"{len(skills)} skills, {len(agents)} agents,")
