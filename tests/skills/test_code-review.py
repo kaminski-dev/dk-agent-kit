@@ -243,6 +243,10 @@ for what, pattern in (
 ):
     if self_pass and not re.search(pattern, self_pass, re.S):
         errors.append(f"skills/code-review: its **Self-pass.** paragraph does not name {what}")
+# A relative fixed point (`HEAD~1`) names another commit once the self-pass commits (CodeRabbit on #196).
+if not re.search(r"`git rev-parse <fixed-point>`[^.]*SHA it prints[^.]*`<fixed-point>`", pin):
+    errors.append("skills/code-review: step 1 does not pin the fixed point to the SHA `git rev-parse` prints, so a "
+                  "self-pass commit leaves a relative fixed point where it was")
 spawn = re.search(r"^### \d\. Spawn the sub-agents.*?(?=^### )", review, re.M | re.S)
 spawn = spawn.group(0) if spawn else ""
 for what, pattern in (
