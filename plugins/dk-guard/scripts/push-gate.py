@@ -19,10 +19,11 @@ missing before the call, runs no gate either, and the agent is told so.
 The gate waits for any other run on the same checkout, then takes one of the
 machine's gate slots (gate.py); a hand run in flight on the checkout is waited
 for and its pass on the same tree reused. The waits count against TIMEOUT.
-When they outlast DK_GATE_WAIT, or leave the gate less than the seconds its
-last pass took once the tree is hashed, the gate does not run and the push is
-denied with a message that says which of the three happened and to push
-again.
+When the checkout's other run or the slots outlast DK_GATE_WAIT, or less than
+the seconds the gate's last pass took is left once the tree is hashed, the gate
+does not run and the push is denied with a message that says which and to push
+again; a last pass longer than TIMEOUT is denied at once, with the advice to run
+dk-gate by hand.
 
 It fails open otherwise: a gate that outlives TIMEOUT is killed and the push
 goes through with a message to the user. A crash, or the hook's own timeout in
@@ -111,11 +112,11 @@ def main():
         status, output, entry = gate.check(root, TIMEOUT)
         if status == gate.BUSY:
             head = f"dk-guard: {gate.why_busy(root, entry)}"
-            again = {gate.SLOTS: "push again in a minute, or run dk-gate there first, which waits for a slot.",
-                     gate.CHECKOUT: "push again when that run ends; its pass on this same tree is reused.",
-                     gate.LATE: "push again, or run dk-gate there first, which has no deadline, and push on its "
-                                "pass."}[entry["cause"]]
-            if entry["cause"] == gate.LATE and entry["needs"] >= entry["timeout"]:
+            again = {gate.BUSY_SLOTS: "push again in a minute, or run dk-gate there first, which waits for a slot.",
+                     gate.BUSY_CHECKOUT: "push again when that run ends; its pass on this same tree is reused.",
+                     gate.BUSY_LATE: "push again, or run dk-gate there first, which has no deadline, and push on "
+                                     "its pass."}[entry["cause"]]
+            if entry["cause"] == gate.BUSY_LATE and entry["needs"] >= entry["timeout"]:
                 again = "run dk-gate there first, which has no deadline, and push on its pass; no push fits the gate."
             guard.log({"session": data.get("session_id"), "cwd": cwd, "decision": "deny",
                        "reason": "push gate: " + head, "command": cmd[:500]})
