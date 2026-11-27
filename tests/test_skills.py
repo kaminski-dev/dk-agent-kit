@@ -180,6 +180,11 @@ for path in trackers:
         errors.append(f"{rel}: Blocking must use `gh issue create --blocked-by` and `gh issue edit <child> "
                       "--add-blocked-by <blocker>` (gh 2.94+), with the API POST as the older-gh fallback")
 
+# The self-pass has one home, dk:code-review step 1, which every path to a review reaches (#185).
+for path in sorted(DK.glob("skills/**/*.md")):
+    if path != skills["code-review"] and re.search(r"[Ss]elf-pass|comment[^.;\n]*restates the code", path.read_text()):
+        errors.append(f"{path.relative_to(ROOT)}: repeats the self-pass; dk:code-review step 1 holds it")
+
 # The skills a subagent's brief names load on every implementer, so each main file keeps under its word cap, counted
 # as `wc -w` counts; a branch only some readers reach moves to a reference file beside it (#179).
 WORD_CAPS = {"issue-flow": 1500, "tdd": 650, "verify": 1700, "pr": 1350, "code-review": 3100}
