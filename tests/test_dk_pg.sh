@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# dk-pg against a real Docker: two issues at once on different ports, a second
-# `up` reuses the running database, `status` exits 0 with or without one, `down`
-# leaves nothing behind, and two checkouts with the same directory name keep
-# apart. Runs from throwaway repos so their labels match no real container.
+# dk-pg against a real Docker: two issues at once on different ports, no
+# container it starts has a Docker volume, a second `up` reuses the running
+# database, `status` exits 0 with or without one, `down` leaves no container
+# behind, and two checkouts with the same directory name keep apart. Runs from
+# throwaway repos so their labels match no real container.
 # Skips when no Docker daemon answers, after the check that needs none.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -27,7 +28,16 @@ cleanup() {
   rm -rf "$tmp"
 }
 trap cleanup EXIT
-volumes=$(docker volume ls -q | wc -l)
+# Fails unless issue $1 has $2 running containers and none of them has a Docker volume.
+no_volume() {
+  local ids id mounts
+  ids=$(docker ps -q --filter "label=dk.issue=$1")
+  [[ "$(wc -w <<<"$ids" | tr -d ' ')" == "$2" ]] || fail "issue $1 should have $2 running containers, has: ${ids:-none}"
+  for id in $ids; do
+    mounts=$(docker inspect --format '{{range .Mounts}}{{.Type}}:{{.Destination}} {{end}}' "$id")
+    [[ "$mounts" != *volume:* ]] || fail "container $id of issue $1 has a volume mount: ${mounts% }"
+  done
+}
 git init -q "$repo"
 cd "$repo"
 
@@ -36,6 +46,7 @@ url_b=$("$dkpg" up "$b" --db app)
 [[ "$url_a" =~ ^postgres://postgres:postgres@127\.0\.0\.1:[0-9]+/postgres\?sslmode=disable$ ]] || fail "url a: $url_a"
 [[ "$url_b" =~ ^postgres://postgres:postgres@127\.0\.0\.1:[0-9]+/app\?sslmode=disable$ ]] || fail "url b: $url_b"
 for issue in "$a" "$b"; do
+  no_volume "$issue" 1
   fs=$(docker exec "$(docker ps -q --filter "label=dk.issue=$issue")" sh -c 'df -P "$PGDATA" | tail -1 | cut -d" " -f1')
   [[ "$fs" == tmpfs ]] || fail "issue $issue keeps its data on $fs, not tmpfs"
 done
@@ -69,9 +80,9 @@ git init -q "$one"; git init -q "$two"
 url_one=$(cd "$one" && "$dkpg" up "$c")
 url_two=$(cd "$two" && "$dkpg" up "$c")
 [[ "$url_one" != "$url_two" ]] || fail "two checkouts named app share one database"
+no_volume "$c" 2
 (cd "$one" && "$dkpg" down "$c") >/dev/null
 [[ "$(cd "$two" && "$dkpg" url "$c")" == "$url_two" ]] || fail "down in one checkout removed the other's database"
 (cd "$two" && "$dkpg" down "$c") >/dev/null
 [[ -z "$(docker ps -aq --filter "label=dk.issue=$c")" ]] || fail "container for c left behind"
-[[ "$(docker volume ls -q | wc -l)" == "$volumes" ]] || fail "volumes left behind"
 echo "dk-pg: all checks passed"
