@@ -304,6 +304,8 @@ def case_a_pass_drops_the_entries_of_worktrees_that_are_gone(root):
     run(make_repo(root, "later"), cache=cache)
     entries = [n for n in os.listdir(cache) if n.endswith(".json")]
     assert len(entries) == 2, os.listdir(cache)
+    locks = [n for n in os.listdir(os.path.join(cache, "slots")) if n.startswith("checkout-")]
+    assert len(locks) == 2, locks
     assert CACHED in run(kept, cache=cache)[1]
 
 

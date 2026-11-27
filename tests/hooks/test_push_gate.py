@@ -289,7 +289,8 @@ def case_push_behind_a_hand_run_that_outlasts_the_wait_is_denied_and_names_that_
         code, out, err = run(main, f"cd {wt} && git push", env={"DK_GATE_WAIT": "1"})
         reason = denial(out)
         assert code == 0 and reason, (code, out, err)
-        assert f"another run of .claude/gate.sh in {wt} is still going" in reason and "push again" in reason, reason
+        assert "another run of .claude/gate.sh in " in reason and f"{wt} is still going" in reason, reason
+        assert "push again when that run ends" in reason, reason
         assert "held every slot" not in reason and "Fix the failure" not in reason, reason
     finally:
         hand.kill()
