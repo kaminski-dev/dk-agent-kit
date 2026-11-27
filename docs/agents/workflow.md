@@ -9,13 +9,13 @@ This repo's parameters for the sequence in the `dk:issue-flow` skill. The kit di
 ## PRs and merge
 
 - PRs target `main`; the maintainer merges. `Closes #N` closes the issue on merge, so there is no batch PR and no post-deploy check.
-- CI (`.github/workflows/test.yml`) runs the checks from `AGENTS.md` on every push and PR.
+- CI (`.github/workflows/test.yml`) runs every check with `python3 -I tests/run.py`, once per push to a PR branch and once per push to `main`.
 - A merge reaches the maintainer's sessions after `git -C ~/workspace/dk-agent-kit pull` and `/reload-plugins`: the plugins load from that checkout.
 
 ## Evidence
 
 - A guard change shows the failing case from `tests/hooks/guard_bash_cases.json` before and after, and its replay against past transcripts. A replay or mutation sweep over a month of transcripts names its `timeout` (`dk:issue-flow` step 4).
-- A Stop gate or push gate change shows its case in `tests/hooks/test_stop_gate.py` or `tests/hooks/test_push_gate.py` before and after, and a headless session (`claude -p --plugin-dir plugins/dk-guard`) with and without the change.
+- A push gate or `dk-gate` change shows its case in `tests/hooks/test_push_gate.py` or `tests/test_dk_gate.py` before and after, and a headless session (`claude -p --plugin-dir plugins/dk-guard`) with and without the change.
 - A session hook change (`require-worktree`, `session-baseline`) shows its fixture case in `tests/hooks/test_require_worktree.py` or `tests/hooks/test_session_baseline.py` before and after, and a headless session (`claude -p --plugin-dir plugins/dk-guard`) with the change.
 - A `fork-guard` change shows its fixture case in `tests/hooks/test_fork_guard.py` before and after, its replay against past Agent calls (`tests/hooks/replay_history.py --agent`), and a headless session with and without the change.
 - A skill change that alters behaviour shows one run of the skill on a real issue, or says why none was possible.
