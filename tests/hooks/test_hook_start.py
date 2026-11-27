@@ -77,7 +77,8 @@ class Run:
         return json.loads(self.stdout)["hookSpecificOutput"].get("permissionDecision", "hint")
 
     def __str__(self):
-        return f"{self.decision()}, ran {self.interpreters}, one process: {self.one_process}, stderr: {self.stderr[-300:]!r}"
+        return (f"{self.decision()}, ran {self.interpreters}, one process: {self.one_process}, "
+                f"stderr: {self.stderr[-300:]!r}")
 
 
 def main():
@@ -85,7 +86,11 @@ def main():
     guard, = [h for h in hooks if h.get("onFailure") == "block"]
     with tempfile.TemporaryDirectory() as root:
         root = os.path.realpath(root)
-        plugin = shutil.copytree(PLUGIN, os.path.join(root, "plugin"), ignore=shutil.ignore_patterns("__pycache__"))
+
+        def install(name):
+            return shutil.copytree(PLUGIN, os.path.join(root, name), ignore=shutil.ignore_patterns("__pycache__"))
+
+        plugin = install("plugin")
         os.makedirs(os.path.join(root, "home"))
         project = os.path.join(root, "project")
         nested = os.path.join(project, "src", "deep")
@@ -100,6 +105,7 @@ def main():
         plain = os.path.join(root, "plain", "bin")
         interpreter(os.path.join(plain, "python3"), "plain")
         with_pyenv = f"{shims}:{plain}:{SYSTEM}"
+        without_pyenv = f"{plain}:{SYSTEM}"
 
         calls = {
             "guard-bash": payload("Bash", {"command": "echo hi"}, project),
@@ -125,7 +131,7 @@ def main():
             check(f"{name}, pyenv's shim first on PATH: the version pyenv's global file names starts, the shim "
                   "does not, and no process is added",
                   got.decision() == "allow" and got.interpreters == ["3.11.9"] and got.one_process, got)
-            got = Run(root, plugin, hook["command"], data, f"{plain}:{SYSTEM}", project)
+            got = Run(root, plugin, hook["command"], data, without_pyenv, project)
             check(f"{name}, no pyenv: the python3 on PATH starts, as before",
                   got.decision() == "allow" and got.interpreters == ["plain"] and got.one_process, got)
 
@@ -138,7 +144,8 @@ def main():
         check("PYENV_VERSION names a version: that one starts", got.interpreters == ["3.12.1"], got)
         write(os.path.join(project, ".python-version"), "3.12.1\n")
         got = guard_run(cwd=nested)
-        check("a .python-version above the working directory: its version starts", got.interpreters == ["3.12.1"], got)
+        check("a .python-version above the working directory: its version starts",
+              got.interpreters == ["3.12.1"], got)
         got = guard_run(cwd=nested, env={"PYENV_VERSION": "3.11.9"})
         check("PYENV_VERSION and a .python-version: the variable wins, as in pyenv",
               got.interpreters == ["3.11.9"], got)
@@ -190,20 +197,16 @@ def main():
         got = guard_run()
         check("the pyenv version is not installed and the shim fails: the guard's command fails",
               got.status != 0 and not got.stdout.strip() and got.interpreters == ["shim"], got)
-        no_lookup = shutil.copytree(PLUGIN, os.path.join(root, "no-lookup"))
+        no_lookup = install("no-lookup")
         os.remove(os.path.join(no_lookup, "scripts", "find-python.sh"))
-        got = guard_run(path=f"{plain}:{SYSTEM}", plugin=no_lookup)
+        got = guard_run(path=without_pyenv, plugin=no_lookup)
         check("no find-python.sh in the plugin: the guard's command fails and no interpreter starts",
               got.status != 0 and not got.stdout.strip() and got.interpreters == [], got)
 
         # The guard's bytecode cache: written on the first call, used after it, never trusted over the source.
-        def install(name):
-            return shutil.copytree(PLUGIN, os.path.join(root, name), ignore=shutil.ignore_patterns("__pycache__"))
-
         def cached(plugin):
             return glob.glob(os.path.join(plugin, "scripts", "__pycache__", "guard-bash.*.pyc"))
 
-        without_pyenv = f"{plain}:{SYSTEM}"
         fresh = install("fresh")
         got = guard_run(path=without_pyenv, command="git push origin main", plugin=fresh)
         check("the first call after an install, with no cache yet, denies a push to main and leaves the cache",
