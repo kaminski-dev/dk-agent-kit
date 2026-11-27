@@ -115,6 +115,8 @@ def main():
                      gate.CHECKOUT: "push again when that run ends; its pass on this same tree is reused.",
                      gate.LATE: "push again, or run dk-gate there first, which has no deadline, and push on its "
                                 "pass."}[entry["cause"]]
+            if entry["cause"] == gate.LATE and entry["needs"] >= entry["timeout"]:
+                again = "run dk-gate there first, which has no deadline, and push on its pass; no push fits the gate."
             guard.log({"session": data.get("session_id"), "cwd": cwd, "decision": "deny",
                        "reason": "push gate: " + head, "command": cmd[:500]})
             print(json.dumps({"hookSpecificOutput": {

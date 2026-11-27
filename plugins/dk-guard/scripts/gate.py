@@ -333,6 +333,9 @@ def why_busy(root, entry):
     if entry["cause"] == CHECKOUT:
         return (f"another run of {GATE} in {root} is still going (pid {', '.join(entry['holders'])}), so this one "
                 "did not run")
+    if entry["cause"] == LATE and entry["needs"] >= entry["timeout"]:
+        return (f"the last pass took {entry['needs']} s, more than the push's whole {entry['timeout']} s, so "
+                f"{GATE} in {root} did not run")
     if entry["cause"] == LATE:
         return (f"only {entry['left']} s of the {entry['timeout']} s were left once the gate's turn came and the "
                 f"tree was hashed, less than the {entry['needs']} s the last pass took, so {GATE} in {root} did "
@@ -349,8 +352,9 @@ def check(root, timeout=None, capture=True, fresh=False, wait=None, on_wait=None
     then reads the cache again, so it reuses that run's pass on the same tree. Then it waits for a slot. `timeout`
     covers both waits and the run together; the waits take at most `wait` seconds in all (default DK_GATE_WAIT),
     and on_wait(waited_for(...)) is called once as each starts. Under a timeout the run is left the seconds the
-    root's last pass took: the waits end early enough for it, and a gate with less left once the tree is hashed
-    does not start, so both report BUSY instead of a gate the timeout would kill."""
+    root's last pass took: a pass longer than the whole timeout reports BUSY before any wait, the waits end early
+    enough for it, and a gate with less left once the tree is hashed does not start, so each reports BUSY instead of
+    a gate the timeout would kill."""
     gate = os.path.join(root, GATE)
     if not fresh:
         entry = cached_pass(root, key(root))
@@ -359,7 +363,10 @@ def check(root, timeout=None, capture=True, fresh=False, wait=None, on_wait=None
     start = time.monotonic()
     wait = setting("DK_GATE_WAIT", 240) if wait is None else wait
     if timeout is not None:
-        wait = max(0, min(wait, timeout - last_seconds(root)))
+        needs = last_seconds(root)
+        if needs >= timeout:
+            return BUSY, "", {"cause": LATE, "left": timeout, "needs": needs, "timeout": timeout}
+        wait = max(0, min(wait, timeout - needs))
     waits = []
 
     def tell(cause):
