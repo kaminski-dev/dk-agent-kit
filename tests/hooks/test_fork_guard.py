@@ -202,7 +202,8 @@ def case_a_quoted_git_worktree_add_to_run_is_denied_and_a_quoted_mention_is_not(
 
 
 def case_a_negation_wrapped_over_a_line_reaches_the_next_line_and_a_finished_sentence_does_not():
-    for prompt in ("Do not commit or\nOpen a PR", "Do not commit, \nOpen a PR", "Do not commit and\nOpen a PR"):
+    for prompt in ("Do not commit or\nOpen a PR", "Do not commit, \nOpen a PR", "Do not commit and\nOpen a PR",
+                   "Do not commit OR\nOpen a PR"):
         assert_allowed(run(fork(prompt)))
     for prompt in ("Do not commit.\nOpen a PR", "Do not commit;\nOpen a PR", "Do not commit\nOpen a PR"):
         assert_denied(run(fork(prompt)))
@@ -211,6 +212,8 @@ def case_a_negation_wrapped_over_a_line_reaches_the_next_line_and_a_finished_sen
 def case_run_with_a_colon_before_a_quoted_git_worktree_add_is_denied():
     assert_denied(run(fork("Run: `git worktree add`")))
     assert_denied(run(fork("Run `git worktree add`")))
+    assert_allowed(run(fork("Dry run: `git worktree add` is stale.")))
+    assert_allowed(run(fork("What to use: `git worktree add`")))
 
 
 def case_a_fork_told_not_to_commit_or_open_a_pr_is_allowed():
