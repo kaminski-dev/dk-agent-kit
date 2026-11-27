@@ -54,8 +54,7 @@ def load_guard():
     return module
 
 
-def hook_command():
-    """The command hooks.json runs before each Bash call and blocks on, with the plugin root filled in."""
+def bash_guard_command():
     groups = json.load(open(os.path.join(PLUGIN, "hooks", "hooks.json")))["hooks"]["PreToolUse"]
     command, = [h["command"] for g in groups if g["matcher"] == "Bash" for h in g["hooks"]
                 if h.get("onFailure") == "block"]
@@ -82,7 +81,7 @@ def run(cmd, cwd, home, background=False, max_seconds=None):
     payload = {"session_id": "test", "cwd": cwd, "hook_event_name": "PreToolUse",
                "tool_name": "Bash", "tool_input": tool_input}
     try:
-        out = subprocess.run(["sh", "-c", hook_command()], input=json.dumps(payload), timeout=max_seconds,
+        out = subprocess.run(["sh", "-c", bash_guard_command()], input=json.dumps(payload), timeout=max_seconds,
                              capture_output=True, text=True, env={"PATH": PATH, "HOME": home})
     except subprocess.TimeoutExpired:
         return "slow", f"took over {max_seconds} s"

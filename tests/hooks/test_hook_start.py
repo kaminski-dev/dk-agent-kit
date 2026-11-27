@@ -157,7 +157,7 @@ def main():
               and not [k for k in got.environment if k.startswith(("dk_", "PYENV_")) or k == "IFS"],
               sorted(got.environment.items()))
 
-        # Whatever the lookup cannot settle alone goes to the shim, which decides as before.
+        # Whatever the lookup cannot settle alone goes to the shim.
         got = guard_run(cwd=nested, env={"PYENV_DIR": root})
         check("PYENV_DIR set: the shim decides", got.interpreters == ["shim"] and got.one_process, got)
         write(os.path.join(project, ".python-version"), "../../plain\n")
@@ -177,7 +177,7 @@ def main():
         got = guard_run(env={"PYENV_VERSION": "3.11.9:3.12.1"})
         check("PYENV_VERSION names several versions: the shim decides", got.interpreters == ["shim"], got)
 
-        # The guard still decides, isolated, and fails closed.
+        # The guard decides, isolated, and fails closed.
         got = guard_run(command="git push origin main")
         check("the guard, started directly, denies a push to main",
               got.decision() == "deny" and got.interpreters == ["3.11.9"], got)
@@ -217,13 +217,12 @@ def main():
               got.decision() == "deny" and [os.stat(f).st_mtime_ns for f in cached(fresh)] == written, got)
         got = guard_run(path=without_pyenv, plugin=fresh)
         source = os.path.join(fresh, "scripts", "guard-bash.py")
-        entry = '\n\nif __name__ == "__main__":'
-        text = open(source).read()
-        write(source, text.replace(entry, '\n\ndef decide(cmd, cwd, background=False):\n'
-                                          '    return "deny", "edited between two calls"\n' + entry))
+        with open(source, "a") as f:
+            f.write('\n\ndef main():\n    print(\'{"hookSpecificOutput": {"permissionDecision": "deny", '
+                    '"permissionDecisionReason": "edited between two calls"}}\')\n')
         edited = guard_run(path=without_pyenv, plugin=fresh)
         check("guard-bash.py edited between two calls: the next call runs the new code",
-              entry in text and got.decision() == "allow" and edited.decision() == "deny"
+              got.decision() == "allow" and edited.decision() == "deny"
               and "edited between two calls" in edited.stdout, f"before: {got}; after: {edited}")
         damaged = install("damaged")
         guard_run(path=without_pyenv, plugin=damaged)

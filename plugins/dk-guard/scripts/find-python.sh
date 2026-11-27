@@ -7,10 +7,14 @@
 # version read as pyenv reads it, from PYENV_VERSION, else the nearest .python-version from the working
 # directory up, else <pyenv root>/version.
 #
-# Whatever is not settled that simply stays `python3`, looked up on PATH as before this file: no pyenv,
-# another version manager's shim, PYENV_DIR, several versions, `system`, a version prefix or one that is
-# not installed. Every name here starts with dk_, since an assignment to a name the environment exports
-# would reach the hook and the gate it runs.
+# Whatever is not settled that simply stays `python3`, looked up on PATH: no pyenv, another version
+# manager's shim, PYENV_DIR, several versions in PYENV_VERSION (a version file's first entry is used),
+# `system`, a version prefix or one that is not installed. Every name here starts with dk_, since an
+# assignment to a name the environment exports would reach the hook and the gate it runs.
+#
+# The hook inherits the harness's environment unchanged. `pyenv exec` put the version's bin/ first on PATH
+# and exported PYENV_VERSION; nothing here does, so a gate the push hook runs finds python3 through the
+# shim from its own checkout, as a gate run by hand does.
 dk_python=python3
 
 dk_first=
