@@ -51,6 +51,7 @@ CHECKS = [
     # Its process cases run the command hooks.json names.
     Check("tests/hooks/test_guard_bash.py", [HOOKS + "guard-bash.py", "tests/hooks/guard_bash_cases.json",
                                              HOOKS_JSON], fast=True),
+    Check("tests/hooks/test_run_hook.py", [HOOKS_JSON, HOOKS + "run-hook", HOOKS + "guard-bash-cached.py"]),
     # It loads the guard, and runs dk-gate.
     Check("tests/hooks/test_push_gate.py", [HOOKS + "push-gate.py", HOOKS + "guard-bash.py", HOOKS + "gate.py",
                                             BIN + "dk-gate"]),
