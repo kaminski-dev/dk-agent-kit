@@ -50,7 +50,13 @@ CREDENTIALS = re.compile(r"\.sentryclirc|\.aws/credentials|(?<![\w.])\.netrc\b|\
 # backticks, after a shell keyword, or at the opening quote of `bash -c '...'`.
 OPENERS = r"[;&|\n({`]|\$\(|\b(?:then|do|else|while|until|if)\s|-c\s+['\"]"
 START = r"(?:^|" + OPENERS + r")\s*"
-PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:(?:sudo|command|exec|nohup|time|env|nice|xargs(?:\s+-\S+)*|g?timeout\s+\S+)\s+)*"
+# `perl -e 'alarm N; exec @ARGV' <command>`: how dk:issue-flow bounds a command where `timeout` is missing. A script
+# that shifts (`alarm shift; exec @ARGV`) takes its first argument, the seconds, off the command.
+EXEC_ARGV = r"\bexec\s*(?:\(\s*)?@ARGV\b"
+PERL_SCRIPT = r"(?:'[^']*" + EXEC_ARGV + r"[^']*'|\"[^\"]*" + EXEC_ARGV + r"[^\"]*\")(?:\s+--)?"
+PERL_EXEC = r"perl\s+-[A-Za-z]*[eE]\s*(?:(?=(?:'[^']*|\"[^\"]*)\bshift\b)" + PERL_SCRIPT + r"\s+\S+|" + PERL_SCRIPT + r")"
+PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:(?:sudo|command|exec|nohup|time|env|nice|xargs(?:\s+-\S+)*|g?timeout\s+\S+|" \
+    + PERL_EXEC + r")\s+)*"
 END = r"[^;&|\n)`]*"
 
 
@@ -701,9 +707,27 @@ def command_words(words):
                     i += 1
             if name in ("timeout", "gtimeout"):
                 i += 1  # the duration
+        elif name == "perl" and (taken := perl_exec_words(words[i + 1:])):
+            wrappers.append(name)
+            i += 1 + taken
         else:
             break
     return wrappers, words[i:]
+
+
+def perl_exec_words(args):
+    """How many of perl's words come before the command it runs: `-e <script>` (also `-we`, `-e<script>`) with a
+    script that execs @ARGV, a `--`, and a word for each `shift` in the script. 0 for any other perl call."""
+    option = re.match(r"-[A-Za-z]*?[eE]", args[0]) if args else None
+    if not option:
+        return 0
+    attached = args[0][option.end():]
+    script = attached or "".join(args[1:2])
+    if not re.search(EXEC_ARGV, script):
+        return 0
+    taken = 1 if attached else 2
+    taken += args[taken:taken + 1] == ["--"]
+    return taken + len(re.findall(r"\bshift\b", script))
 
 
 VARIABLE = re.compile(r"\$\{(\w+)\}|\$(\w+)")
@@ -1210,13 +1234,10 @@ API_QUERY = r"(?=" + END + r"\sgraphql\b)(?=" + END + r"\s(?:-[fF]\s*|--(?:raw-)
 GH_POLL = r"\bgh" + GH_REPO_FLAG + r"\s+(?:(?:" + "|".join(
     rf"{group}\s+(?:{'|'.join(subs)})" for group, subs in READS.items()) + r")\b|api\b(?:" + API_QUERY \
     + r"|(?!" + END + r"\sgraphql\b)(?:(?!" + END + API_WRITE + r")|(?=" + END + API_GET + r"))))"
-# `perl -e 'alarm N; exec @ARGV' <command>`: how dk:issue-flow bounds a wait where `timeout` is missing
-EXEC_ARGV = r"\bexec\s*(?:\(\s*)?@ARGV\b"
 NOT_HELP = r"(?!" + END + r"(?<![<>\s])\s+(?:-h|--help)\b)"  # help exits at once; `> --help` is a file
-RAW_ALARM = r"(?:perl\s+-[eE]\s*(?:'[^']*" + EXEC_ARGV + r"[^']*'|\"[^\"]*" + EXEC_ARGV + r"[^\"]*\")\s+" + PREFIX + r")?"
 RAW_WAITS = [re.compile(p, re.S) for p in (
-    START + PREFIX + RAW_ALARM + r"(gh)" + GH_REPO_FLAG + r"\s+(?:pr\s+checks\b" + END + r"\s--watch\b(?!=false)|run\s+watch\b)",
-    START + PREFIX + RAW_ALARM + r"(?:python[\d.]*\s+(?:-[WX]\s+\S+\s+|-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?(pr-wait)(?=$|[\s;&|)`<>])" + NOT_HELP,
+    START + PREFIX + r"(gh)" + GH_REPO_FLAG + r"\s+(?:pr\s+checks\b" + END + r"\s--watch\b(?!=false)|run\s+watch\b)",
+    START + PREFIX + r"(?:python[\d.]*\s+(?:-[WX]\s+\S+\s+|-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?(pr-wait)(?=$|[\s;&|)`<>])" + NOT_HELP,
     START + PREFIX + r"(watch)\s" + END + GH_POLL,
     START + r"(" + "|".join(LOOP_KEYWORDS) + r")\b(?=.*?" + GH_POLL + r")(?=.*?\bsleep\b)",
     START + r"(while|until)\b[^;\n]*?" + GH_POLL,
@@ -1264,13 +1285,6 @@ def api_reads(args):
     return (method or "GET").upper() == "GET" and (method is not None or not fields)
 
 
-def alarm_target(words):
-    if len(words) > 2 and os.path.basename(words[0]) == "perl" and words[1] in ("-e", "-E") \
-            and re.search(EXEC_ARGV, words[2]):
-        return command_words(words[3:])[1]
-    return words
-
-
 def runs_pr_wait(words):
     if words and re.fullmatch(r"python[\d.]*", os.path.basename(words[0])):
         words = words[1:]
@@ -1280,7 +1294,6 @@ def runs_pr_wait(words):
 
 
 def watches(words):
-    words = alarm_target(words)
     if runs_pr_wait(words):  # blocks until its --until goal or its --minutes deadline (20 by default)
         return True
     if words and os.path.basename(words[0]) == "watch":  # watch(1) reruns its command until stopped

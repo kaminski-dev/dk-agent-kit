@@ -832,7 +832,7 @@
   {"cmd": "perl -e 'alarm 9; exec @ARGV' git push origin main; echo 'x", "repo": "feature", "expect": "deny"},
   {"cmd": "perl -e 'alarm 9; exec @ARGV' dk-gc --yes --workspace; echo 'x", "expect": "ask"},
   {"cmd": "perl -e 'alarm 9; exec @ARGV' docker system prune -af; echo 'x", "expect": "deny"},
-  {"cmd": "sudo perl -e 'alarm 9; exec @ARGV' env GIT_TRACE=1 git push origin main; echo 'x", "repo": "feature", "expect": "deny"},
+  {"cmd": "sudo perl -e 'alarm 9; exec @ARGV' nice git push origin main; echo 'x", "repo": "feature", "expect": "deny"},
   {"why": "#144: the spellings past calls used: double quotes, exec(@ARGV), -E, -we, the script attached, `--` before the command, the seconds shifted off the arguments", "cmd": "perl -e \"alarm 9; exec @ARGV\" git push origin main", "repo": "feature", "expect": "deny"},
   {"cmd": "perl -we 'alarm(9); exec(@ARGV)' docker system prune -af", "expect": "deny"},
   {"cmd": "perl -E'alarm 9; exec @ARGV' -- git push origin main", "repo": "feature", "expect": "deny"},
