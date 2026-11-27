@@ -5,7 +5,8 @@ copy of the plugin and a fixture PATH.
 The fixture's interpreters are scripts that write their name and process id to a log and then start the real
 interpreter, so a case reads which one a hook ran: `shim` for pyenv's shim (`<pyenv>/shims/python3`), a version's
 name for `<pyenv>/versions/<name>/bin/python3`, `plain` for a python3 no version manager owns. The process id
-shows whether the interpreter replaced the harness's `sh` or cost a process more.
+shows whether the interpreter replaced the harness's `sh` or cost a process more, and the environment it wrote
+down whether the lookup changed what the hook inherits.
 """
 import glob
 import json
@@ -31,7 +32,7 @@ def check(name, ok, detail=""):
 def interpreter(path, name, works=True):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
-        f.write(f'#!/bin/sh\necho "{name} $$" >> "$HOOK_LOG"\n'
+        f.write(f'#!/bin/sh\necho "{name} $$" >> "$HOOK_LOG"\nenv > "$HOOK_LOG.env"\n'
                 + (f'exec "{sys.executable}" "$@"\n' if works else f"echo '{name}: cannot start' >&2\nexit 1\n"))
     os.chmod(path, 0o755)
 
@@ -65,6 +66,8 @@ class Run:
         started = [line.split() for line in open(log)]
         self.interpreters = [name for name, _ in started]
         self.one_process = all(int(pid) == proc.pid for _, pid in started)
+        self.environment = dict(line.rstrip("\n").split("=", 1) for line in open(log + ".env") if "=" in line) \
+            if started else {}
 
     def decision(self):
         if self.status != 0:
@@ -140,7 +143,14 @@ def main():
         check("PYENV_VERSION and a .python-version: the variable wins, as in pyenv",
               got.interpreters == ["3.11.9"], got)
 
-        # Whatever the launcher cannot settle alone goes to the shim, which decides as before.
+        got = guard_run(env={"dir": "kept", "file": "kept", "version": "kept", "python": "kept"})
+        kept = {k: v for k, v in got.environment.items() if k in ("dir", "file", "version", "python", "PATH")}
+        check("the hook inherits the harness's environment: PATH and exported names as they were, none added",
+              kept == {"dir": "kept", "file": "kept", "version": "kept", "python": "kept", "PATH": with_pyenv}
+              and not [k for k in got.environment if k.startswith(("dk_", "PYENV_")) or k == "IFS"],
+              sorted(got.environment.items()))
+
+        # Whatever the lookup cannot settle alone goes to the shim, which decides as before.
         got = guard_run(cwd=nested, env={"PYENV_DIR": root})
         check("PYENV_DIR set: the shim decides", got.interpreters == ["shim"] and got.one_process, got)
         write(os.path.join(project, ".python-version"), "../../plain\n")
@@ -180,6 +190,11 @@ def main():
         got = guard_run()
         check("the pyenv version is not installed and the shim fails: the guard's command fails",
               got.status != 0 and not got.stdout.strip() and got.interpreters == ["shim"], got)
+        no_lookup = shutil.copytree(PLUGIN, os.path.join(root, "no-lookup"))
+        os.remove(os.path.join(no_lookup, "scripts", "find-python.sh"))
+        got = guard_run(path=f"{plain}:{SYSTEM}", plugin=no_lookup)
+        check("no find-python.sh in the plugin: the guard's command fails and no interpreter starts",
+              got.status != 0 and not got.stdout.strip() and got.interpreters == [], got)
 
         # The guard's bytecode cache: written on the first call, used after it, never trusted over the source.
         def install(name):

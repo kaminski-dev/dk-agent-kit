@@ -1,5 +1,5 @@
 {
-  "description": "dk-guard: PreToolUse guard for Bash, fails closed if the script crashes or times out; a push gate on Bash that runs the pushed checkout's .claude/gate.sh before git push through dk-gate, which reuses a pass on the same tree and runs at most two gates at once, denies the push when no slot frees in time and otherwise fails open; require-worktree on Edit|Write, fork-guard on Agent and a SessionStart baseline, all three fail open. Every hook starts through scripts/run-hook, which starts the interpreter pyenv would pick without its shim.",
+  "description": "dk-guard: PreToolUse guard for Bash, fails closed if the script crashes or times out; a push gate on Bash that runs the pushed checkout's .claude/gate.sh before git push through dk-gate, which reuses a pass on the same tree and runs at most two gates at once, denies the push when no slot frees in time and otherwise fails open; require-worktree on Edit|Write, fork-guard on Agent and a SessionStart baseline, all three fail open. Every hook starts with the interpreter scripts/find-python.sh names: the one pyenv would pick, without its shim.",
   "hooks": {
     "PreToolUse": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "exec sh \"${CLAUDE_PLUGIN_ROOT}\"/scripts/run-hook guard-bash-cached",
+            "command": ". \"${CLAUDE_PLUGIN_ROOT}\"/scripts/find-python.sh && exec \"$dk_python\" -I \"${CLAUDE_PLUGIN_ROOT}\"/scripts/guard-bash-cached.py",
             "timeout": 30,
             "onFailure": "block"
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "exec sh \"${CLAUDE_PLUGIN_ROOT}\"/scripts/run-hook push-gate",
+            "command": ". \"${CLAUDE_PLUGIN_ROOT}\"/scripts/find-python.sh && exec \"$dk_python\" -I \"${CLAUDE_PLUGIN_ROOT}\"/scripts/push-gate.py",
             "timeout": 600
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "exec sh \"${CLAUDE_PLUGIN_ROOT}\"/scripts/run-hook require-worktree",
+            "command": ". \"${CLAUDE_PLUGIN_ROOT}\"/scripts/find-python.sh && exec \"$dk_python\" -I \"${CLAUDE_PLUGIN_ROOT}\"/scripts/require-worktree.py",
             "timeout": 10
           }
         ]
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "exec sh \"${CLAUDE_PLUGIN_ROOT}\"/scripts/run-hook fork-guard",
+            "command": ". \"${CLAUDE_PLUGIN_ROOT}\"/scripts/find-python.sh && exec \"$dk_python\" -I \"${CLAUDE_PLUGIN_ROOT}\"/scripts/fork-guard.py",
             "timeout": 10
           }
         ]
@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "exec sh \"${CLAUDE_PLUGIN_ROOT}\"/scripts/run-hook session-baseline",
+            "command": ". \"${CLAUDE_PLUGIN_ROOT}\"/scripts/find-python.sh && exec \"$dk_python\" -I \"${CLAUDE_PLUGIN_ROOT}\"/scripts/session-baseline.py",
             "timeout": 20
           }
         ]
