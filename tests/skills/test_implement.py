@@ -60,6 +60,26 @@ for what, pattern, text in (
     if not re.search(pattern, text):
         errors.append(f"skills/implement: does not name {what}")
 
+# A wave hands each PR over as its implementer returns, and the dry-merge comes in a later message, with a merge
+# order for each conflicting pair (#175).
+several = re.search(r"^## Several tickets\n.*?(?=^## |\Z)", implement, re.M | re.S)
+several = several.group(0) if several else ""
+for what, pattern in (
+    ("implementers launched in the background, so each return wakes the orchestrator",
+     r"in the background[^.]*each[^.]*return[^.]*wakes"),
+    ("each PR handed over in its own message as its implementer returns",
+     r"[Aa]s each implementer returns[^.]*own message[^.]*verdict"),
+    ("the dry-merge in a later message, after the last implementer returns",
+     r"last implementer returns[^.]*dry-merge|dry-merge[^.]*last implementer returns"),
+    ("a message each for implementers that return together, all sent before the dry-merge starts (an eval run "
+     "batched two handovers with the dry-merge)",
+     r"return together[^.]*message each[^.]*dry-merge starts only after"),
+    ("the merge order for a conflicting pair", r"merge order[^.]*merges first"),
+    ("who rebases the later branch, and when", r"[Yy]ou rebase the later branch[^.]*once the first[^.]*merged"),
+):
+    if not re.search(pattern, several, re.S):
+        errors.append(f"skills/implement: its ## Several tickets section does not name {what}")
+
 # The tier sizes verify, review and the PR body; the report states it, so the maintainer sees which path ran (#173).
 tier = re.search(r"^\*\*Tier\.\*\*.*$", implement, re.M)
 tier = tier.group(0) if tier else ""
@@ -70,7 +90,7 @@ for what, pattern in (
 ):
     if not re.search(pattern, tier):
         errors.append(f"skills/implement: its **Tier.** paragraph does not name {what}")
-if not re.search(r"The final message is the report: [^.]*the tier line", report):
+if not re.search(r"report carries the PR link and its head, the tier line", report):
     errors.append("skills/implement: its ## Report does not state the tier line")
 
 lib.finish("dk:implement")

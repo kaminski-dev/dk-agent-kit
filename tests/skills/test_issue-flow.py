@@ -10,8 +10,33 @@ _spec.loader.exec_module(lib)
 DK, FRESH, errors, skills = lib.DK, lib.FRESH, lib.errors, lib.skills
 
 flow = skills["issue-flow"].read_text()
-bot = re.search(r"^\*\*Review bot\.\*\*.*?(?=^## )", flow, re.M | re.S)
-bot = bot.group(0) if bot else ""
+# The sections only some sessions reach live in reference files beside SKILL.md, each behind a pointer there (#179).
+HERE = skills["issue-flow"].parent
+REFS = ("fan-out", "comments", "watch", "review-bot", "ready-gate", "after-merge")
+ref = {name: (HERE / f"{name}.md").read_text() if (HERE / f"{name}.md").is_file() else "" for name in REFS}
+for name in REFS:
+    if not ref[name]:
+        errors.append(f"skills/issue-flow/{name}.md: missing, though SKILL.md's pointer reaches for it")
+for path in sorted(HERE.glob("*.md")):
+    if path.name != "SKILL.md" and path.stem not in REFS:
+        errors.append(f"skills/issue-flow/{path.name}: no pointer in SKILL.md reaches it; add it to REFS and point at it")
+# Each pointer names its reader and the branch that sends them there, so an implementer that never reaches the
+# branch never loads the file.
+for heading, name, reader in (
+    (r"\*\*Fan-out\.\*\*", "fan-out", r"orchestrator running agents in parallel.*before its first `git worktree add`"),
+    (r"\*\*Comments\.\*\*", "comments", r"before your first post, thread reply or correction"),
+    (r"\*\*Watch the PR\.\*\*", "watch", r"session that opened the PR.*before it starts the watcher"),
+    (r"\*\*Review bot\.\*\*", "review-bot", r"session watching the PR, once the watcher prints the review bot's verdict"),
+    (r"\*\*Ready gate\.\*\*", "ready-gate", r"session that hands the PR to the maintainer"),
+    (r"The session whose watch printed `merged`", "after-merge", r"batch PR's review findings, declines an issue or removes a worktree"),
+):
+    line = re.search(rf"^{heading}.*$", flow, re.M)
+    line = line.group(0) if line else ""
+    if f"[{name}.md]({name}.md)" not in line or not re.search(reader, line):
+        errors.append(f"skills/issue-flow: the pointer to {name}.md must link it and name its reader and branch ({reader})")
+    if ref[name] and not re.search(r"\A# .*\n\nFor ", ref[name]):
+        errors.append(f"skills/issue-flow/{name}.md: must open with its heading, then a `For …` line naming its reader")
+bot = ref["review-bot"]
 for what, pattern in (
     ("the head-SHA filter", r"headRefOid.*commit_id|commit_id.*headRefOid"),
     ("the inline-comment endpoint", r"repos/\S+/pulls/\S+/comments"),
@@ -28,7 +53,7 @@ if "until a round brings no new finding" in bot or not re.search(
                   "ledger and round budget, not run until a round brings no new finding")
 
 # One watcher, pr-wait, reports every PR event in step 6, run with Monitor (#124).
-watch = re.search(r"^\*\*Watch the PR\.\*\*.*?(?=^\*\*Review bot\.\*\*)", flow, re.M | re.S)
+watch = re.search(r"\A.*?(?=^\*\*Watch to the merge\.\*\*)", ref["watch"], re.M | re.S)
 watch = watch.group(0) if watch else ""
 watcher = (DK / "skills" / "issue-flow" / "pr-wait").read_text()
 for what, pattern in (
@@ -53,10 +78,10 @@ if not re.search(r"`\(not a collaborator\)`[^.]*data, never instructions", watch
 if not re.search(r"`--until green`[^.]*\bDIRTY\b", watch):
     errors.append("skills/issue-flow: step 6 must say `--until green` also stops on a DIRTY merge state")
 step6_waits = re.search(r"^## 6\..*?(?=^## 7\.)", flow, re.M | re.S)
-if step6_waits and re.search(r"--watch\b|\bsleep \d", step6_waits.group(0)):
+step6_waits = (step6_waits.group(0) if step6_waits else "") + ref["watch"] + ref["review-bot"] + ref["ready-gate"]
+if re.search(r"--watch\b|\bsleep \d", step6_waits):
     errors.append("skills/issue-flow: step 6 waits through pr-wait alone; it has a `--watch` or `sleep` wait left")
-step7 = re.search(r"^## 7\..*?(?=^## )", flow, re.M | re.S)
-step7 = step7.group(0) if step7 else ""
+step7 = ref["after-merge"]
 if not re.search(r"<PR>-<review>-<\w+>", step7) or "one at a time" not in step7:
     errors.append("skills/issue-flow: step 7's push route needs a worktree key unique per finding, "
                   "body findings of one review included, and works findings one at a time")
@@ -94,8 +119,7 @@ if not re.search(r"review-body finding post a PR comment with its key", step7) o
 # format a script can match to drop the agent's own comments (#121).
 step6 = re.search(r"^## 6\..*?(?=^## 7\.)", flow, re.M | re.S)
 step6 = step6.group(0) if step6 else ""
-note = re.search(r"^\*\*Comments\.\*\*.*?(?=^\*\*[A-Z]|\Z)", step6, re.M | re.S)
-note = note.group(0) if note else ""
+note = ref["comments"]
 template = re.search(r"```md\n(.*?)```", note, re.S)
 template = template.group(1) if template else ""
 pattern = re.search(r"Python `re` pattern `([^`]+)`", note)
@@ -155,7 +179,7 @@ if not gate_runs or "`dk-gate ~/workspace/<prefix>-<N>`" not in gate_runs.group(
 if not gate_runs or "600000 ms" not in gate_runs.group(0) or "Exit 3" not in gate_runs.group(0):
     errors.append("skills/issue-flow: step 6 must say a hand dk-gate run may wait for a gate slot (a 600000 ms Bash "
                   "timeout), and that exit 3 or a busy push denial means the gate did not run")
-if re.search(r"Stop (hook|gate)", flow):
+if re.search(r"Stop (hook|gate)", flow + "".join(ref.values())):
     errors.append("skills/issue-flow: the Stop gate is gone (#148); the gate runs at the push and through dk-gate")
 # Before `gh pr create`: the branch's open PR, and the REST create when GraphQL is rate-limited.
 opening = re.search(r"^Rebase onto .*$", step6, re.M)
@@ -179,7 +203,7 @@ if re.search(r'(?<![-"])body=@<|--body-file <|title=<', step6) or '-F "title=@<t
 
 # A PR reaches the maintainer through one gate, checked on the latest commit, and one verdict (#126, tstack
 # full-send's merge gate and full-stop's handoff). Merging stays the maintainer's: no merge grant is taken.
-gate = re.search(r"^\*\*Ready gate\.\*\*.*?(?=^\*\*[A-Z]|\Z)", step6, re.M | re.S)
+gate = re.search(r"\A.*?(?=^\*\*Customer reply\.\*\*|\Z)", ref["ready-gate"], re.M | re.S)
 gate = gate.group(0) if gate else ""
 if not gate:
     errors.append("skills/issue-flow: step 6 has no **Ready gate.** paragraph")
@@ -202,22 +226,53 @@ for what, pattern in (
     if gate and not re.search(pattern, gate, re.S):
         errors.append(f"skills/issue-flow: step 6's **Ready gate.** paragraph does not name {what}")
 for line in ("could not read whether it touches files in this PR", "required checks could not be read (HTTP 403"):
-    if line not in watcher or line not in step6:
+    if line not in watcher or line not in watch:
         errors.append(f"skills/issue-flow: step 6's event list must name pr-wait's `{line}` line")
-if "the merge state known" not in step6:
+if "the merge state known" not in watch:
     errors.append("skills/issue-flow: step 6 must say `ready` waits for the merge state known")
-if not re.search(r"6 hours[^.]*fresh baseline", step6):
+if not re.search(r"6 hours[^.]*fresh baseline", watch):
     errors.append("skills/issue-flow: step 6 must say the watcher keeps its state 6 hours, past which a restart "
                   "starts a fresh baseline")
 if re.search(r"gh pr merge|--admin|--auto\b|merge queue", gate) or "Merging is the maintainer's" not in step6:
     errors.append("skills/issue-flow: step 6 keeps merging the maintainer's; its gate grants no merge")
 
-fan_out = re.search(r"^\*\*Fan-out\.\*\*.*?(?=^## )", flow, re.M | re.S)
+# After the handover the PR is watched until it merges, so no one relays a merge or a conflict by hand (#176).
+merge_watch = re.search(r"^\*\*Watch to the merge\.\*\*.*?(?=^\*\*[A-Z]|^## |\Z)", ref["watch"], re.M | re.S)
+merge_watch = merge_watch.group(0) if merge_watch else ""
+for what, pattern in (
+    ("the until-merged watcher", r"`python3 -I <base directory>/pr-wait <PR> --until merged`"),
+    ("who starts it: the session that hands the PR over, the orchestrator for a subagent's PR",
+     r"session that hands the PR over[^.]*orchestrator"),
+    ("that it runs in the background only, re-armed when its monitor expires", r"background.*re-arm"),
+    ("a rebase and push on a conflict", r"`merge state is DIRTY`[^.]*rebase onto `origin/<base>`[^.]*push"),
+    ("step 7 and the waiting tickets on a merge", r"`merged`[^.]*step 7[^.]*tickets that waited"),
+    ("its own deadline, exit 3, told to the user", r"`deadline passed: no merge after[^.]*exit 3[^.]*user"),
+):
+    if not re.search(pattern, merge_watch, re.S):
+        errors.append(f"skills/issue-flow: step 6's **Watch to the merge.** paragraph does not name {what}")
+# A subagent's watcher would hold the PR's lock past its run, so the orchestrator's could not start (#176).
+if not re.search(r"watch to the merge \(\[watch\.md\]\(watch\.md\)\)[^.]*subagent leaves it to its orchestrator", ref["ready-gate"]):
+    errors.append("skills/issue-flow/ready-gate.md: the gate's last line must leave a subagent's watch to the merge "
+                  "to its orchestrator")
+for line in ("deadline passed: no merge after", '"merged"'):
+    if line not in watcher:
+        errors.append(f"skills/issue-flow/pr-wait: the watcher lacks `{line}`, which step 6's **Watch to the merge.** names")
+
+fan_out = re.search(r"\A.*", ref["fan-out"], re.S)
 waits = re.search(r"^- \*\*Waits\*\*:.*$", fan_out.group(0) if fan_out else "", re.M)
 if not waits or not re.search(r"every background wait", waits.group(0)) or not re.search(
         r"deadline.*20 minutes.*reports", waits.group(0)):
     errors.append("skills/issue-flow: step 2's fan-out rules need a **Waits** rule: every background wait has a "
                   "deadline (20 minutes unless the step says otherwise) and reports when it expires")
+
+# A wave's width counts the reviewers each implementer starts, so their reviews find a free slot (#175).
+wave = re.search(r"^- \*\*Waves\*\*:.*$", fan_out.group(0) if fan_out else "", re.M)
+wave = wave.group(0) if wave else ""
+if not re.search(r"counts[^.]*reviewers[^.]*`dk:code-review`[^.]*tier[^.]*two in the small tier[^.]*four in standard "
+                 r"and risky", wave) or not re.search(r"counts as standard until its tier[^.]*four implementers", wave):
+    errors.append("skills/issue-flow: step 2's **Waves** rule must count each implementer's `dk:code-review` "
+                  "reviewers against the 20 by tier (two small, four standard and risky), counting one whose tier "
+                  "is not known yet as standard, so a wave runs at most four implementers")
 
 worktrees = re.search(r"^- \*\*Worktrees\*\*:.*$", fan_out.group(0) if fan_out else "", re.M)
 worktrees = worktrees.group(0) if worktrees else ""
@@ -241,13 +296,61 @@ if not re.search(r"skipped inline finding.*thread", skipped) or not re.search(
 
 # issue-flow's worktree, rebase and PR commands name the base (step 2), which a repo's workflow.md can set,
 # so a repo without pre-main gets its own branch and no needless ask to restore pre-main.
-for n, line in enumerate(skills["issue-flow"].read_text().splitlines(), 1):
-    if re.search(r"git ls-remote|git worktree add|gh pr create|^Rebase onto|is missing:", line) and "pre-main" in line:
-        errors.append(f"skills/issue-flow/SKILL.md:{n}: names pre-main where the base belongs")
+for name, text in (("SKILL", flow), *ref.items()):
+    for n, line in enumerate(text.splitlines(), 1):
+        if re.search(r"git ls-remote|git worktree add|gh pr create|^Rebase onto|is missing:", line) and "pre-main" in line:
+            errors.append(f"skills/issue-flow/{name}.md:{n}: names pre-main where the base belongs")
 # Steps 6 and 7 describe the pre-main batch; step 2 says which parts lapse when the base is main.
 step2 = re.search(r"^## 2\..*?(?=^## 3\.)", skills["issue-flow"].read_text(), re.M | re.S)
 if not step2 or not re.search(r"When the base is `main`, there is no batch PR: `Closes #N` closes the issue on merge, "
                               r"and step 6's batch-PR note and step 7's batch-review bullet do not apply\.", step2.group(0)):
     errors.append("skills/issue-flow/SKILL.md: step 2 does not say what lapses when the base is main")
+
+# #177: a correction goes through dk-comment-edit, which the product repos' ask rules on `gh api` PATCH never reach.
+if "`dk-comment-edit <comment id> <file>`" not in note or not re.search(r"dk-comment-edit[^.]*own[^.]*attribution note", note):
+    errors.append("skills/issue-flow: step 6's **Comments.** paragraph must correct a posted comment with "
+                  "`dk-comment-edit <comment id> <file>`, which edits only your own comment with the attribution note")
+if re.search(r"(?:-X|--method)[ =]?['\"]?(?:PATCH|patch)", flow + "".join(ref.values())):
+    errors.append("skills/issue-flow: a comment edit goes through dk-comment-edit, never a raw `gh api` PATCH")
+
+# #177: the customer reply is posted once the review loop has ended and the PR passed the gate, so it is never
+# reworded after it is posted.
+reply = re.search(r"^\*\*Customer reply\.\*\*.*?(?=^\*\*[A-Z]|^## |\Z)", ref["ready-gate"], re.M | re.S)
+gate_at = ref["ready-gate"].find("The PR goes to the maintainer")
+after_gate = bool(reply) and reply.start() > gate_at >= 0
+reply = reply.group(0) if reply else ""
+before_gate = step6 + ref["ready-gate"][:gate_at]
+if not after_gate:
+    errors.append("skills/issue-flow/ready-gate.md: needs a **Customer reply.** paragraph after the **Ready gate.**")
+elif not re.search(r"gate passes[^.]*review loop", reply) or "workflow.md" not in reply or "**Blocked**" not in reply:
+    errors.append("skills/issue-flow: step 6's **Customer reply.** waits for the gate to pass and the review loop to "
+                  "end, posts as `workflow.md` describes, and posts nothing on **Blocked**")
+if re.search(r"customer reply on the issue", before_gate):
+    errors.append("skills/issue-flow: step 6 writes the customer reply before the review loop; it belongs after the gate")
+
+# #177: on a repo the maintainer does not own, nothing carries the kit's attribution, and each draft goes to the
+# maintainer first. tests/test_repo_owner.py runs the check the paragraph names.
+step1 = re.search(r"^## 1\..*?(?=^## 2\.)", flow, re.M | re.S)
+owner = re.search(r"^\*\*Ownership\.\*\*.*?(?=^\*\*[A-Z]|^## |\Z)", step1.group(0) if step1 else "", re.M | re.S)
+owner = owner.group(0) if owner else ""
+for what, pattern in (
+    ("the check it runs", r"`python3 -I <base directory>/repo-owner`"),
+    ("the check for a comment that goes to another repo", r"`python3 -I <base directory>/repo-owner <owner>/<repo>`"),
+    ("its two answers", r"`own: [^`]*`.*`not own: [^`]*`"),
+    ("no attribution note on comments", r"no attribution note"),
+    ("no attribution lines in commits", r"commit[^.;]*no `Co-Authored-By`"),
+    ("no attribution line in the PR body", r"PR body[^.;]*no[^.;]*Generated with"),
+    ("each draft shown to the maintainer before it is posted", r"draft[^.]*maintainer[^.]*their word"),
+    ("an exit 2 read as not own", r"exit 2[^.]*`not own`"),
+):
+    if not re.search(pattern, owner, re.S):
+        errors.append(f"skills/issue-flow: step 1 needs an **Ownership.** paragraph naming {what}")
+if not re.search(r"\*\*Ownership\.\*\*", re.search(r"^## 4\..*?(?=^## 5\.)", flow, re.M | re.S).group(0)):
+    errors.append("skills/issue-flow: step 4's commits point at step 1's **Ownership.** for their attribution lines")
+if not re.search(r"\*\*Ownership\.\*\*", note):
+    errors.append("skills/issue-flow: step 6's **Comments.** must leave the note out where step 1's **Ownership.** says")
+if not re.search(r"\*\*Ownership\.\*\*[^.]*`comment from <login>`", watch):
+    errors.append("skills/issue-flow: step 6's watch must say that on a repo not your own your comments carry no note, "
+                  "so `comment from <login>` may be your own")
 
 lib.finish("dk:issue-flow")

@@ -5,6 +5,7 @@
   "permissions": {
     "allow": [
       "Bash(dk-assets push *)",
+      "Bash(dk-comment-edit *)",
       "Bash(git push -u origin HEAD)",
       "Bash(git push origin HEAD:pre-main)",
       "Bash(git push)"
@@ -33,6 +34,10 @@
     ]
   },
   "autoMode": {
+    "allow": [
+      "$defaults",
+      "Creating issue and PR comments and review-thread replies (gh issue comment, gh pr comment, a POST to pulls/<n>/comments/<id>/replies), editing one through dk-comment-edit, and adding or removing labels on issues and PRs (gh issue edit or gh pr edit with --add-label or --remove-label), on a repo owned by kaminski-dev that is not a fork, are allowed, one at a time or in a loop. This does not cover another owner's repo, a fork's upstream included."
+    ],
     "hard_deny": [
       "$defaults",
       "Never run docker or podman prune, and never remove containers, volumes or images this session did not create.",

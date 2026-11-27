@@ -39,6 +39,11 @@ if not summary or not re.search(r"one plain sentence on the problem.*before any 
 if not re.search(r"^### Title\n\n[^\n]*why the change matters", pr_skill, re.M):
     errors.append("skills/pr: no ### Title section saying the title tells why the change matters")
 
+# #177: a PR on a repo the maintainer does not own carries no attribution line and goes to them as a draft first.
+if not re.search(r"`dk:issue-flow`'s \*\*Ownership\.\*\*[^.]*no attribution line[^.]*draft", pr_skill):
+    errors.append("skills/pr: must say that, where `dk:issue-flow`'s **Ownership.** finds the repo not the "
+                  "maintainer's own, the body carries no attribution line and goes to the maintainer as a draft")
+
 # The body follows the tier, and states it, so the maintainer sees which path ran (#173).
 template = re.search(r"```markdown\n.*?\n```", pr_skill, re.S)
 if not re.search(r"^\*\*Tier:\*\* ", template.group(0) if template else "", re.M):

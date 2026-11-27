@@ -68,19 +68,19 @@ Show counts and a one-line summary per item. Let the maintainer pick.
 
 ## Show what's ready
 
-The ready list is a read: open `ready-for-agent` issues with no open blocker, whether a native dependency or a `Blocked by: #n` line in the body (`owner/repo#n` for another repo's issue). From the repo's checkout, with `<base directory>` the one this skill's header names, written out literally:
+The ready list is a read: open `ready-for-agent` issues with no open blocker, whether a native dependency or a `Blocked by: #n` line in the body (`owner/repo#n` for another repo's issue). From the repo's checkout, with `<base directory>` the one this skill's header names, written out literally, `<base>` the base from `dk:issue-flow` step 2 and `$SCRATCH` the session's scratchpad directory:
 
 ```sh
-python3 -I <base directory>/ready.py
+python3 -I <base directory>/ready.py --base <base> --worktree $SCRATCH/triage-code
 ```
 
-It prints `## Ready` and `## Blocked`, oldest first, each blocked issue with its open blockers; `--help` says how it decides. Present both sections as printed, one line per issue. "Is #42 blocked?" is the tracker doc's blocker read for that issue, plus any `Blocked by: #n` line in its body whose `#n` is open.
+It opens with `## Code`: `origin/<base>`, fetched, at its sha, and the detached worktree it put there, where triage reads code. Then `## Ready` and `## Blocked`, oldest first, each blocked issue with its open blockers; `--help` says how it decides. Present the Ready and Blocked sections as printed, one line per issue. "Is #42 blocked?" is the tracker doc's blocker read for that issue, plus any `Blocked by: #n` line in its body whose `#n` is open.
 
 Done when every open `ready-for-agent` issue appears once: under Ready, or under Blocked with its open blockers.
 
 ## Triage a specific issue or PR
 
-1. **Gather context.** Read the full issue or PR (body, comments, labels, author, dates; for a PR, the diff too). Parse any prior triage notes so you don't re-ask resolved questions. Explore the codebase using the project's domain glossary, respecting ADRs in the area. Run two checks against the codebase: (a) **redundancy**: search for an existing implementation of the requested behavior by domain concept (not just the request's wording), and report where you looked. If found, it's an already-implemented `wontfix` (step 5). (b) **prior rejection**: read `.out-of-scope/*.md` and surface any that resembles this request. (c) **same place**: search open issues touching the same files or area; when one fits, recommend adding this as a comment there and closing it as a duplicate. (d) **premise**: for an issue filed in an earlier triage wave, check that it still holds on current `origin/pre-main`.
+1. **Gather context.** Read the full issue or PR (body, comments, labels, author, dates; for a PR, the diff too). Parse any prior triage notes so you don't re-ask resolved questions. Explore the codebase in the detached worktree at `origin/<base>` that the ready listing hands out (run it first when this session has none), not the main checkout, whose branch can lag the base by days. Use the project's domain glossary, respecting ADRs in the area. Run two checks against the codebase: (a) **redundancy**: search for an existing implementation of the requested behavior by domain concept (not just the request's wording), and report where you looked. If found, it's an already-implemented `wontfix` (step 5). (b) **prior rejection**: read `.out-of-scope/*.md` and surface any that resembles this request. (c) **same place**: search open issues touching the same files or area; when one fits, recommend adding this as a comment there and closing it as a duplicate. (d) **premise**: for an issue filed in an earlier triage wave, check that it still holds on current `origin/<base>`.
 
 2. **Recommend.** Tell the maintainer your category and state recommendation with reasoning, plus a brief codebase summary relevant to the request (including whether it's already implemented). Wait for direction. When triaging several issues, finish the legwork on all of them first and present every decision that only needs a yes in one numbered round, each with your recommendation worded so "yes" accepts it; ask open questions only where the answer genuinely branches.
 
@@ -101,6 +101,10 @@ Done when every open `ready-for-agent` issue appears once: under Ready, or under
 ## Parallel waves
 
 When several issues will go to `ready-for-agent` together and may be implemented in parallel, call the Skill tool with `dk:blast-radius` for its shared-modules check before posting the briefs. Record what it finds as blocking edges between the issues (tracker doc) or as an ownership note in each brief, so two implementers never edit the same module at once.
+
+## Guard issues
+
+A **guard issue** asks `dk-guard` to ask, deny or allow a command shape. It goes to `ready-for-agent` only with a past command that hit the shape, quoted in the brief with the verdict the guard gives it today: a line of `tests/hooks/replay_history.py` run over past transcripts, or a command found in a transcript under `~/.claude/projects`. That command becomes the guard's first failing case. Without one, park it: add the shape, the issue number and the search you ran (its command, date and call count) to `.out-of-scope/unhit-guard-shapes.md`, then close the issue as `wontfix` with a comment linking that entry. When a past command later hits a recorded shape, reopen its issue, take the entry out and triage it again.
 
 ## Quick state override
 
