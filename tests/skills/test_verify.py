@@ -56,7 +56,6 @@ for what, pattern in (
     ("what makes a seam too shallow, without dk:diagnosing-bugs loaded", r"[Nn]o correct seam[^|]*shallower than the bug"),
     ("the control run on the original scenario in the test's place",
      r"control run \(step 4[^)]*\) on the original scenario[^|]*in the test's place"),
-    ("the control run owed in every tier then", r"control run \(step 4, owed then in every tier\)"),
     ("the missing seam recorded in the report and the PR", r"report and the PR name the missing seam"),
     ("the regression test owed without that record", r"with no such record, the regression test is owed"),
 ):
@@ -71,6 +70,8 @@ for what, pattern in (
     ("the small tier's red/green test", r"`small` tier[^\n]*regression test seen red, then green"),
     ("the small tier's one phone-width screenshot for a visible change", r"visible change[^\n]*one screenshot at 390 × 844"),
     ("the small tier skipping the stack and the control run", r"no rest of the stack \(steps 2 and 3\) and no control run \(step 4\)"),
+    # A small fix with no correct seam has only its control run for proof (#151).
+    ("the control run kept for a fix with no correct seam", r"no control run \(step 4\) outside the Bug fix row's no-seam case"),
     ("the other tiers owing the table in full", r"`standard` and `risky` tiers owe[^\n]*in full"),
 ):
     if not re.search(pattern, tier):
