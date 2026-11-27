@@ -257,6 +257,47 @@ def case_push_that_gets_no_gate_slot_is_denied_as_busy(root):
         hand.wait()
 
 
+def hand_run(wt, started, env=None):
+    """dk-gate started by hand in `wt`, returned once its gate has made the `started` file."""
+    hand = subprocess.Popen([DK_GATE], cwd=wt, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            env={"PATH": os.environ["PATH"], "DK_GATE_CACHE": CACHE, **(env or {})})
+    deadline = time.monotonic() + 20
+    while not os.path.exists(started):
+        assert time.monotonic() < deadline, "the hand run's gate never started"
+        time.sleep(0.05)
+    return hand
+
+
+def case_push_behind_a_hand_run_on_the_same_checkout_reuses_its_pass(root):
+    started, record = os.path.join(root, "behind.started"), os.path.join(root, "behind.runs")
+    main, wt = make_checkout(root, "behind", f"#!/bin/sh\necho run >> {record}\ntouch {started}\nsleep 2\n")
+    hand = hand_run(wt, started)
+    try:
+        assert run(main, f"cd {wt} && git push") == (0, None, "")
+        assert hand.wait(timeout=20) == 0
+    finally:
+        hand.kill()
+    with open(record) as f:
+        assert f.read() == "run\n", "the push ran the gate beside the hand run instead of reusing its pass"
+
+
+def case_push_behind_a_hand_run_that_outlasts_the_wait_is_denied_and_names_that_run(root):
+    flag = os.path.join(root, "outlasts.started")
+    main, wt = make_checkout(root, "outlasts", f"#!/bin/sh\ntest -e {flag} && exit\necho $$ > {flag}\nexec sleep 30\n")
+    hand = hand_run(wt, flag)
+    try:
+        code, out, err = run(main, f"cd {wt} && git push", env={"DK_GATE_WAIT": "1"})
+        reason = denial(out)
+        assert code == 0 and reason, (code, out, err)
+        assert f"another run of .claude/gate.sh in {wt} is still going" in reason and "push again" in reason, reason
+        assert "held every slot" not in reason and "Fix the failure" not in reason, reason
+    finally:
+        hand.kill()
+        with open(flag) as f:
+            os.kill(int(f.read()), 9)
+        hand.wait()
+
+
 def case_a_slot_that_frees_too_late_for_the_gate_denies_the_push_as_busy(root):
     # The gate's last pass took 3 s and the push has 6 s: the wait for a slot ends after 3, before the holder's
     # gate (6 s) frees it, so the gate is never started with too little time left and killed.
