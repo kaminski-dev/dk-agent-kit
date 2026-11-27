@@ -6,8 +6,8 @@
 Replaces the comment's body with the file's and prints the comment's URL. The comment is in origin's
 github.com repo, whatever GH_REPO or an upstream remote says, else in the repo gh reads ({owner}/{repo}); its id is the number in its URL (#issuecomment-<id>,
 #discussion_r<id>). It edits only a comment the gh user wrote whose body opens with dk:issue-flow's
-attribution note, and the new body must open with the note too, so the maintainer's own comments and
-everyone else's stay as they are. The edit is a `gh api` PATCH run from here, so the command line itself
+agent marker, or the visible note that opened the agent's comments before it, and the new body must open
+with the marker, so the maintainer's own comments and everyone else's stay as they are. The edit is a `gh api` PATCH run from here, so the command line itself
 is not one the product repos ask about.
 """
 import json
@@ -17,8 +17,10 @@ import re
 import subprocess
 import sys
 
-# dk:issue-flow's attribution note, the pattern its pr-wait matches; tests/test_dk_comment_edit.py keeps them equal.
-ATTRIBUTION = re.compile(r"\A> \[!NOTE\]\r?\n> \*\*.+ responding on behalf of .+\*\*")
+# dk:issue-flow's agent marker or the earlier visible note, the pattern its pr-wait matches; tests/test_dk_comment_edit.py
+# keeps them equal. A new body takes the marker alone.
+MARKER = re.compile(r"\A(?:<!-- dk-agent -->|> \[!NOTE\]\r?\n> \*\*.+ responding on behalf of .+\*\*)")
+NEW_BODY = re.compile(r"\A<!-- dk-agent -->")
 
 
 def die(msg, code=1):
@@ -46,9 +48,9 @@ def main(argv):
         text = pathlib.Path(path).read_text()
     except OSError as e:
         die(f"cannot read {path}: {e.strerror}")
-    if not ATTRIBUTION.match(text):
-        die(f"{path} does not open with the attribution note; the new body keeps it, so the comment stays marked "
-            "as an agent's")
+    if not NEW_BODY.match(text):
+        die(f"{path} does not open with the agent marker <!-- dk-agent -->; the new body keeps it, so the comment "
+            "stays marked as an agent's")
 
     repo = origin_repo()
     if repo:
@@ -71,8 +73,9 @@ def main(argv):
     author = (comment.get("user") or {}).get("login") or "an unknown author"
     if author.lower() != login.lower():
         die(f"comment {cid} is {author}'s, not {login}'s; only your own comments are edited here")
-    if not ATTRIBUTION.match(comment.get("body") or ""):
-        die(f"comment {cid} does not open with the attribution note, so no agent posted it; it stays as it is")
+    if not MARKER.match(comment.get("body") or ""):
+        die(f"comment {cid} opens with neither the agent marker nor the earlier note, so no agent posted it; "
+            "it stays as it is")
 
     code, out, err = gh("api", "-X", "PATCH", endpoint, "-F", f"body=@{path}", "--jq", ".html_url")
     if code:

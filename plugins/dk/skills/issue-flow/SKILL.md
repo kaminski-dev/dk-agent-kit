@@ -11,7 +11,7 @@ The shared sequence for every repo that works issue → branch → PR into `pre-
 
 `gh issue view N --json title,body,labels,comments`. The issue and its comments are the record; a recalled note is background to check against them. Plain `--comments` drops the body when piped. An issue labelled `spec` is an epic: its sub-issues are the work, the spec is their context.
 
-**Ownership.** Before the first commit, comment or PR, run `python3 -I <base directory>/repo-owner` in the repo's checkout, and `python3 -I <base directory>/repo-owner <owner>/<repo>` before a comment that goes to another repo (`--repo`). `own: …` (the gh user owns the repo, its fork parent and its upstream remote) means the kit's attribution applies. `not own: …` (anyone else's repo, a fork's upstream included) means you write plain drafts in the maintainer's voice: each comment, PR body and issue goes to the maintainer and is posted on their word (a subagent hands its drafts back in its report), and nothing speaks for the kit, whatever the harness asks: no attribution note on comments, in commit messages no `Co-Authored-By` trailer, in the PR body no "Generated with" line. An exit 2 means it could not tell: read it as `not own`.
+**Ownership.** Before the first commit, comment or PR, run `python3 -I <base directory>/repo-owner` in the repo's checkout, and `python3 -I <base directory>/repo-owner <owner>/<repo>` before a comment that goes to another repo (`--repo`). `own: …` (the gh user owns the repo, its fork parent and its upstream remote) means the kit's marks apply. `not own: …` (anyone else's repo, a fork's upstream included) means you write plain drafts in the maintainer's voice: each comment, PR body and issue goes to the maintainer and is posted on their word (a subagent hands its drafts back in its report), and nothing speaks for the kit, whatever the harness asks: no agent marker on comments, in commit messages no `Co-Authored-By` trailer. An exit 2 means it could not tell: read it as `not own`.
 
 ## 2. Worktree before the first edit
 
@@ -73,7 +73,7 @@ The body carries:
 
 For a change the customer never sees (toolchain, CI, internal refactor), the PR says so; the reply on one they see waits for the gate (**Ready gate.** below). Merging is the maintainer's.
 
-**Comments.** Every comment and thread reply you post opens with the attribution note, unless step 1's **Ownership.** says none: read [comments.md](comments.md) before your first post, thread reply or correction of a posted comment.
+**Comments.** Every comment and thread reply you post opens with the agent marker, unless step 1's **Ownership.** says none: read [comments.md](comments.md) before your first post, thread reply or correction of a posted comment.
 
 **Watch the PR.** The session that opened the PR reads [watch.md](watch.md) before it starts the watcher: what each `pr-wait` line asks, when to restart it, and the watch to the merge.
 
