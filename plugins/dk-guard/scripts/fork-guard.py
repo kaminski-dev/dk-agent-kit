@@ -21,7 +21,9 @@ import re
 import sys
 
 I = re.IGNORECASE
-CLAUSE_END = re.compile(r"(?<!\be\.g)(?<!\bi\.e)[.;!?][)\"'*_`]*\s+|\n\s*\n\s*|\n\s*(?=[-*+]\s|\d+[.)]\s|[A-Z])|\s[—–]\s")
+NO_RUN_ON = r"(?<![\s,])(?i:(?<!\bor)(?<!\band)(?<!\bnor))"
+CLAUSE_END = re.compile(r"(?<!\be\.g)(?<!\bi\.e)[.;!?][)\"'*_`]*\s+|\n\s*\n\s*|\n\s*(?=[-*+]\s|\d+[.)]\s)"
+                        rf"|{NO_RUN_ON}[ \t]*\n\s*(?=[A-Z])|\s[—–]\s")
 BULLET = re.compile(r"\s*(?:[-*+]|\d+[.)])\s")
 
 # What stands right before a verb that instructs the fork.
@@ -78,7 +80,7 @@ ASKS = [(what, re.compile(rx, I | re.MULTILINE), verb) for what, rx, verb in (
     (WORKTREE_ASK, rf"\b{GIT}worktree\s+add\b", False),
 )]
 QUOTES = ("`", '"', "'")
-RUN = re.compile(RUN_VERB + r"\s+\Z", I)
+RUN = re.compile(rf"{RUN_VERB}\s+\Z|\A[\s*_>#+-]*{RUN_VERB}:\s*\Z", I)
 MENTION = re.compile(r"\b(?:mention|document|describ|explain|say|quot|contain|reference|regex)\w*[^\w]{1,6}(?:the\s+)?\Z", I)
 
 
