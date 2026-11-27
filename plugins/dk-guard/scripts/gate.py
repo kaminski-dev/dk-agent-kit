@@ -22,28 +22,41 @@ $DK_GATE_CACHE when set (tests), else the dk-guard plugin's data directory
 $CLAUDE_CONFIG_DIR when set). A hand run does not get the hooks'
 CLAUDE_PLUGIN_DATA, so both sides use this fixed path.
 
-At most DK_GATE_SLOTS gates (default 2) run at once on the machine, hand
-runs and push runs alike, sessions with another CLAUDE_CONFIG_DIR included. A
-run that needs the gate takes a slot first: an exclusive flock on one of the
-files slot-0.lock, slot-1.lock, ... in
+At most DK_GATE_SLOTS gates (default 2) run at once on the machine, hand runs
+and push runs alike, sessions with another CLAUDE_CONFIG_DIR included. A run
+that needs the gate takes a slot first: an exclusive flock on one of the files
+slot-0.lock, slot-1.lock, ... in
 ~/.claude/plugins/data/dk-guard-dk-agent-kit/gate-slots/ (whatever
-CLAUDE_CONFIG_DIR says; $DK_GATE_CACHE/slots/ in tests), which the kernel releases when the holder dies, so
-a killed run leaves no stale slot. With every slot held it waits up to
-DK_GATE_WAIT seconds (default 240), then gives up and says the gates are busy;
-the gate does not run, and nothing counts as passed. A cached pass takes no
-slot. The gate runs with DK_GATE_WORKERS (default 4: two gates on a 12-core
-machine, with cores left for the sessions) in its environment, for the gate
-script to pass to its tools (`go test -p`, `vitest --maxWorkers`, ...); a gate
-that ignores it runs as before.
+CLAUDE_CONFIG_DIR says; $DK_GATE_CACHE/slots/ in tests), which the kernel
+releases when the holder dies, so a killed run leaves no stale slot. With every
+slot held it waits up to DK_GATE_WAIT seconds (default 240), then gives up and
+says the gates are busy; the gate does not run, and nothing counts as passed. A
+cached pass takes no slot.
+
+One gate runs per checkout at a time, so two overlapping runs cannot leave a
+pass the later, failing one contradicts. Before its slot a run takes an
+exclusive flock on checkout-<hash of the root>.lock beside the slots, released
+the same way; a pass drops the locks of worktrees that are gone. A second run
+waits for it holding no slot, then reads the cache again: it reuses the first
+run's pass on the same tree and runs the gate otherwise (--fresh always runs).
+That wait and the slot wait share the DK_GATE_WAIT seconds; a run whose
+checkout stays busy gives up and says so.
+
+The gate runs with DK_GATE_WORKERS (default 4: two gates on a 12-core machine,
+with cores left for the sessions) in its environment, for the gate script to
+pass to its tools (`go test -p`, `vitest --maxWorkers`, ...); a gate that
+ignores it is unaffected.
 
 A hand run prints the gate's output as it comes and exits 0 on a pass, 1 on
-a failure and 3 when the gates stay busy; a checkout without an executable
-gate exits 0 and says so.
+a failure and 3 when the gate did not run (no slot freed, or its checkout's
+other run outlasted the wait); a checkout without an executable gate exits 0
+and says so.
 """
 import datetime
 import fcntl
 import hashlib
 import json
+import math
 import os
 import signal
 import subprocess
@@ -59,6 +72,7 @@ LOCKFILES = ("bun.lock", "bun.lockb", "package-lock.json", "pnpm-lock.yaml", "ya
              "uv.lock", "poetry.lock", "Gemfile.lock", "composer.lock")
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 BUSY = "busy"
+BUSY_SLOTS, BUSY_CHECKOUT, BUSY_LATE = "slots", "checkout", "late"
 
 
 def setting(name, default):
@@ -100,14 +114,23 @@ def slots_dir():
     return os.path.join(os.path.expanduser("~"), ".claude", "plugins", "data", "dk-guard-dk-agent-kit", "gate-slots")
 
 
-def take_slot(root, wait, on_wait=None):
-    """Hold one of the machine's gate slots: returns (open slot file or None, the roots that held the slots when
-    none freed within `wait` seconds). The slot is held while the file stays open. A slot file that cannot be made
-    is no reason to block a gate: the result is then (None, None) and the gate runs uncapped."""
-    count = setting("DK_GATE_SLOTS", 2)
+def checkout_lock(root):
+    """The file a run holds while it gates `root`. It sits beside the slots, so it too is the machine's."""
+    return os.path.join(slots_dir(), f"checkout-{hashlib.sha256(root.encode()).hexdigest()[:16]}.lock")
+
+
+def slot_locks():
+    return [os.path.join(slots_dir(), f"slot-{i}.lock") for i in range(setting("DK_GATE_SLOTS", 2))]
+
+
+def take_lock(paths, root, wait, on_wait=None):
+    """Hold an exclusive flock on the first of `paths` that is free: returns (the open file, None), or (None, the
+    "<pid> <root>" line of each holder) when none freed within `wait` seconds; on_wait(holders) is called once,
+    when the wait starts. The lock is held while the file stays open, and the kernel releases it when the holder
+    dies. A lock file that cannot be made is no reason to block a gate: the result is then (None, None)."""
     try:
         os.makedirs(slots_dir(), exist_ok=True)
-        files = [open(os.path.join(slots_dir(), f"slot-{i}.lock"), "a+") for i in range(count)]
+        files = [open(path, "a+") for path in paths]
     except OSError:
         return None, None
     deadline, told = time.monotonic() + wait, False
@@ -128,7 +151,7 @@ def take_slot(root, wait, on_wait=None):
         holders = []
         for f in files:
             f.seek(0)
-            holders.append(f.read().strip().partition(" ")[2] or "?")
+            holders.append(f.read().strip())
         if time.monotonic() >= deadline:
             for f in files:
                 f.close()
@@ -236,7 +259,8 @@ def store_pass(root, k, seconds):
 
 
 def drop_gone(directory):
-    """Remove the entries of worktrees that no longer exist, so the cache holds one entry per live worktree."""
+    """Remove the entries and the checkout locks of worktrees that no longer exist, so the cache and the locks
+    hold one file per live worktree."""
     for name in os.listdir(directory):
         if not name.endswith(".json"):
             continue
@@ -247,6 +271,20 @@ def drop_gone(directory):
                 os.remove(os.path.join(directory, name))
         except (OSError, ValueError, AttributeError):
             pass  # dropped by another run meanwhile, or unreadable, which cached_pass reads as no pass
+    try:
+        locks = [os.path.join(slots_dir(), name) for name in os.listdir(slots_dir()) if name.startswith("checkout-")]
+    except OSError:
+        return
+    for path in locks:
+        try:
+            with open(path) as f:
+                root = f.read().strip().partition(" ")[2]
+                if root and not os.path.isdir(root):
+                    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    if not os.path.isdir(root):
+                        os.remove(path)
+        except OSError:
+            pass  # held, or dropped by another run meanwhile
 
 
 def run_gate(gate, root, timeout=None, capture=True):
@@ -281,13 +319,47 @@ def run_gate(gate, root, timeout=None, capture=True):
     return failure, (out or b"").decode("utf-8", errors="replace")
 
 
+def last_seconds(root):
+    """The seconds the last pass of `root` took, 0 with none on record."""
+    seconds = (last_pass(root) or {}).get("seconds")
+    return seconds if isinstance(seconds, (int, float)) else 0
+
+
+def waited_for(cause, holders):
+    """What a wait is on, from the holders' "<pid> <root>" lines: for BUSY_SLOTS the roots whose gates hold the
+    slots, for BUSY_CHECKOUT the pid of the run that gates the same root. It is the entry of a BUSY check whose wait
+    ran out."""
+    pid_or_root = 0 if cause == BUSY_CHECKOUT else 2
+    return {"cause": cause, "holders": [line.partition(" ")[pid_or_root] or "?" for line in holders]}
+
+
+def why_busy(root, entry):
+    """What kept a BUSY check from running the gate, as the clause both callers open their message with."""
+    if entry["cause"] == BUSY_CHECKOUT:
+        return (f"another run of {GATE} in {root} is still going (pid {', '.join(entry['holders'])}), so this one "
+                "did not run")
+    if entry["cause"] == BUSY_LATE and entry["needs"] >= entry["timeout"]:
+        return (f"the last pass took {entry['needs']} s, and the push has only {entry['timeout']} s in all, so "
+                f"{GATE} in {root} did not run")
+    if entry["cause"] == BUSY_LATE:
+        return (f"only {entry['left']} s of the {entry['timeout']} s were left once the gate's turn came and the "
+                f"tree was hashed, less than the {entry['needs']} s the last pass took, so {GATE} in {root} did "
+                "not run")
+    return f"gates are busy ({', '.join(entry['holders'])} held every slot), so {GATE} in {root} did not run"
+
+
 def check(root, timeout=None, capture=True, fresh=False, wait=None, on_wait=None):
     """Gate `root`: returns (status, output, entry). status is "cached", "passed", "passed, not cached", BUSY or
     the failure ("failed (exit 1)", "timed out after 540 s", ...); entry is the cached pass for "cached", and for
-    BUSY the roots whose gates held the slots. `timeout` covers the wait for a slot and the run together; the wait
-    is at most `wait` seconds (default DK_GATE_WAIT), and on_wait(holders) is called once when it starts. Under a
-    timeout the wait also leaves the run the seconds the root's last pass took, so a slot that frees later reports
-    BUSY instead of starting a gate the timeout would kill."""
+    BUSY what why_busy() words: waited_for() the checkout or the slots, or BUSY_LATE with the seconds that were left.
+
+    One gate runs per root at a time: a run first waits for the run in flight on the same root, holding no slot,
+    then reads the cache again, so it reuses that run's pass on the same tree. Then it waits for a slot. `timeout`
+    covers both waits and the run together; the waits take at most `wait` seconds in all (default DK_GATE_WAIT),
+    and on_wait(waited_for(...)) is called once as each starts. Under a timeout the run is left the seconds the
+    root's last pass took: a pass longer than the whole timeout reports BUSY before any wait, the waits end early
+    enough for it, and a gate with less left once the tree is hashed does not start, so each reports BUSY instead of
+    a gate the timeout would kill."""
     gate = os.path.join(root, GATE)
     if not fresh:
         entry = cached_pass(root, key(root))
@@ -296,21 +368,47 @@ def check(root, timeout=None, capture=True, fresh=False, wait=None, on_wait=None
     start = time.monotonic()
     wait = setting("DK_GATE_WAIT", 240) if wait is None else wait
     if timeout is not None:
-        last = last_pass(root) or {}
-        needs = last["seconds"] if isinstance(last.get("seconds"), (int, float)) else 0
+        needs = last_seconds(root)
+        if needs >= timeout:
+            return BUSY, "", {"cause": BUSY_LATE, "left": timeout, "needs": needs, "timeout": timeout}
         wait = max(0, min(wait, timeout - needs))
-    slot, holders = take_slot(root, wait, on_wait)
+    waited_for_checkout = False
+
+    def tell(cause):
+        def told(holders):
+            nonlocal waited_for_checkout
+            if cause == BUSY_CHECKOUT:
+                waited_for_checkout = True
+            if on_wait:
+                on_wait(waited_for(cause, holders))
+        return told
+
+    turn, holders = take_lock([checkout_lock(root)], root, wait, tell(BUSY_CHECKOUT))
     if holders is not None:
-        return BUSY, "", holders
+        return BUSY, "", waited_for(BUSY_CHECKOUT, holders)
+    slot = None
     try:
-        before = key(root)  # the tree may have changed during the wait, or a gate in the queue passed it
+        if waited_for_checkout and not fresh:
+            entry = cached_pass(root, key(root))
+            if entry:
+                return "cached", "", entry
+        slot, holders = take_lock(slot_locks(), root, max(0, start + wait - time.monotonic()), tell(BUSY_SLOTS))
+        if holders is not None:
+            return BUSY, "", waited_for(BUSY_SLOTS, holders)
+        before = key(root)  # the tree may have changed during the wait for a slot
         if not fresh:
             entry = cached_pass(root, before)
             if entry:
                 return "cached", "", entry
+        left = None
+        if timeout is not None:
+            left, needs = timeout - (time.monotonic() - start), last_seconds(root)
+            if needs and left < needs:
+                return BUSY, "", {"cause": BUSY_LATE, "left": max(0, round(left)), "needs": needs,
+                                  "timeout": timeout}
+            left = max(1, math.ceil(left))
         forget(root)  # a run that fails may fail on an input the key cannot see, so the older pass vouches for nothing
         run_start = time.monotonic()
-        left = None if timeout is None else max(1, round(timeout - (run_start - start)))
         failure, output = run_gate(gate, root, left, capture)
         if failure:
             return failure, output, None
@@ -319,8 +417,9 @@ def check(root, timeout=None, capture=True, fresh=False, wait=None, on_wait=None
             return "passed", output, None
         return "passed, not cached", output, None
     finally:
-        if slot:
-            slot.close()
+        for held in (slot, turn):
+            if held:
+                held.close()
 
 
 def main(argv):
@@ -337,14 +436,20 @@ def main(argv):
         return 0
     sys.stdout.flush()
 
-    def on_wait(holders):
-        print(f"dk-gate: {len(holders)} gates are running ({', '.join(holders)}); waiting for a slot.", flush=True)
+    def on_wait(waited):
+        holders = ", ".join(waited["holders"])
+        if waited["cause"] == BUSY_CHECKOUT:
+            print(f"dk-gate: another run of {GATE} in {root} is going (pid {holders}); waiting for it to end.",
+                  flush=True)
+        else:
+            print(f"dk-gate: {len(waited['holders'])} gates are running ({holders}); waiting for a slot.", flush=True)
 
     status, _, entry = check(root, capture=False, fresh="--fresh" in argv, on_wait=on_wait)
     head = f"dk-gate: {GATE} in {root}"
     if status == BUSY:
-        print(f"dk-gate: gates are busy ({', '.join(entry)} held every slot), so {GATE} in {root} did not run. "
-              "Run dk-gate again in a minute.")
+        again = {BUSY_SLOTS: "Run dk-gate again in a minute.", BUSY_LATE: "Run dk-gate again.",
+                 BUSY_CHECKOUT: "Run dk-gate again when that run ends; its pass on this same tree is reused."}
+        print(f"dk-gate: {why_busy(root, entry)}. {again[entry['cause']]}")
         return 3
     if status == "cached":
         print(f"{head} passed at {entry['passed_at']} on this same tree, so it did not run again (cached). "

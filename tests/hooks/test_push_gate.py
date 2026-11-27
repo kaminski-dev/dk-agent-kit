@@ -257,6 +257,48 @@ def case_push_that_gets_no_gate_slot_is_denied_as_busy(root):
         hand.wait()
 
 
+def hand_run(wt, started, env=None):
+    """dk-gate started by hand in `wt`, returned once its gate has made the `started` file."""
+    hand = subprocess.Popen([DK_GATE], cwd=wt, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            env={"PATH": os.environ["PATH"], "DK_GATE_CACHE": CACHE, **(env or {})})
+    deadline = time.monotonic() + 20
+    while not os.path.exists(started):
+        assert time.monotonic() < deadline, "the hand run's gate never started"
+        time.sleep(0.05)
+    return hand
+
+
+def case_push_behind_a_hand_run_on_the_same_checkout_reuses_its_pass(root):
+    started, record = os.path.join(root, "behind.started"), os.path.join(root, "behind.runs")
+    main, wt = make_checkout(root, "behind", f"#!/bin/sh\necho run >> {record}\ntouch {started}\nsleep 2\n")
+    hand = hand_run(wt, started)
+    try:
+        assert run(main, f"cd {wt} && git push") == (0, None, "")
+        assert hand.wait(timeout=20) == 0
+    finally:
+        hand.kill()
+    with open(record) as f:
+        assert f.read() == "run\n", "the push ran the gate beside the hand run instead of reusing its pass"
+
+
+def case_push_behind_a_hand_run_that_outlasts_the_wait_is_denied_and_names_that_run(root):
+    flag = os.path.join(root, "outlasts.started")
+    main, wt = make_checkout(root, "outlasts", f"#!/bin/sh\ntest -e {flag} && exit\necho $$ > {flag}\nexec sleep 30\n")
+    hand = hand_run(wt, flag)
+    try:
+        code, out, err = run(main, f"cd {wt} && git push", env={"DK_GATE_WAIT": "1"})
+        reason = denial(out)
+        assert code == 0 and reason, (code, out, err)
+        assert "another run of .claude/gate.sh in " in reason and f"{wt} is still going" in reason, reason
+        assert "push again when that run ends" in reason, reason
+        assert "held every slot" not in reason and "Fix the failure" not in reason, reason
+    finally:
+        hand.kill()
+        with open(flag) as f:
+            os.kill(int(f.read()), 9)
+        hand.wait()
+
+
 def case_a_slot_that_frees_too_late_for_the_gate_denies_the_push_as_busy(root):
     # The gate's last pass took 3 s and the push has 6 s: the wait for a slot ends after 3, before the holder's
     # gate (6 s) frees it, so the gate is never started with too little time left and killed.
@@ -285,6 +327,53 @@ def case_a_slot_that_frees_too_late_for_the_gate_denies_the_push_as_busy(root):
                 os.kill(int(f.read()), 9)
         except ProcessLookupError:
             pass  # its sleep already ended
+        hand.wait()
+
+
+def case_a_hash_that_leaves_the_gate_less_time_than_its_last_pass_took_denies_the_push(root):
+    # The gate's last pass took 2 s (under a 6 s timeout, so a loaded machine still stores it) and the push has 4 s.
+    # The slot is free, but git takes 3 s over the tree's diff, so 1 s is left once the tree is hashed: the gate
+    # must not start, or it is killed and the push goes out ungated.
+    main, wt = make_checkout(root, "slow-hash", "#!/bin/sh\ntouch .gate-ran\nsleep 2\n")
+    env = {"DK_PUSH_GATE_TIMEOUT": "4"}
+    assert run(main, f"cd {wt} && git push", env={"DK_PUSH_GATE_TIMEOUT": "6"}) == (0, None, "")
+    assert gate_ran(wt, forget=True)
+    with open(os.path.join(wt, "src.txt"), "w") as f:
+        f.write("new\n")
+    bin_dir = os.path.join(root, "slow-hash-bin")
+    os.makedirs(bin_dir)
+    with open(os.path.join(bin_dir, "git"), "w") as f:
+        f.write(f"#!/bin/sh\ncase \" $* \" in *\" diff \"*) sleep 3;; esac\nexec {shutil.which('git')} \"$@\"\n")
+    os.chmod(os.path.join(bin_dir, "git"), 0o755)
+    code, out, err = run(main, f"cd {wt} && git push", env={**env, "PATH": bin_dir + os.pathsep + os.environ["PATH"]})
+    reason = denial(out)
+    assert code == 0 and reason, (code, out, err)
+    assert "the last pass took" in reason and "push again" in reason and "did not run" in reason, reason
+    assert "held every slot" not in reason and "Fix the failure" not in reason and not gate_ran(wt), reason
+
+
+def case_a_gate_whose_last_pass_outlasts_the_push_is_sent_to_a_hand_run_at_once(root):
+    # The last pass took 2 s, by hand or under a longer timeout, and the push has 1 s: no push can fit the gate, so
+    # the denial names the hand run only, and comes before the wait for the slot the holder keeps.
+    main, wt = make_checkout(root, "outgrown", "#!/bin/sh\ntouch .gate-ran\nsleep 2\n")
+    env = {"DK_GATE_SLOTS": "1", "DK_GATE_WAIT": "30"}
+    assert run(main, f"cd {wt} && git push", env=env) == (0, None, "") and gate_ran(wt, forget=True)
+    with open(os.path.join(wt, "src.txt"), "w") as f:
+        f.write("new\n")
+    flag = os.path.join(root, "outgrown-holder.started")
+    _, holder = make_checkout(root, "outgrown-holder", f"#!/bin/sh\necho $$ > {flag}\nexec sleep 30\n")
+    hand = hand_run(holder, flag, env)
+    try:
+        began = time.monotonic()
+        code, out, err = run(main, f"cd {wt} && git push", env={**env, "DK_PUSH_GATE_TIMEOUT": "1"})
+        reason = denial(out)
+        assert code == 0 and reason and time.monotonic() - began < 10, (code, out, err)
+        assert "the push has only 1 s in all" in reason and "run dk-gate there first" in reason, reason
+        assert "push again" not in reason and "held every slot" not in reason and not gate_ran(wt), reason
+    finally:
+        hand.kill()
+        with open(flag) as f:
+            os.kill(int(f.read()), 9)
         hand.wait()
 
 

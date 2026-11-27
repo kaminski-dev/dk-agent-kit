@@ -48,7 +48,7 @@ for what, pattern in (
     if not re.search(pattern, guard, re.S):
         errors.append(f"skills/triage: the Guard issues section must name {what}")
 
-# The disclaimer tells the reader an AI wrote the post, on any repo: dropping it with the attribution note on a repo
+# The disclaimer tells the reader an AI wrote the post, on any repo: dropping it with the agent marker on a repo
 # read as not your own cost the triage evals their brief (#168 review, SP5 declined).
 if not re.search(r"during triage \*\*must\*\* start with this disclaimer:\n", skills["triage"].read_text()):
     errors.append("skills/triage: every triage comment or issue must start with the disclaimer, on any repo")

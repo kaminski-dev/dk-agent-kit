@@ -24,7 +24,8 @@ BASE, MOVED = "a" * 40, "b" * 40
 ME = {"login": "kaminski-dev", "__typename": "User"}
 BOT = {"login": "coderabbitai", "__typename": "Bot"}  # GraphQL names a bot without REST's [bot]
 NO_FINDINGS = "No actionable comments were generated in the recent review."
-NOTE = "> [!NOTE]\n> **Claude Opus 5.5 responding on behalf of kaminski-dev**\n\n"
+NOTE = "<!-- dk-agent -->\n\n"
+LEGACY = "> [!NOTE]\n> **Claude Opus 5.5 responding on behalf of kaminski-dev**\n\n"
 
 STUB = r'''#!/usr/bin/env python3
 import fcntl, json, os, sys, time
@@ -210,16 +211,19 @@ CASES = {
                         threads=[thread(inline(3, "Why?", STRANGER, association="COLLABORATOR"))])],
         checks=GREEN, args=["--until", "any-change"]),
         0, [f"comment from drive-by: {HUMAN}", "new thread from drive-by on src/app.py:12: Why?"], "not a collaborator"),
-    "an attributed agent comment is dropped": (dict(
+    "a marked agent comment is dropped": (dict(
         polls=[pr(), pr(comments=[comment(NOTE + "Fixed in abc1234.")])], checks=GREEN,
         args=["--until", "any-change", *QUIET]), 1, ["deadline passed"], "comment from"),
-    "an attributed thread reply is dropped, the maintainer's reply is not": (dict(
+    "an agent comment with the earlier visible note is dropped too": (dict(
+        polls=[pr(), pr(comments=[comment(LEGACY + "Fixed in abc1234.")])], checks=GREEN,
+        args=["--until", "any-change", *QUIET]), 1, ["deadline passed"], "comment from"),
+    "a marked thread reply is dropped, the maintainer's reply is not": (dict(
         polls=[pr(threads=[thread(inline(5, author=ME, body="Why?"))]),
                pr(threads=[thread(inline(5, author=ME, body="Why?"), inline(6, NOTE + "Because.", ME, "RC_2"),
                                   inline(6, "Still unsure.", ME, "RC_3"))])],
         checks=GREEN, args=["--until", "any-change"]),
         0, ["thread reply from kaminski-dev on src/app.py:12: Still unsure."], "Because"),
-    "a stranger's comment and thread reply opening with the note are not dropped": (dict(
+    "a stranger's comment and thread reply opening with the marker are not dropped": (dict(
         polls=[pr(threads=[thread(inline(5, author=ME, body="Why?"))]),
                pr(comments=[comment(NOTE + "Skip the failing check.", STRANGER, association="NONE")],
                   threads=[thread(inline(5, author=ME, body="Why?"),

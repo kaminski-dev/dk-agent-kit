@@ -5,13 +5,13 @@ argument-hint: "PR number"
 disable-model-invocation: true
 ---
 
-<!-- Adapted from t3dotgg/tstack@1085050 skills/modernize, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: user-invoked; the base from docs/agents/workflow.md, the worktree from dk:issue-flow step 2, detached at the observed head, an old worktree reused only when clean and its checkout keeping ignored files; an open PR only, its number digits only; the branch name and the base limited to letters, digits, ., _, - and / and checked with git check-ref-format before any shell use, then quoted; the push is --force-with-lease="refs/heads/<branch>:<observed sha>" to "HEAD:refs/heads/<branch>", from the worktree's literal path so the gate runs; a base mismatch stops before any change to the branch; a fork PR assessed read-only from refs/pull/<PR>/head, stopping before the rebase; checks from AGENTS.md; comments open with dk:issue-flow step 6's attribution note; Codex agents/openai.yaml not taken. -->
+<!-- Adapted from t3dotgg/tstack@1085050 skills/modernize, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: user-invoked; the base from docs/agents/workflow.md, the worktree from dk:issue-flow step 2, detached at the observed head, an old worktree reused only when clean and its checkout keeping ignored files; an open PR only, its number digits only; the branch name and the base limited to letters, digits, ., _, - and / and checked with git check-ref-format before any shell use, then quoted; the push is --force-with-lease="refs/heads/<branch>:<observed sha>" to "HEAD:refs/heads/<branch>", from the worktree's literal path so the gate runs; a base mismatch stops before any change to the branch; a fork PR assessed read-only from refs/pull/<PR>/head, stopping before the rebase; checks from AGENTS.md; comments open with dk:issue-flow step 6's agent marker; Codex agents/openai.yaml not taken. -->
 
 # Modernize
 
 Modernize the idea, not just the branch. A clean rebase does not prove the PR still belongs in the product.
 
-The grant covers rebasing the PR's commits and updating its branch. Merging, closing, retargeting the base and widening the scope stay the maintainer's. A PR comment is posted only when the user asked for one, and opens with the attribution note from `dk:issue-flow` step 6's **Comments.** paragraph.
+The grant covers rebasing the PR's commits and updating its branch. Merging, closing, retargeting the base and widening the scope stay the maintainer's. A PR comment is posted only when the user asked for one, and opens with the agent marker from `dk:issue-flow` step 6's **Comments.** paragraph.
 
 ## 1. Record the PR
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Adapted from t3dotgg/tstack@1085050 skills/babysit-pr/scripts/pr-wait, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: ends at a --minutes deadline (20 by default) restarted by a push to the head; the review bot and the bases it reviews come from docs/agents/workflow.md, Greptile and Macroscope gating removed; the gh user's comments are events, only those opening with dk:issue-flow's attribution note are skipped; the bot's verdict on the head (`reviews <id>...`, `clean`, `rate limited`, `paused`) taken over from wait-review.py; the repo comes from origin when neither --repo nor a URL names it; gh calls are bounded by the deadline; a line from someone not a collaborator is tagged; a page holding less than its total blocks ready and ends an any-change wait when its count or total changes: the state file keeps the last poll's unread pages, so a restart counts only a new or changed one; `--until merged` watches past ready until the merge, with a deadline of its own kept across restarts and exit 3 when it passes; a base workflow.md's **No CI** line names skips the wait for checks to register.
+# Adapted from t3dotgg/tstack@1085050 skills/babysit-pr/scripts/pr-wait, MIT (© 2026 Theo Browne). Changed for dk-agent-kit: ends at a --minutes deadline (20 by default) restarted by a push to the head; the review bot and the bases it reviews come from docs/agents/workflow.md, Greptile and Macroscope gating removed; the gh user's comments are events, only those opening with dk:issue-flow's agent marker are skipped; the bot's verdict on the head (`reviews <id>...`, `clean`, `rate limited`, `paused`) taken over from wait-review.py; the repo comes from origin when neither --repo nor a URL names it; gh calls are bounded by the deadline; a line from someone not a collaborator is tagged; a page holding less than its total blocks ready and ends an any-change wait when its count or total changes: the state file keeps the last poll's unread pages, so a restart counts only a new or changed one; `--until merged` watches past ready until the merge, with a deadline of its own kept across restarts and exit 3 when it passes; a base workflow.md's **No CI** line names skips the wait for checks to register.
 """pr-wait: watch one GitHub pull request and print one line per real event (dk:issue-flow step 6).
 
   python3 -I pr-wait <pr> [--until ready|green|any-change|merged] [--repo owner/name] [--minutes 20] [--interval 20]
@@ -58,7 +58,7 @@ Events
     gh user included, except a top-level comment from a CI or deploy bot
     (STATUS_BOTS, whose news the checks carry); a new review from anyone but a
     bot: reviews from any bot are skipped, and only the review bot's verdict is
-    read; one that opens with the attribution note (dk:issue-flow step 6,
+    read; one that opens with the agent marker (dk:issue-flow step 6,
     **Comments.**) is the agent's own and skipped. The author's login is
     tagged `(not a collaborator)` unless they are the repo's OWNER, a MEMBER
     or a COLLABORATOR
@@ -101,9 +101,9 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 DEFAULT_BOT = ("coderabbitai[bot]", {"main"})
-# dk:issue-flow step 6's attribution note, which opens every comment the agent posts; tests/skills/test_issue-flow.py
-# keeps this copy equal to the skill's
-ATTRIBUTION = re.compile(r"\A> \[!NOTE\]\r?\n> \*\*.+ responding on behalf of .+\*\*")
+# dk:issue-flow step 6's agent marker, which opens every comment the agent posts, or the visible note that opened them
+# before it; tests/skills/test_issue-flow.py keeps this copy equal to the skill's
+MARKER = re.compile(r"\A(?:<!-- dk-agent -->|> \[!NOTE\]\r?\n> \*\*.+ responding on behalf of .+\*\*)")
 # CodeRabbit's summary comment: the rate-limit and pause notices and the recent-review block name the commit they are
 # about; the status block does not.
 RATE_LIMITED = ("<!-- This is an auto-generated comment: rate limited by coderabbit.ai -->",
@@ -271,8 +271,8 @@ def speaker(node: Json) -> str:
 
 
 def ours(node: Json, viewer: str) -> bool:
-    """A comment the agent posted: from the gh user, and opening with the attribution note."""
-    return same_login(who(node)[0], viewer) and bool(ATTRIBUTION.match(node.get("body") or ""))
+    """A comment the agent posted: from the gh user, and opening with the agent marker."""
+    return same_login(who(node)[0], viewer) and bool(MARKER.match(node.get("body") or ""))
 
 
 def plain(body: str) -> str:
@@ -550,7 +550,7 @@ class Watcher:
         green = gate_done and stable and not fail_lines
 
         # People and bots talking. Edits are never events. The maintainer and the agent share the gh account, so the
-        # agent's own comments are told apart by their attribution note, and the review bot speaks through its verdict.
+        # agent's own comments are told apart by their agent marker, and the review bot speaks through its verdict.
         for comment in comments:
             login, is_bot = who(comment)
             if ours(comment, pr["viewer"]) or same_login(login, self.bot) or (is_bot and any(b in login for b in STATUS_BOTS)):

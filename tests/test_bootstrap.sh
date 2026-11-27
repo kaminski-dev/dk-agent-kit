@@ -97,6 +97,8 @@ s="$tmp/settings.json"
 [[ "$(jq -c '[.env.BASH_DEFAULT_TIMEOUT_MS, .env.BASH_MAX_TIMEOUT_MS, .env.KEEP_ME]' "$s")" == '["600000","1800000","1"]' ]] ||
   fail "Bash timeouts not set from the fragment: $(jq -c .env "$s")"
 [[ "$(jq -r .permissions.defaultMode "$s")" == auto ]] || fail "defaultMode lost"
+# The maintainer wants no "Generated with Claude Code" line in PR bodies (2026-11-27); commits keep their trailer.
+[[ "$(jq -c .attribution "$s")" == '{"pr":""}' ]] || fail "PR attribution not turned off: $(jq -c .attribution "$s")"
 [[ "$(jq '[.permissions.deny[] | select(. == "Bash(git push * main)")] | length' "$s")" == 1 ]] || fail "deny entry duplicated"
 jq -e '.permissions.deny | index("Bash(rm -rf /)")' "$s" >/dev/null || fail "existing deny entry lost"
 jq -e '.permissions.deny | index("Bash(docker container prune *)")' "$s" >/dev/null || fail "fragment deny missing"

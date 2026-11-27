@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Runs dk:issue-flow's repo-owner against the eval `gh` stand-in and fixture checkouts: a repo counts as the
 maintainer's own only when the gh user owns origin, origin is no fork of another owner's repo, and no upstream
-remote names another owner. Anything else gets no attribution note and no attribution lines (dk:issue-flow's
+remote names another owner. Anything else gets no agent marker and no `Co-Authored-By` trailer (dk:issue-flow's
 **Ownership.**). Nothing reaches GitHub.
 """
 import json

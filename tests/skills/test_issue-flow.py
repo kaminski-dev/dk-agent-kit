@@ -127,37 +127,43 @@ try:
     pattern = re.compile(pattern.group(1)) if pattern else None
 except re.error:
     pattern = None
-if not template.startswith("> [!NOTE]\n") or "<model>" not in template or "<login>" not in template:
-    errors.append("skills/issue-flow: step 6 needs a **Comments.** paragraph whose ```md template opens with a "
-                  "`> [!NOTE]` line and names the model (`<model>`) acting for the maintainer (`<login>`)")
+# The maintainer wants no visible attribution on comments (2026-11-27): the agent's mark is an HTML comment, which
+# GitHub renders as nothing, and comments posted before it, which open with the visible note, still count as ours.
+LEGACY = "> [!NOTE]\n> **Claude Opus 5.5 responding on behalf of kaminski-dev**\n\nFixed in abc1234."
+if template != "<!-- dk-agent -->\n":
+    errors.append("skills/issue-flow: step 6 needs a **Comments.** paragraph whose ```md template is the one line "
+                  "`<!-- dk-agent -->`, a marker GitHub renders as nothing")
 elif not pattern:
-    errors.append("skills/issue-flow: step 6's **Comments.** paragraph must give the note as a Python `re` pattern")
+    errors.append("skills/issue-flow: step 6's **Comments.** paragraph must give the marker as a Python `re` pattern")
 else:
-    ours = template.replace("<model>", "Claude Opus 5.5").replace("<login>", "kaminski-dev")
-    for body, own in ((ours, True), (ours.replace("\n", "\r\n"), True),
+    ours = template + "\nFixed in abc1234."
+    for body, own in ((ours, True), (ours.replace("\n", "\r\n"), True), (LEGACY, True), (LEGACY.replace("\n", "\r\n"), True),
                       ("> [!NOTE]\n> The deploy window is 48 h.\n\nPlease check.", False),
-                      ("Quoting it:\n\n" + ours, False)):
+                      ("Quoting it:\n\n" + ours, False), ("Please check. <!-- dk-agent -->", False)):
         if bool(pattern.match(body)) != own:
-            errors.append(f"skills/issue-flow: step 6's attribution pattern {'misses' if own else 'matches'} {body!r}")
-own = re.search(r'^ATTRIBUTION = re\.compile\(r"([^"\n]+)"\)$', watcher, re.M)
+            errors.append(f"skills/issue-flow: step 6's marker pattern {'misses' if own else 'matches'} {body!r}")
+if re.search(r"responding on behalf of", template + note.split("Python `re` pattern")[0]):
+    errors.append("skills/issue-flow: step 6's **Comments.** asks for the visible note the maintainer turned off")
+own = re.search(r'^MARKER = re\.compile\(r"([^"\n]+)"\)$', watcher, re.M)
 if not pattern or not own or own.group(1) != pattern.pattern:
-    errors.append("skills/issue-flow/pr-wait: its ATTRIBUTION pattern must equal step 6's **Comments.** pattern, "
+    errors.append("skills/issue-flow/pr-wait: its MARKER pattern must equal step 6's **Comments.** pattern, "
                   "or it reports the agent's own comments or drops the maintainer's")
 for what, rule in (
     ("every comment and thread reply, in steps 6 and 7", r"every comment and thread reply.*step 7"),
-    ("the model name the harness reports", r"model name the harness reports"),
+    ("the marker rendering as nothing", r"renders as nothing"),
+    ("comments posted before the marker", r"earlier[^.]*note"),
     ("resolving a review thread only once its reply posted and GitHub returned the reply's URL",
      r"[Rr]esolve a review thread only once its reply posted and GitHub returned (?:its|the reply's) URL"),
 ):
     if not re.search(rule, note, re.S):
         errors.append(f"skills/issue-flow: step 6's **Comments.** paragraph does not name {what}")
-if not re.search(r"own fix and skip records.*attribution note", step7, re.S):
-    errors.append("skills/issue-flow: step 7 must tell your own records apart by the attribution note")
+if not re.search(r"own fix and skip records.*agent marker", step7, re.S):
+    errors.append("skills/issue-flow: step 7 must tell your own records apart by the agent marker")
 # CodeRabbit on #136, round 2 (#112): a record is the agent's only when it is the gh user's and carries the note.
-if not re.search(r'is a record only when its author is the gh user.*attribution note.*'
+if not re.search(r'is a record only when its author is the gh user.*agent marker.*'
                  r'inline record is such a reply[^)]*\.user\.login == "<login>"', route, re.S):
     errors.append("skills/issue-flow: step 7 must count a reply as your fix or skip record only when it is the gh "
-                  "user's and opens with the attribution note, its inline query filtered on `.user.login`")
+                  "user's and opens with the agent marker, its inline query filtered on `.user.login`")
 # CodeRabbit on #136, round 2 (#112): a watcher that ended on its own deadline or error is reported, not rerun.
 if not re.search(r"[Ss]tart it again after each push, after an action of yours that changes what blocked it[^:]*"
                  r"monitor expired while the watch is still wanted", watch) or not re.search(
@@ -174,11 +180,15 @@ gate_runs = re.search(r"^The gate runs at the push and by hand.*$", step6, re.M)
 if not gate_runs or "`dk-gate ~/workspace/<prefix>-<N>`" not in gate_runs.group(0) or "reuses" not in gate_runs.group(0):
     errors.append("skills/issue-flow: step 6 must say the gate runs at the push and by hand through dk-gate "
                   "(`dk-gate ~/workspace/<prefix>-<N>`), and that the push reuses a hand pass on the same tree")
-# #149: a hand run may wait for one of the machine's two gate slots, longer than Bash's default 2 minutes, and a
-# busy refusal means the gate did not run.
-if not gate_runs or "600000 ms" not in gate_runs.group(0) or "Exit 3" not in gate_runs.group(0):
-    errors.append("skills/issue-flow: step 6 must say a hand dk-gate run may wait for a gate slot (a 600000 ms Bash "
-                  "timeout), and that exit 3 or a busy push denial means the gate did not run")
+# #149, #191: a hand run may wait up to DK_GATE_WAIT for a gate slot and then runs with no deadline, so its Bash
+# timeout covers both (1800000 ms, Bash's most); exit 3, a busy push denial or a call cut off by its timeout leaves
+# no pass, so the gate runs again.
+if (not gate_runs or "1800000 ms" not in gate_runs.group(0) or "600000 ms" in gate_runs.group(0)
+        or "Exit 3" not in gate_runs.group(0) or "cut off" not in gate_runs.group(0)
+        or "no pass" not in gate_runs.group(0)):
+    errors.append("skills/issue-flow: step 6 must give a hand dk-gate run a 1800000 ms Bash timeout, covering the "
+                  "wait for a gate slot and the run, and say that exit 3, a busy push denial or a call its timeout "
+                  "cut off leaves no pass")
 if re.search(r"Stop (hook|gate)", flow + "".join(ref.values())):
     errors.append("skills/issue-flow: the Stop gate is gone (#148); the gate runs at the push and through dk-gate")
 # Before `gh pr create`: the branch's open PR, and the REST create when GraphQL is rate-limited.
@@ -307,9 +317,9 @@ if not step2 or not re.search(r"When the base is `main`, there is no batch PR: `
     errors.append("skills/issue-flow/SKILL.md: step 2 does not say what lapses when the base is main")
 
 # #177: a correction goes through dk-comment-edit, which the product repos' ask rules on `gh api` PATCH never reach.
-if "`dk-comment-edit <comment id> <file>`" not in note or not re.search(r"dk-comment-edit[^.]*own[^.]*attribution note", note):
+if "`dk-comment-edit <comment id> <file>`" not in note or not re.search(r"dk-comment-edit[^.]*own[^.]*agent marker", note):
     errors.append("skills/issue-flow: step 6's **Comments.** paragraph must correct a posted comment with "
-                  "`dk-comment-edit <comment id> <file>`, which edits only your own comment with the attribution note")
+                  "`dk-comment-edit <comment id> <file>`, which edits only your own comment with the agent marker")
 if re.search(r"(?:-X|--method)[ =]?['\"]?(?:PATCH|patch)", flow + "".join(ref.values())):
     errors.append("skills/issue-flow: a comment edit goes through dk-comment-edit, never a raw `gh api` PATCH")
 
@@ -328,7 +338,7 @@ elif not re.search(r"gate passes[^.]*review loop", reply) or "workflow.md" not i
 if re.search(r"customer reply on the issue", before_gate):
     errors.append("skills/issue-flow: step 6 writes the customer reply before the review loop; it belongs after the gate")
 
-# #177: on a repo the maintainer does not own, nothing carries the kit's attribution, and each draft goes to the
+# #177: on a repo the maintainer does not own, nothing carries the kit's marks, and each draft goes to the
 # maintainer first. tests/test_repo_owner.py runs the check the paragraph names.
 step1 = re.search(r"^## 1\..*?(?=^## 2\.)", flow, re.M | re.S)
 owner = re.search(r"^\*\*Ownership\.\*\*.*?(?=^\*\*[A-Z]|^## |\Z)", step1.group(0) if step1 else "", re.M | re.S)
@@ -337,9 +347,8 @@ for what, pattern in (
     ("the check it runs", r"`python3 -I <base directory>/repo-owner`"),
     ("the check for a comment that goes to another repo", r"`python3 -I <base directory>/repo-owner <owner>/<repo>`"),
     ("its two answers", r"`own: [^`]*`.*`not own: [^`]*`"),
-    ("no attribution note on comments", r"no attribution note"),
+    ("no agent marker on comments", r"no agent marker"),
     ("no attribution lines in commits", r"commit[^.;]*no `Co-Authored-By`"),
-    ("no attribution line in the PR body", r"PR body[^.;]*no[^.;]*Generated with"),
     ("each draft shown to the maintainer before it is posted", r"draft[^.]*maintainer[^.]*their word"),
     ("an exit 2 read as not own", r"exit 2[^.]*`not own`"),
 ):
@@ -348,9 +357,9 @@ for what, pattern in (
 if not re.search(r"\*\*Ownership\.\*\*", re.search(r"^## 4\..*?(?=^## 5\.)", flow, re.M | re.S).group(0)):
     errors.append("skills/issue-flow: step 4's commits point at step 1's **Ownership.** for their attribution lines")
 if not re.search(r"\*\*Ownership\.\*\*", note):
-    errors.append("skills/issue-flow: step 6's **Comments.** must leave the note out where step 1's **Ownership.** says")
+    errors.append("skills/issue-flow: step 6's **Comments.** must leave the marker out where step 1's **Ownership.** says")
 if not re.search(r"\*\*Ownership\.\*\*[^.]*`comment from <login>`", watch):
-    errors.append("skills/issue-flow: step 6's watch must say that on a repo not your own your comments carry no note, "
+    errors.append("skills/issue-flow: step 6's watch must say that on a repo not your own your comments carry no marker, "
                   "so `comment from <login>` may be your own")
 
 lib.finish("dk:issue-flow")

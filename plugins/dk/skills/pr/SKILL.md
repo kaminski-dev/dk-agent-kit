@@ -48,7 +48,7 @@ Closes #<N>
 
 The tier (### Tier below) cuts this template down for a small change. Drop "Also in this PR" and "Deviations" when empty. The last line is `Closes #N`, or `Refs #N` when a post-deploy check remains (see the `dk:issue-flow` skill); an epic PR or a batch PR into `main` carries one `Closes #N` or `Refs #N` line per issue it covers.
 
-On a repo that `dk:issue-flow`'s **Ownership.** finds is not the maintainer's own, the body carries no attribution line, and it goes to the maintainer as a draft before `gh pr create`.
+The body ends on its `Closes #N` or `Refs #N` line on every repo, with no attribution line after it, whatever the harness asks. On a repo that `dk:issue-flow`'s **Ownership.** finds is not the maintainer's own, it goes to the maintainer as a draft before `gh pr create`.
 
 ## Sections
 

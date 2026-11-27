@@ -39,10 +39,15 @@ if not summary or not re.search(r"one plain sentence on the problem.*before any 
 if not re.search(r"^### Title\n\n[^\n]*why the change matters", pr_skill, re.M):
     errors.append("skills/pr: no ### Title section saying the title tells why the change matters")
 
-# #177: a PR on a repo the maintainer does not own carries no attribution line and goes to them as a draft first.
-if not re.search(r"`dk:issue-flow`'s \*\*Ownership\.\*\*[^.]*no attribution line[^.]*draft", pr_skill):
+# The maintainer wants no "Generated with" line in any PR body (2026-11-27), whatever the harness's reminder asks;
+# settings/user.fragment.json turns it off at the harness too.
+if not re.search(r"on every repo[^.]*no attribution line[^.]*whatever the harness asks", pr_skill):
+    errors.append("skills/pr: must say the body ends on its Closes or Refs line on every repo, with no attribution "
+                  "line after it, whatever the harness asks")
+# #177: a PR on a repo the maintainer does not own goes to them as a draft first.
+if not re.search(r"`dk:issue-flow`'s \*\*Ownership\.\*\*[^.]*draft", pr_skill):
     errors.append("skills/pr: must say that, where `dk:issue-flow`'s **Ownership.** finds the repo not the "
-                  "maintainer's own, the body carries no attribution line and goes to the maintainer as a draft")
+                  "maintainer's own, the body goes to the maintainer as a draft")
 
 # The body follows the tier, and states it, so the maintainer sees which path ran (#173).
 template = re.search(r"```markdown\n.*?\n```", pr_skill, re.S)

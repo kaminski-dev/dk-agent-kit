@@ -5,7 +5,7 @@ disable-model-invocation: true
 argument-hint: "Issue number, or a question about the codebase"
 ---
 
-<!-- Adapted from humanlayer/humanlayer@99abe67 .claude/commands/research_codebase.md, Apache-2.0. Modified for dk-agent-kit: split into a ticket-blind question step and a single documentarian subagent (idea from humanlayer/humanlayer-pi@f4bd3ed create-research-questions), output to tracked docs/research/, GitHub issues instead of Linear/thoughts/, diagrams drawn by dk:pr's Diagram rules. -->
+<!-- Adapted from humanlayer/humanlayer@99abe67 .claude/commands/research_codebase.md, Apache-2.0. Modified for dk-agent-kit: split into a ticket-blind question step and a single documentarian subagent (idea from humanlayer/humanlayer-pi@f4bd3ed create-research-questions), output to tracked docs/research/, GitHub issues instead of Linear/thoughts/, diagrams drawn by dk:pr's Diagram rules; the issue comment posted as `dk:issue-flow` step 1's **Ownership.** and step 6's **Comments.** say. -->
 
 Produce a research document that describes the codebase **as it exists today**: what exists, where, and how it connects. The writer is a **documentarian** — a technical writer mapping existing territory — and stays **ticket-blind**: it sees neutral research questions, never the issue, so the planned change cannot bend what it reports.
 
@@ -69,5 +69,5 @@ Dispatch ONE `general-purpose` subagent in the foreground. Its prompt is the bri
 
 1. Read the document against the issue or question. Rewrite any sentence that judges, recommends, proposes, or rates — anything that reads as an opinion or a solution — into neutral description of what the code does, or delete it.
 2. Check the completion criterion yourself: every research question has an answer with `file:line` references, or is listed under Open questions. Send the subagent back (SendMessage) for any question that has neither.
-3. When an issue was given, comment on it with `gh issue comment <N> --body "<one line>: <link>"`, where the link is `https://github.com/<owner>/<repo>/blob/<branch>/<output path>` (from `gh repo view --json owner,name`); note in the comment that it resolves once the branch is pushed.
+3. When an issue was given, comment on it as `dk:issue-flow` step 1's **Ownership.** and step 6's **Comments.** say (on a repo not your own, a draft the maintainer posts), with `<one line>: <link>`, where the link is `https://github.com/<owner>/<repo>/blob/<branch>/<output path>` (from `gh repo view --json owner,name`); note in the comment that it resolves once the branch is pushed.
 4. Tell the user the document path, a two-line summary, the open questions, and that the document is uncommitted and ready to commit.

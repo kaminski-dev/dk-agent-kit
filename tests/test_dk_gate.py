@@ -6,7 +6,9 @@ to .gate-runs (ignored, so the record never changes the tree it gates), runs
 `dk-gate` in it with the cache in a temp directory (DK_GATE_CACHE), and checks
 the exit code, what it printed and how many times the gate ran.
 """
+import json
 import os
+import shutil
 import signal
 import stat
 import subprocess
@@ -16,6 +18,14 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DK_GATE = os.path.join(HERE, "..", "plugins", "dk-guard", "bin", "dk-gate")
+GATE_PY = os.path.join(HERE, "..", "plugins", "dk-guard", "scripts", "gate.py")
+# What the push hook does with gate.py: load it and call check() under a timeout. Prints [status, entry].
+CHECK = ("import importlib.util, json, sys\n"
+         "spec = importlib.util.spec_from_file_location('gate', sys.argv[1])\n"
+         "gate = importlib.util.module_from_spec(spec)\n"
+         "spec.loader.exec_module(gate)\n"
+         "status, _, entry = gate.check(sys.argv[2], timeout=float(sys.argv[3]))\n"
+         "print(json.dumps([status, entry]))\n")
 
 PASS = "#!/bin/sh\necho 'lint ok'\necho run >> .gate-runs\n"
 CACHED = "did not run again (cached)"
@@ -58,6 +68,24 @@ def gate_env(cwd, cache, env=None):
 def run(cwd, *args, cache, env=None):
     out = subprocess.run([DK_GATE, *args], cwd=cwd, capture_output=True, text=True, env=gate_env(cwd, cache, env))
     return out.returncode, out.stdout + out.stderr
+
+
+def check(repo, timeout, cache, env=None):
+    """gate.check(repo, timeout) in a process of its own, as the push hook calls it: (status, entry)."""
+    out = subprocess.run([sys.executable, "-I", "-c", CHECK, GATE_PY, repo, str(timeout)], capture_output=True,
+                         text=True, env=gate_env(repo, cache, env))
+    assert out.returncode == 0, out
+    return tuple(json.loads(out.stdout))
+
+
+def slow_hash(root, name, seconds):
+    """A PATH whose git takes `seconds` longer over `git diff` once the returned flag file exists: the tree hash
+    of a big checkout on a loaded machine."""
+    bin_dir, flag = os.path.join(root, name + "-bin"), os.path.join(root, name + ".slow")
+    os.makedirs(bin_dir)
+    write(bin_dir, "git", f"#!/bin/sh\ncase \" $* \" in *\" diff \"*) test -e {flag} && sleep {seconds};; esac\n"
+                         f"exec {shutil.which('git')} \"$@\"\n", executable=True)
+    return bin_dir + os.pathsep + os.environ["PATH"], flag
 
 
 def start(cwd, *args, cache, env=None):
@@ -276,6 +304,8 @@ def case_a_pass_drops_the_entries_of_worktrees_that_are_gone(root):
     run(make_repo(root, "later"), cache=cache)
     entries = [n for n in os.listdir(cache) if n.endswith(".json")]
     assert len(entries) == 2, os.listdir(cache)
+    locks = [n for n in os.listdir(os.path.join(cache, "slots")) if n.startswith("checkout-")]
+    assert len(locks) == 2, locks
     assert CACHED in run(kept, cache=cache)[1]
 
 
@@ -314,6 +344,21 @@ def holding_gate(root, name):
     return make_repo(root, name, f"#!/bin/sh\necho $$ > {flag}\nexec sleep 30\n"), flag
 
 
+def stop(flag, *procs):
+    """Kill the dk-gate runs and the sleep of the holding gate whose pid `flag` holds."""
+    for proc in procs:
+        if proc:
+            proc.kill()
+    try:
+        with open(flag) as f:
+            os.kill(int(f.read()), signal.SIGKILL)
+    except ProcessLookupError:
+        pass  # the sleep already ended
+    for proc in procs:
+        if proc:
+            proc.communicate()
+
+
 def case_a_gate_that_gets_no_slot_in_its_wait_is_refused_as_busy(root):
     cache, env = os.path.join(root, "cache-busy"), {"DK_GATE_SLOTS": "1", "DK_GATE_WAIT": "1"}
     holder, flag = holding_gate(root, "busy-holder")
@@ -328,6 +373,131 @@ def case_a_gate_that_gets_no_slot_in_its_wait_is_refused_as_busy(root):
         with open(flag) as f:
             os.kill(int(f.read()), signal.SIGKILL)
         proc.communicate()
+
+
+def case_a_slot_that_comes_late_and_a_slow_hash_start_no_gate_the_timeout_would_kill(root):
+    # The gate's last pass took 2 s and the check has 6 s. The slot frees after 1 s, well inside the wait, but the
+    # hash of the tree after it takes 4 s, so about 1 s is left: the gate must not start.
+    cache, env = os.path.join(root, "cache-late"), {"DK_GATE_SLOTS": "1"}
+    started = os.path.join(root, "late.starts")
+    repo = make_repo(root, "late", f"#!/bin/sh\necho start >> {started}\nsleep 2\necho run >> .gate-runs\n")
+    assert run(repo, cache=cache, env=env)[0] == 0 and runs(repo) == 1
+    os.remove(started)
+    tracked_edit(repo)
+    path, slow = slow_hash(root, "late", 4)
+    flag = os.path.join(root, "late-holder.started")
+    holder = make_repo(root, "late-holder", f"#!/bin/sh\necho $$ > {flag}\nsleep 1\ntouch {slow}\n")
+    proc = start(holder, cache=cache, env=env)
+    try:
+        wait_for(flag)
+        status, entry = check(repo, 6, cache, {**env, "PATH": path})
+        assert status == "busy" and not os.path.exists(started), (status, entry)
+        assert entry["cause"] == "late" and entry["left"] < 2 <= entry["needs"], entry
+    finally:
+        proc.communicate()
+
+
+def counting_gate(root, name, then="echo run >> .gate-runs\n"):
+    """A gate that says it started, records how many runs of it are under way, and takes 2 s. Returns (the gate
+    script, the flag its start makes, peaks(): the count each run saw as it started)."""
+    shared = os.path.join(root, name + "-shared")
+    os.makedirs(os.path.join(shared, "running"))
+    flag = os.path.join(shared, "started")
+
+    def peaks():
+        with open(os.path.join(shared, "peaks")) as f:
+            return [int(line) for line in f.read().split()]
+    return (f"#!/bin/sh\ntouch {shared}/running/$$ {flag}\nls {shared}/running | wc -l >> {shared}/peaks\n"
+            f"sleep 2\nrm {shared}/running/$$\n" + then), flag, peaks
+
+
+def case_a_second_run_on_a_checkout_waits_for_the_first_and_reuses_its_pass(root):
+    gate, flag, peaks = counting_gate(root, "same")
+    repo, cache = make_repo(root, "same", gate), os.path.join(root, "cache-same")
+    first = start(repo, cache=cache)
+    wait_for(flag)
+    code, out = run(repo, cache=cache)
+    assert first.wait(timeout=20) == 0, first.stdout.read()
+    assert code == 0 and CACHED in out and runs(repo) == 1 and peaks() == [1], (code, out, peaks())
+    assert f"another run of .claude/gate.sh in {repo}" in out and "waiting for it to end" in out, out
+
+
+def case_a_second_run_on_a_checkout_runs_the_gate_when_the_first_fails(root):
+    gate, flag, peaks = counting_gate(root, "same-fails", "echo run >> .gate-runs\ntest $(wc -l < .gate-runs) -gt 1\n")
+    repo, cache = make_repo(root, "same-fails", gate), os.path.join(root, "cache-same-fails")
+    first = start(repo, cache=cache)
+    wait_for(flag)
+    code, out = run(repo, cache=cache)
+    assert first.wait(timeout=20) == 1, first.stdout.read()
+    assert code == 0 and CACHED not in out and runs(repo) == 2 and peaks() == [1, 1], (code, out, peaks())
+
+
+def case_a_fresh_run_that_fails_behind_a_run_in_flight_leaves_no_cached_pass(root):
+    # The gate reads an ignored config as it starts. Run A starts with it in place and passes 2 s later; meanwhile
+    # the config goes, an input the key cannot see, and run B (--fresh) fails on it. B is the later run, so no pass
+    # may stay cached.
+    gate, flag, _ = counting_gate(root, "stale-pass")
+    repo, cache = make_repo(root, "stale-pass"), os.path.join(root, "cache-stale-pass")
+    with open(os.path.join(repo, ".gitignore"), "a") as f:
+        f.write("gate.conf\n")
+    write(repo, ".claude/gate.sh", gate.replace("\n", "\ntest -e gate.conf || exit 1\n", 1), executable=True)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "gate reads an ignored config")
+    write(repo, "gate.conf", "ok\n")
+    first = start(repo, cache=cache)
+    wait_for(flag)
+    os.remove(os.path.join(repo, "gate.conf"))
+    code, out = run(repo, "--fresh", cache=cache)
+    assert first.wait(timeout=20) == 0, first.stdout.read()
+    assert code == 1, (code, out)
+    code, out = run(repo, cache=cache)
+    assert code == 1 and CACHED not in out, (code, out)
+
+
+def case_a_run_waiting_for_its_own_checkout_holds_no_slot(root):
+    # Two slots: the run in flight holds one. A waiter that held the other would keep it from the third run.
+    cache, env = os.path.join(root, "cache-own-wait"), {"DK_GATE_SLOTS": "2", "DK_GATE_WAIT": "30"}
+    holder, flag = holding_gate(root, "own-wait-holder")
+    first = start(holder, cache=cache, env=env)
+    waiter = None
+    try:
+        wait_for(flag)
+        waiter = start(holder, cache=cache, env=env)
+        line = waiter.stdout.readline()
+        assert "waiting for it to end" in line, line
+        other = make_repo(root, "own-wait-other")
+        code, out = run(other, cache=cache, env={**env, "DK_GATE_WAIT": "1"})
+        assert code == 0 and runs(other) == 1, (code, out)
+    finally:
+        stop(flag, first, waiter)
+
+
+def case_a_run_whose_checkout_stays_busy_is_refused_and_names_that_run(root):
+    cache, env = os.path.join(root, "cache-own-busy"), {"DK_GATE_WAIT": "1"}
+    repo, flag = holding_gate(root, "own-busy")
+    first = start(repo, cache=cache, env=env)
+    try:
+        wait_for(flag)
+        code, out = run(repo, cache=cache, env=env)
+        assert code == 3 and f"another run of .claude/gate.sh in {repo} is still going" in out, (code, out)
+        assert "did not run" in out and "held every slot" not in out, out
+    finally:
+        stop(flag, first)
+
+
+def case_a_run_killed_mid_gate_leaves_its_checkout_free(root):
+    cache, env = os.path.join(root, "cache-own-killed"), {"DK_GATE_WAIT": "1"}
+    flag = os.path.join(root, "own-killed.started")
+    repo = make_repo(root, "own-killed", f"#!/bin/sh\ntest -e {flag} && echo run >> .gate-runs && exit\n"
+                                         f"echo $$ > {flag}\nexec sleep 30\n")
+    first = start(repo, cache=cache, env=env)
+    wait_for(flag)
+    first.send_signal(signal.SIGKILL)
+    with open(flag) as f:
+        os.kill(int(f.read()), signal.SIGKILL)
+    first.communicate()
+    code, out = run(repo, cache=cache, env=env)
+    assert code == 0 and runs(repo) == 1 and "waiting" not in out, (code, out)
 
 
 def case_gates_under_two_claude_config_dirs_share_the_slots(root):
