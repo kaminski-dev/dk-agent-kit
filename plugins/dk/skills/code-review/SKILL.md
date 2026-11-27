@@ -22,7 +22,7 @@ Whatever the user said is the fixed point (a commit SHA, branch name, tag, `HEAD
 
 Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). When `git status --porcelain` shows uncommitted work, review it too: add `git diff HEAD` (staged and unstaged changes) and the untracked files from `git ls-files --others --exclude-standard`, which the sub-agents read in full as new files.
 
-Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and there is something to review: a non-empty branch diff, a non-empty `git diff HEAD`, or untracked files. A bad ref or an empty change should fail here, not inside the parallel sub-agents.
+Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`; the SHA it prints is `<fixed-point>` from here on, so a relative ref such as `HEAD~1` keeps naming the same commit after the self-pass commits) and there is something to review: a non-empty branch diff, a non-empty `git diff HEAD`, or untracked files. A bad ref or an empty change should fail here, not inside the parallel sub-agents.
 
 **Self-pass.** When you wrote the change, settle what review would otherwise spend a round on, so the tier and every reviewer see the diff after it: delete each comment that restates the code, rename a symbol where a comment explains what it holds, and update every doc line that names a symbol the change renamed or changed. Once the checks the edits touch pass, committed work gets them as its own commit; when the change holds uncommitted work, they stay uncommitted in the working tree beside it. A change someone else wrote goes straight to the tier, unedited until step 5.
 
