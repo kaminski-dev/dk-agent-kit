@@ -1842,7 +1842,7 @@ def discardable(path, run, recursive):
     a recursive rm of a cookie-named path may be a directory of evidence."""
     rest = path[run.end():]
     # what follows base/ must name something past a word that may be empty, or the rm may take the checkout itself
-    inside = re.sub(r"\$(?:\{\w+\}|\w+)", "", rest[len("base/"):]).strip("/")
+    inside = re.sub(r"\$(?:\{[^}]*\}|\([^)]*\)|\w+)", "", rest[len("base/"):]).strip("/")
     # a path the walk could not resolve keeps its `..`, which may lead out of base/
     return (rest.startswith("base/") and bool(inside) and ".." not in rest.split("/")) or (not recursive and cookie_jar(os.path.basename(path)))
 
