@@ -305,7 +305,7 @@ def case_a_hash_that_leaves_the_gate_less_time_than_its_last_pass_took_denies_th
     code, out, err = run(main, f"cd {wt} && git push", env={**env, "PATH": bin_dir + os.pathsep + os.environ["PATH"]})
     reason = denial(out)
     assert code == 0 and reason, (code, out, err)
-    assert "its last pass took" in reason and "push again" in reason and "did not run" in reason, reason
+    assert "the last pass took" in reason and "push again" in reason and "did not run" in reason, reason
     assert "held every slot" not in reason and "Fix the failure" not in reason and not gate_ran(wt), reason
 
 

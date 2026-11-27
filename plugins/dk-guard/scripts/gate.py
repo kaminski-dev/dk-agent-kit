@@ -59,6 +59,7 @@ LOCKFILES = ("bun.lock", "bun.lockb", "package-lock.json", "pnpm-lock.yaml", "ya
              "uv.lock", "poetry.lock", "Gemfile.lock", "composer.lock")
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 BUSY = "busy"
+SLOTS, LATE = "slots", "late"  # why a check is BUSY
 
 
 def setting(name, default):
@@ -281,13 +282,28 @@ def run_gate(gate, root, timeout=None, capture=True):
     return failure, (out or b"").decode("utf-8", errors="replace")
 
 
+def last_seconds(root):
+    """The seconds the last pass of `root` took, 0 with none on record."""
+    seconds = (last_pass(root) or {}).get("seconds")
+    return seconds if isinstance(seconds, (int, float)) else 0
+
+
+def why_busy(root, entry):
+    """What kept a BUSY check from starting the gate, as the clause both callers open their message with."""
+    if entry["cause"] == LATE:
+        return (f"only {entry['left']} s of the {entry['timeout']} s were left once a slot was held and the tree "
+                f"hashed, less than the {entry['needs']} s the last pass took")
+    return f"gates are busy ({', '.join(entry['holders'])} held every slot)"
+
+
 def check(root, timeout=None, capture=True, fresh=False, wait=None, on_wait=None):
     """Gate `root`: returns (status, output, entry). status is "cached", "passed", "passed, not cached", BUSY or
     the failure ("failed (exit 1)", "timed out after 540 s", ...); entry is the cached pass for "cached", and for
-    BUSY the roots whose gates held the slots. `timeout` covers the wait for a slot and the run together; the wait
-    is at most `wait` seconds (default DK_GATE_WAIT), and on_wait(holders) is called once when it starts. Under a
-    timeout the wait also leaves the run the seconds the root's last pass took, so a slot that frees later reports
-    BUSY instead of starting a gate the timeout would kill."""
+    BUSY its cause with what why_busy() words it from: SLOTS with the roots whose gates held the slots, or LATE.
+    `timeout` covers the wait for a slot and the run together; the wait is at most `wait` seconds (default
+    DK_GATE_WAIT), and on_wait(holders) is called once when it starts. Under a timeout the run is left the seconds
+    the root's last pass took: a slot that frees later is not waited for, and a gate whose turn comes with less
+    left once the tree is hashed does not start, so both report BUSY instead of a gate the timeout would kill."""
     gate = os.path.join(root, GATE)
     if not fresh:
         entry = cached_pass(root, key(root))
@@ -296,21 +312,24 @@ def check(root, timeout=None, capture=True, fresh=False, wait=None, on_wait=None
     start = time.monotonic()
     wait = setting("DK_GATE_WAIT", 240) if wait is None else wait
     if timeout is not None:
-        last = last_pass(root) or {}
-        needs = last["seconds"] if isinstance(last.get("seconds"), (int, float)) else 0
-        wait = max(0, min(wait, timeout - needs))
+        wait = max(0, min(wait, timeout - last_seconds(root)))
     slot, holders = take_slot(root, wait, on_wait)
     if holders is not None:
-        return BUSY, "", holders
+        return BUSY, "", {"cause": SLOTS, "holders": holders}
     try:
         before = key(root)  # the tree may have changed during the wait, or a gate in the queue passed it
         if not fresh:
             entry = cached_pass(root, before)
             if entry:
                 return "cached", "", entry
+        left = None
+        if timeout is not None:
+            left, needs = timeout - (time.monotonic() - start), last_seconds(root)
+            if needs and left < needs:
+                return BUSY, "", {"cause": LATE, "left": max(0, round(left)), "needs": needs, "timeout": timeout}
+            left = max(1, round(left))
         forget(root)  # a run that fails may fail on an input the key cannot see, so the older pass vouches for nothing
         run_start = time.monotonic()
-        left = None if timeout is None else max(1, round(timeout - (run_start - start)))
         failure, output = run_gate(gate, root, left, capture)
         if failure:
             return failure, output, None
@@ -343,8 +362,8 @@ def main(argv):
     status, _, entry = check(root, capture=False, fresh="--fresh" in argv, on_wait=on_wait)
     head = f"dk-gate: {GATE} in {root}"
     if status == BUSY:
-        print(f"dk-gate: gates are busy ({', '.join(entry)} held every slot), so {GATE} in {root} did not run. "
-              "Run dk-gate again in a minute.")
+        again = "Run dk-gate again." if entry["cause"] == LATE else "Run dk-gate again in a minute."
+        print(f"dk-gate: {why_busy(root, entry)}, so {GATE} in {root} did not run. {again}")
         return 3
     if status == "cached":
         print(f"{head} passed at {entry['passed_at']} on this same tree, so it did not run again (cached). "

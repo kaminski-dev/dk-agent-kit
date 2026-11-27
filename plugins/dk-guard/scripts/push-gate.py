@@ -108,15 +108,16 @@ def main():
             continue
         status, output, entry = gate.check(root, TIMEOUT)
         if status == gate.BUSY:
-            head = (f"dk-guard: gates are busy ({', '.join(entry)} held every slot), "
-                    f"so {gate.GATE} in {root} did not run")
+            head = f"dk-guard: {gate.why_busy(root, entry)}, so {gate.GATE} in {root} did not run"
+            again = ("push again, or run dk-gate there first, which has no deadline, and push on its pass."
+                     if entry["cause"] == gate.LATE else
+                     "push again in a minute, or run dk-gate there first, which waits for a slot.")
             guard.log({"session": data.get("session_id"), "cwd": cwd, "decision": "deny",
                        "reason": "push gate: " + head, "command": cmd[:500]})
             print(json.dumps({"hookSpecificOutput": {
                 "hookEventName": "PreToolUse", "permissionDecision": "deny",
                 "permissionDecisionReason": f"{head} and the push is blocked. Nothing is wrong with the change: "
-                                            "push again in a minute, or run dk-gate there first, which waits for "
-                                            "a slot."}}))
+                                            + again}}))
             return
         failure = None if status.startswith("passed") or status == "cached" else status
         tail = gate.tail(output)
