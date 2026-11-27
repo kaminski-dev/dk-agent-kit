@@ -52,10 +52,11 @@ OPENERS = r"[;&|\n({`]|\$\(|\b(?:then|do|else|while|until|if)\s|-c\s+['\"]"
 START = r"(?:^|" + OPENERS + r")\s*"
 # `perl -e 'alarm N; exec @ARGV' <command>`: how dk:issue-flow bounds a command where `timeout` is missing. A script
 # that shifts (`alarm shift; exec @ARGV`) takes its first argument, the seconds, off the command.
-EXEC_ARGV = r"\bexec\s*(?:\(\s*)?@ARGV\b"
+EXEC_ARGV = r"\bexec\s*(?:\(\s*)?(?:\{\s*\$ARGV\[0\]\s*\}\s*)?@ARGV\b"
 EXEC_SCRIPT = r"(?:'[^']*" + EXEC_ARGV + r"[^']*'|\"[^\"]*" + EXEC_ARGV + r"[^\"]*\")"
-SHIFTS = r"(?=(?:'[^']*|\"[^\"]*)\bshift\b)"
-PERL_EXEC = r"perl\s+-[A-Za-z]*[eE]\s*(?:" + SHIFTS + EXEC_SCRIPT + r"(?:\s+--)?\s+\S+|" + EXEC_SCRIPT + r"(?:\s+--)?)"
+SHIFTS = r"(?=(?:'[^']*\bshift\b[^']*|\"[^\"]*\bshift\b[^\"]*)" + EXEC_ARGV + r")"
+PERL_EXEC = r"(?:[^\s;&|()<>'\"]*/)?perl\s+-[A-Za-z]*[eE]\s*(?:" + SHIFTS + EXEC_SCRIPT + r"(?:\s+--)?\s+\S+|" \
+    + EXEC_SCRIPT + r"(?:\s+--)?)"
 PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:(?:sudo|command|exec|nohup|time|env|nice|xargs(?:\s+-\S+)*|g?timeout\s+\S+|" \
     + PERL_EXEC + r")\s+)*"
 END = r"[^;&|\n)`]*"
@@ -708,27 +709,28 @@ def command_words(words):
                     i += 1
             if name in ("timeout", "gtimeout"):
                 i += 1  # the duration
-        elif name == "perl" and (taken := perl_exec_words(words[i + 1:])):
+        elif name == "perl" and (count := perl_wrapper_word_count(words[i + 1:])):
             wrappers.append(name)
-            i += 1 + taken
+            i += 1 + count
         else:
             break
     return wrappers, words[i:]
 
 
-def perl_exec_words(args):
-    """How many of perl's words come before the command it runs: `-e <script>` (also `-we`, `-e<script>`) with a
-    script that execs @ARGV, a `--`, and a word for each `shift` in the script. 0 for any other perl call."""
+def perl_wrapper_word_count(args):
+    """`-e <script>` (also `-we`, `-e<script>`) with a script that execs @ARGV, a `--`, and a word for each `shift`
+    the script runs before the exec."""
     option = re.match(r"-[A-Za-z]*?[eE]", args[0]) if args else None
     if not option:
         return 0
     attached = args[0][option.end():]
     script = attached or "".join(args[1:2])
-    if not re.search(EXEC_ARGV, script):
+    execs = re.search(EXEC_ARGV, script)
+    if not execs:
         return 0
-    taken = 1 if attached else 2
-    taken += args[taken:taken + 1] == ["--"]
-    return taken + len(re.findall(r"\bshift\b", script))
+    count = 1 if attached else 2
+    count += args[count:count + 1] == ["--"]
+    return count + len(re.findall(r"\bshift\b", script[:execs.start()]))
 
 
 VARIABLE = re.compile(r"\$\{(\w+)\}|\$(\w+)")
