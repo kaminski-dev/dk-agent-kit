@@ -376,21 +376,21 @@ def case_a_gate_that_gets_no_slot_in_its_wait_is_refused_as_busy(root):
 
 
 def case_a_slot_that_comes_late_and_a_slow_hash_start_no_gate_the_timeout_would_kill(root):
-    # The gate's last pass took 2 s and the check has 4 s. The slot frees after 1 s, inside the wait, but the hash
-    # of the tree after it takes 2.5 s, so under 1.5 s are left: the gate must not start.
+    # The gate's last pass took 2 s and the check has 6 s. The slot frees after 1 s, well inside the wait, but the
+    # hash of the tree after it takes 4 s, so about 1 s is left: the gate must not start.
     cache, env = os.path.join(root, "cache-late"), {"DK_GATE_SLOTS": "1"}
     started = os.path.join(root, "late.starts")
     repo = make_repo(root, "late", f"#!/bin/sh\necho start >> {started}\nsleep 2\necho run >> .gate-runs\n")
     assert run(repo, cache=cache, env=env)[0] == 0 and runs(repo) == 1
     os.remove(started)
     tracked_edit(repo)
-    path, slow = slow_hash(root, "late", 2.5)
+    path, slow = slow_hash(root, "late", 4)
     flag = os.path.join(root, "late-holder.started")
     holder = make_repo(root, "late-holder", f"#!/bin/sh\necho $$ > {flag}\nsleep 1\ntouch {slow}\n")
     proc = start(holder, cache=cache, env=env)
     try:
         wait_for(flag)
-        status, entry = check(repo, 4, cache, {**env, "PATH": path})
+        status, entry = check(repo, 6, cache, {**env, "PATH": path})
         assert status == "busy" and not os.path.exists(started), (status, entry)
         assert entry["cause"] == "late" and entry["left"] < 2 <= entry["needs"], entry
     finally:

@@ -331,12 +331,13 @@ def case_a_slot_that_frees_too_late_for_the_gate_denies_the_push_as_busy(root):
 
 
 def case_a_hash_that_leaves_the_gate_less_time_than_its_last_pass_took_denies_the_push(root):
-    # The gate's last pass took 2 s and the push has 3 s. The slot is free, but git takes 2 s over the tree's
-    # diff, so 1 s is left once the tree is hashed: the gate must not start, or it is killed and the push goes
-    # out ungated.
+    # The gate's last pass took 2 s (under a 6 s timeout, so a loaded machine still stores it) and the push has 3 s.
+    # The slot is free, but git takes 2 s over the tree's diff, so 1 s is left once the tree is hashed: the gate
+    # must not start, or it is killed and the push goes out ungated.
     main, wt = make_checkout(root, "slow-hash", "#!/bin/sh\ntouch .gate-ran\nsleep 2\n")
     env = {"DK_PUSH_GATE_TIMEOUT": "3"}
-    assert run(main, f"cd {wt} && git push", env=env) == (0, None, "") and gate_ran(wt, forget=True)
+    assert run(main, f"cd {wt} && git push", env={"DK_PUSH_GATE_TIMEOUT": "6"}) == (0, None, "")
+    assert gate_ran(wt, forget=True)
     with open(os.path.join(wt, "src.txt"), "w") as f:
         f.write("new\n")
     bin_dir = os.path.join(root, "slow-hash-bin")
