@@ -331,11 +331,11 @@ def case_a_slot_that_frees_too_late_for_the_gate_denies_the_push_as_busy(root):
 
 
 def case_a_hash_that_leaves_the_gate_less_time_than_its_last_pass_took_denies_the_push(root):
-    # The gate's last pass took 2 s (under a 6 s timeout, so a loaded machine still stores it) and the push has 3 s.
-    # The slot is free, but git takes 2 s over the tree's diff, so 1 s is left once the tree is hashed: the gate
+    # The gate's last pass took 2 s (under a 6 s timeout, so a loaded machine still stores it) and the push has 4 s.
+    # The slot is free, but git takes 3 s over the tree's diff, so 1 s is left once the tree is hashed: the gate
     # must not start, or it is killed and the push goes out ungated.
     main, wt = make_checkout(root, "slow-hash", "#!/bin/sh\ntouch .gate-ran\nsleep 2\n")
-    env = {"DK_PUSH_GATE_TIMEOUT": "3"}
+    env = {"DK_PUSH_GATE_TIMEOUT": "4"}
     assert run(main, f"cd {wt} && git push", env={"DK_PUSH_GATE_TIMEOUT": "6"}) == (0, None, "")
     assert gate_ran(wt, forget=True)
     with open(os.path.join(wt, "src.txt"), "w") as f:
@@ -343,7 +343,7 @@ def case_a_hash_that_leaves_the_gate_less_time_than_its_last_pass_took_denies_th
     bin_dir = os.path.join(root, "slow-hash-bin")
     os.makedirs(bin_dir)
     with open(os.path.join(bin_dir, "git"), "w") as f:
-        f.write(f"#!/bin/sh\ncase \" $* \" in *\" diff \"*) sleep 2;; esac\nexec {shutil.which('git')} \"$@\"\n")
+        f.write(f"#!/bin/sh\ncase \" $* \" in *\" diff \"*) sleep 3;; esac\nexec {shutil.which('git')} \"$@\"\n")
     os.chmod(os.path.join(bin_dir, "git"), 0o755)
     code, out, err = run(main, f"cd {wt} && git push", env={**env, "PATH": bin_dir + os.pathsep + os.environ["PATH"]})
     reason = denial(out)
@@ -368,7 +368,7 @@ def case_a_gate_whose_last_pass_outlasts_the_push_is_sent_to_a_hand_run_at_once(
         code, out, err = run(main, f"cd {wt} && git push", env={**env, "DK_PUSH_GATE_TIMEOUT": "1"})
         reason = denial(out)
         assert code == 0 and reason and time.monotonic() - began < 10, (code, out, err)
-        assert "more than the push's whole 1 s" in reason and "run dk-gate there first" in reason, reason
+        assert "the push has only 1 s in all" in reason and "run dk-gate there first" in reason, reason
         assert "push again" not in reason and "held every slot" not in reason and not gate_ran(wt), reason
     finally:
         hand.kill()

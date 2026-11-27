@@ -281,7 +281,8 @@ def drop_gone(directory):
                 root = f.read().strip().partition(" ")[2]
                 if root and not os.path.isdir(root):
                     fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    os.remove(path)
+                    if not os.path.isdir(root):
+                        os.remove(path)
         except OSError:
             pass  # held, or dropped by another run meanwhile
 
@@ -338,7 +339,7 @@ def why_busy(root, entry):
         return (f"another run of {GATE} in {root} is still going (pid {', '.join(entry['holders'])}), so this one "
                 "did not run")
     if entry["cause"] == BUSY_LATE and entry["needs"] >= entry["timeout"]:
-        return (f"the last pass took {entry['needs']} s, more than the push's whole {entry['timeout']} s, so "
+        return (f"the last pass took {entry['needs']} s, and the push has only {entry['timeout']} s in all, so "
                 f"{GATE} in {root} did not run")
     if entry["cause"] == BUSY_LATE:
         return (f"only {entry['left']} s of the {entry['timeout']} s were left once the gate's turn came and the "
