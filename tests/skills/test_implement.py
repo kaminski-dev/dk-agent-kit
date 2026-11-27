@@ -14,8 +14,7 @@ if "fix what it finds" in implement or not re.search(r"\*\*Answer findings\*\*.*
     errors.append("skills/implement: must answer review findings through dk:code-review's **Answer findings** "
                   "ledger, not fix what the review finds")
 
-# The self-pass lives in dk:code-review, which a fanned-out implementer reaches too (#185), so the sequence goes
-# from dk:verify straight to the dk:code-review call.
+# The self-pass lives in dk:code-review step 1, which a fanned-out implementer reaches too (#185).
 if re.search(r"[Ss]elf-pass", implement):
     errors.append("skills/implement: carries its own self-pass; dk:code-review step 1 holds it (#185)")
 if not re.search(r"call the Skill tool with `dk:verify`[^\n]*\n+[^\n]*call the Skill tool with `dk:code-review`",

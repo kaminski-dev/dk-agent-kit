@@ -237,8 +237,8 @@ for what, pattern in (
     ("renaming in place of commenting", r"renam[^.;]*comment"),
     ("updating doc lines that name a changed symbol", r"doc line[^.;]*name[^.;]*symbol"),
     ("its condition: you wrote the change", r"you wrote the change"),
-    ("a change someone else wrote left unedited", r"someone else[^.]*edits nothing"),
-    ("committed work getting it as its own commit", r"own commit"),
+    ("a change someone else wrote left unedited", r"someone else wrote goes straight to the tier, unedited"),
+    ("committed work getting it as its own commit once the checks pass", r"checks[^.;]*pass[^.;]*own commit"),
     ("uncommitted work keeping its edits in the working tree", r"uncommitted[^.]*working tree"),
 ):
     if self_pass and not re.search(pattern, self_pass, re.S):
