@@ -174,11 +174,15 @@ gate_runs = re.search(r"^The gate runs at the push and by hand.*$", step6, re.M)
 if not gate_runs or "`dk-gate ~/workspace/<prefix>-<N>`" not in gate_runs.group(0) or "reuses" not in gate_runs.group(0):
     errors.append("skills/issue-flow: step 6 must say the gate runs at the push and by hand through dk-gate "
                   "(`dk-gate ~/workspace/<prefix>-<N>`), and that the push reuses a hand pass on the same tree")
-# #149: a hand run may wait for one of the machine's two gate slots, longer than Bash's default 2 minutes, and a
-# busy refusal means the gate did not run.
-if not gate_runs or "600000 ms" not in gate_runs.group(0) or "Exit 3" not in gate_runs.group(0):
-    errors.append("skills/issue-flow: step 6 must say a hand dk-gate run may wait for a gate slot (a 600000 ms Bash "
-                  "timeout), and that exit 3 or a busy push denial means the gate did not run")
+# #149, #191: a hand run may wait up to DK_GATE_WAIT for a gate slot and then runs with no deadline, so its Bash
+# timeout covers both (1800000 ms, Bash's most); exit 3, a busy push denial or a call cut off by its timeout leaves
+# no pass, so the gate runs again.
+if (not gate_runs or "1800000 ms" not in gate_runs.group(0) or "600000 ms" in gate_runs.group(0)
+        or "Exit 3" not in gate_runs.group(0) or "cut off" not in gate_runs.group(0)
+        or "no pass" not in gate_runs.group(0)):
+    errors.append("skills/issue-flow: step 6 must give a hand dk-gate run a 1800000 ms Bash timeout, covering the "
+                  "wait for a gate slot and the run, and say that exit 3, a busy push denial or a call its timeout "
+                  "cut off leaves no pass")
 if re.search(r"Stop (hook|gate)", flow + "".join(ref.values())):
     errors.append("skills/issue-flow: the Stop gate is gone (#148); the gate runs at the push and through dk-gate")
 # Before `gh pr create`: the branch's open PR, and the REST create when GraphQL is rate-limited.
