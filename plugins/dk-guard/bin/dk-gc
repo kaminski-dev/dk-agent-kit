@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """dk-gc: remove what finished work left behind.
 
-  dk-gc [--dry-run] [--yes] [--workspace DIR]
+  dk-gc [--dry-run] [--yes] [--workspace [DIR]]
   dk-gc --in-use WORKTREE
 
-Lists, grouped by repo, what finished work left behind: worktrees under the
-workspace (default ~/workspace) whose branch's PR has merged, and those local
-branches; remote branches of merged PRs that GitHub did not delete; dk-pg
-databases (dk.issue, dk.root labels) whose issue is closed. Then it asks once
-(y on stdin) and removes exactly what it listed. --dry-run lists and stops;
---yes skips the question (the guard asks the human before an agent passes it).
+Lists what finished work left behind in the repo it runs in (any checkout of
+it): worktrees whose branch's PR has merged, and those local branches; remote
+branches of merged PRs that GitHub did not delete; dk-pg databases (dk.issue,
+dk.root labels) of that repo whose issue is closed. --workspace does the same
+for every repo under DIR (default ~/workspace), grouped by repo; outside any
+repo dk-gc stops and names that flag. A worktree counts when it sits under the
+workspace: DIR, or without --workspace the folder that holds the repo's main
+checkout. Then it asks once (y on stdin) and removes exactly what it listed.
+--dry-run lists and stops; --yes skips the question (the guard asks the human
+before an agent passes it with --workspace). The GitHub calls run in parallel.
 
 Nothing goes that cannot be tied to a merged PR (the branch tip is the PR's
 head or behind it) or a closed issue. Never removed: main, master, pre-main,
@@ -33,6 +37,7 @@ is no directory included), or prints nothing and exits 0. Run it from outside th
 counts.
 """
 import argparse
+import concurrent.futures
 import dataclasses
 import fnmatch
 import json
@@ -48,6 +53,7 @@ KEPT_PREFIX = "verify-assets/"  # PR bodies embed screenshots from these branche
 REGENERABLE = ("node_modules", "dist", "build", ".next", ".output", "target", ".venv", "__pycache__",
                "test-results", ".api-port", ".tanstack", "*.tsbuildinfo", "*.gen.*", ".env*")
 KEEP_LINE_NAMES = 5  # ignored entries or processes a "keep" line names before it counts the rest
+PARALLEL_CALLS = 16  # threads per in_parallel() pool; each repo's fetch() runs a pool inside the repos' pool
 
 
 def run(args, cwd=None):
@@ -83,18 +89,27 @@ def slug_of(root):
     return m.group(1) if m else None
 
 
+def repo_root(path):
+    """The main checkout of the repo `path` is in (the path dk-pg labels dk.root), or None outside one."""
+    common = (git(path, "rev-parse", "--path-format=absolute", "--git-common-dir") or "").strip()
+    return os.path.dirname(common) if os.path.basename(common) == ".git" else None
+
+
 def main_roots(workspace):
     roots = []
     for entry in sorted(os.listdir(workspace)):
         path = os.path.join(workspace, entry)
         if not os.path.isdir(path) or not os.path.exists(os.path.join(path, ".git")):
             continue
-        common = (git(path, "rev-parse", "--path-format=absolute", "--git-common-dir") or "").strip()
-        if os.path.basename(common) == ".git":
-            root = os.path.dirname(common)
-            if root not in roots:
-                roots.append(root)
+        root = repo_root(path)
+        if root and root not in roots:
+            roots.append(root)
     return roots
+
+
+def in_parallel(call, items):
+    with concurrent.futures.ThreadPoolExecutor(PARALLEL_CALLS) as pool:
+        return list(pool.map(call, items))
 
 
 def worktrees(root):
@@ -298,16 +313,28 @@ class Repo:
         self.items, self.kept, self.notes = [], [], []
         self.merged, self.open_heads, self.bases = {}, {}, {}
         self.processes = processes or Processes()
+        self.loaded, self.remote_heads = False, None
 
-    def load_prs(self):
-        """Fetch merged and open PRs; False without a GitHub origin, or with a note when gh cannot list them."""
+    def fetch(self, remote):
+        """The network part of a scan, its calls side by side: merged and open PRs, and origin's
+        branches when `remote`. Without a GitHub origin it asks nothing."""
         if not self.slug:
-            return False
+            return
         fields = "number,headRefName,headRefOid,baseRefName,isCrossRepository"
-        merged = gh_json("pr", "list", "-R", self.slug, "--state", "merged", "--limit", "1000", "--json", fields)
-        opened = gh_json("pr", "list", "-R", self.slug, "--state", "open", "--limit", "1000",
-                         "--json", fields) if merged is not None else None
-        if opened is None:
+        calls = [lambda: gh_json("pr", "list", "-R", self.slug, "--state", "merged", "--limit", "1000", "--json", fields),
+                 lambda: gh_json("pr", "list", "-R", self.slug, "--state", "open", "--limit", "1000", "--json", fields)]
+        if remote:
+            calls.append(lambda: git(self.root, "ls-remote", "--symref", "origin", "HEAD", "refs/heads/*"))
+        merged, opened, *heads = in_parallel(lambda call: call(), calls)
+        self.loaded = self.load_prs(merged, opened)
+        if self.loaded and remote:
+            self.remote_heads = heads[0]
+            if self.remote_heads is None:
+                self.notes.append("remote branches skipped: origin did not answer")
+
+    def load_prs(self, merged, opened):
+        """Index the PR lists; False with a note when gh could not list them."""
+        if merged is None or opened is None:
             self.notes.append("branches skipped: gh could not list its PRs")
             return False
         for p in merged:
@@ -339,7 +366,8 @@ class Repo:
             return "commits it did not merge"
         return None
 
-    def consider(self, branch, sha, worktree=None, remote=False):
+    def consider(self, branch, sha, worktree=None, remote=False, unsaved=None):
+        """`unsaved` is worktree_blocker(worktree), read ahead."""
         if branch in PROTECTED or branch.startswith(KEPT_PREFIX):
             return
         pr, tied = self.merged_pr(branch, sha)
@@ -348,7 +376,7 @@ class Repo:
         why = f"PR #{pr['number']} merged"
         reason = self.blocker(branch, tied)
         if not reason and worktree:
-            reason = worktree_blocker(worktree) or self.processes.blocker(worktree)
+            reason = unsaved or self.processes.blocker(worktree)
         detail = f"{why}; {reason}" if reason else why
         found = [Worktree(f"{worktree} ({branch}, {detail})", worktree, sha)] if worktree else []
         found.append(RemoteBranch(f"origin/{branch} ({detail})", branch, sha) if remote
@@ -358,31 +386,29 @@ class Repo:
         else:
             self.items += found
 
-    def scan(self, workspace, remote):
-        if not self.load_prs():
+    def scan(self, workspace):
+        """The local part of a scan, after fetch()."""
+        if not self.loaded:
             return
         inside = os.path.join(os.path.realpath(workspace), "")
         trees = worktrees(self.root)
-        for wt in trees[1:]:
-            if wt["branch"] and not wt.get("locked") and not wt.get("prunable") \
-                    and os.path.join(os.path.realpath(wt["path"]), "").startswith(inside):
-                self.consider(wt["branch"], wt["head"], worktree=wt["path"])
+        linked = [wt for wt in trees[1:] if wt["branch"] and not wt.get("locked") and not wt.get("prunable")
+                  and os.path.join(os.path.realpath(wt["path"]), "").startswith(inside)]
+        unsaved = in_parallel(worktree_blocker, [wt["path"] for wt in linked])
+        for wt, reason in zip(linked, unsaved):
+            self.consider(wt["branch"], wt["head"], worktree=wt["path"], unsaved=reason)
         checked_out = {wt["branch"] for wt in trees if wt["branch"]}
         refs = git(self.root, "for-each-ref", "--format=%(refname:short)%09%(objectname)", "refs/heads") or ""
         for line in refs.splitlines():
             branch, sha = line.split("\t")
             if branch not in checked_out:
                 self.consider(branch, sha)
-        if remote:
+        if self.remote_heads is not None:
             self.scan_remote()
 
     def scan_remote(self):
-        out = git(self.root, "ls-remote", "--symref", "origin", "HEAD", "refs/heads/*")
-        if out is None:
-            self.notes.append("remote branches skipped: origin did not answer")
-            return
         heads, default = {}, None
-        for line in out.splitlines():
+        for line in self.remote_heads.splitlines():
             ref, _, name = line.partition("\t")
             if ref.startswith("ref: "):
                 default = ref[len("ref: refs/heads/"):]
@@ -392,7 +418,13 @@ class Repo:
             if branch != default:
                 self.consider(branch, sha, remote=True)
 
-    def consider_database(self, container):
+    def issue(self, issue):
+        """The issue's state from GitHub, None when there is none to ask for or gh cannot read it."""
+        if not self.slug or not issue.isdigit():
+            return None
+        return gh_json("issue", "view", issue, "-R", self.slug, "--json", "state")
+
+    def consider_database(self, container, issue_state):
         cid, name, issue = container
         if not self.slug:
             self.kept.append(Database(f"{name} (issue #{issue}; no GitHub checkout at {self.root})", cid))
@@ -400,10 +432,9 @@ class Repo:
         if not issue.isdigit():
             self.kept.append(Database(f"{name} (issue {issue} is no issue number)", cid))
             return
-        found = gh_json("issue", "view", issue, "-R", self.slug, "--json", "state")
-        if not found:
+        if not issue_state:
             self.kept.append(Database(f"{name} (issue #{issue}; gh could not read it)", cid))
-        elif found.get("state") == "CLOSED":
+        elif issue_state.get("state") == "CLOSED":
             self.items.append(Database(f"{name} (issue #{issue} closed)", cid))
 
 
@@ -411,7 +442,8 @@ def main():
     ap = argparse.ArgumentParser(prog="dk-gc", allow_abbrev=False, description="Remove worktrees, branches and dk-pg databases of finished work.")
     ap.add_argument("--dry-run", action="store_true", help="list, change nothing")
     ap.add_argument("--yes", action="store_true", help="remove without asking")
-    ap.add_argument("--workspace", default=os.path.expanduser("~/workspace"))
+    ap.add_argument("--workspace", nargs="?", const=os.path.expanduser("~/workspace"), metavar="DIR",
+                    help="every repo under DIR (default ~/workspace), not only the one dk-gc runs in")
     ap.add_argument("--in-use", metavar="WORKTREE",
                     help="only say whether a process runs in WORKTREE; exit 1 if one does or lsof cannot tell")
     args = ap.parse_args()
@@ -420,24 +452,40 @@ def main():
         if reason:
             print(shown(f"{args.in_use}: {reason}"))
         return 1 if reason else 0
-    if not os.path.isdir(args.workspace):
+    if args.workspace is None:
+        root = repo_root(os.getcwd())
+        if root is None:
+            sys.exit(shown(f"dk-gc: {os.getcwd()} is in no git checkout. Run it in a checkout to clean that "
+                           "repo, or pass --workspace to clean every repo under ~/workspace."))
+        workspace, roots = os.path.dirname(root), [root]
+    elif not os.path.isdir(args.workspace):
         sys.exit(shown(f"dk-gc: no workspace at {args.workspace}"))
+    else:
+        workspace, roots = args.workspace, main_roots(args.workspace)
 
     processes = Processes()
-    repos = [Repo(root, processes) for root in main_roots(args.workspace)]
-    slugs = set()
+    repos = [Repo(root, processes) for root in roots]
+    first = {}  # checkouts of one GitHub repo share its remote branches; the first one lists them
     for repo in repos:
-        repo.scan(args.workspace, remote=repo.slug not in slugs)
-        slugs.add(repo.slug)
+        first.setdefault(repo.slug, repo)
+    in_parallel(lambda repo: repo.fetch(remote=first[repo.slug] is repo), repos)
+    for repo in repos:
+        repo.scan(workspace)
     containers = databases()
     if containers is None:
         print("databases skipped: docker did not answer")
+    found = []
     for root, cid, name, issue in containers or []:
         repo = next((r for r in repos if r.root == root), None)
+        if repo is None and args.workspace is None:
+            continue  # another repo's database
         if repo is None:
             repo = Repo(root)
             repos.append(repo)
-        repo.consider_database((cid, name, issue))
+        found.append((repo, (cid, name, issue)))
+    states = in_parallel(lambda pair: pair[0].issue(pair[1][2]), found)
+    for (repo, container), state in zip(found, states):
+        repo.consider_database(container, state)
     count = 0
     for repo in repos:
         if not repo.items and not repo.kept and not repo.notes:

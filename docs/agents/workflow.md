@@ -14,7 +14,7 @@ This repo's parameters for the sequence in the `dk:issue-flow` skill. The kit di
 
 ## Evidence
 
-- A guard change shows the failing case from `tests/hooks/guard_bash_cases.json` before and after, and its replay against past transcripts.
+- A guard change shows the failing case from `tests/hooks/guard_bash_cases.json` before and after, and its replay against past transcripts. A replay or mutation sweep over a month of transcripts names its `timeout` (`dk:issue-flow` step 4).
 - A push gate or `dk-gate` change shows its case in `tests/hooks/test_push_gate.py` or `tests/test_dk_gate.py` before and after, and a headless session (`claude -p --plugin-dir plugins/dk-guard`) with and without the change.
 - A session hook change (`require-worktree`, `session-baseline`) shows its fixture case in `tests/hooks/test_require_worktree.py` or `tests/hooks/test_session_baseline.py` before and after, and a headless session (`claude -p --plugin-dir plugins/dk-guard`) with the change.
 - A `fork-guard` change shows its fixture case in `tests/hooks/test_fork_guard.py` before and after, its replay against past Agent calls (`tests/hooks/replay_history.py --agent`), and a headless session with and without the change.

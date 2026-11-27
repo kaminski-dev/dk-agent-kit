@@ -7,8 +7,9 @@ branch, so implicit pushes resolve the way they would in a session (`"repo":
 throwaway HOME whose zsh alias list holds ALIASES (`"aliases": false`: a HOME
 without the list). A case with `"process": true` or `max_seconds` runs as a real
 hook call instead, JSON on stdin to the answer on stdout, so the wiring stays
-covered; a `max_seconds` case fails when the hook takes longer. The process cases
-must hold an allow, a deny, an ask, a hint and a `max_seconds` case.
+covered; a `max_seconds` case fails when the hook takes longer, and a case with
+`says` when the reason leaves out any of its phrases. The process cases must
+hold an allow, a deny, an ask, a hint and a `max_seconds` case.
 """
 import importlib.util
 import json
@@ -108,7 +109,7 @@ def main():
                 got, reason = run(case["cmd"], cwd, home, background, case.get("max_seconds"))
             else:
                 got, reason = decide(guard, case["cmd"], cwd, home, background)
-            ok = got == case["expect"]
+            ok = got == case["expect"] and all(phrase in reason for phrase in case.get("says", []))
             failed += not ok
             mark = "ok  " if ok else "FAIL"
             tags = (" [bg]" if background else "") + (" [process]" if by_process(case) else "")

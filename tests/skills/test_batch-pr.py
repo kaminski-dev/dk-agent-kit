@@ -24,4 +24,10 @@ if not runs or any("--workflow" not in r for r in runs) or "workflow.md" not in 
                   "run per CI workflow workflow.md names (`gh run list --workflow`) that tested pre-main's head, "
                   "never the latest run of any")
 
+# Step 5 finishes a merged batch with finish.py, which runs the setup line the Worktree slot writes (#181).
+finish = re.search(r"^## 5\. Finish\n.*?(?=^## |\Z)", skills["batch-pr"].read_text(), re.M | re.S)
+finish = finish.group(0) if finish else ""
+if "finish.py" not in finish or not re.search(r"batch PR (?:has )?merged", finish):
+    errors.append("skills/batch-pr: no step 5 that runs finish.py and says it runs once the batch PR merged")
+
 lib.finish("dk:batch-pr")

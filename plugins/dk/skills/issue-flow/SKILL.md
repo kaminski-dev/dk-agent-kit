@@ -48,7 +48,7 @@ Then record it, so review counts it as requested work: comment `Scope amendment:
 
 ## 4. Commit per green step
 
-Each commit is one verifiable unit: the gates from `AGENTS.md` pass on what it touches before the next unit starts. For a bug, the failing test lands first and the fix on top, so the history shows red then green. Messages are English, imperative, and name the issue: `Fix X when Y (#N)`. Their attribution trailers follow step 1's **Ownership.**
+Each commit is one verifiable unit: the gates from `AGENTS.md` pass on what it touches before the next unit starts. For a bug, the failing test lands first and the fix on top, so the history shows red then green. Messages are English, imperative, and name the issue: `Fix X when Y (#N)`. Their attribution trailers follow step 1's **Ownership.** Calls that can pass 10 minutes name a `timeout` up to 1800000.
 
 ## 5. Screenshots and evidence
 
@@ -87,4 +87,4 @@ The session whose watch printed `merged`, or that works a batch PR's review find
 
 ## `pre-main`
 
-`pre-main` is shared by every open PR. The maintainer moves it and brings it level with `main` after each batch; agents reach it through PRs, or by the fast-forward push step 7 allows. GitHub acts on `Closes #N` only in a PR into the default branch, so the batch PR into `main` carries every merged PR's `Closes #N` or `Refs #N` line (step 6): its merge closes the one, and the other stays open for the post-deploy check (step 7). A push that rewrites or deletes it makes the guard ask the user first.
+`pre-main` is shared by every open PR. After each batch merges, `dk:batch-pr` step 5 fast-forwards it to `main`; otherwise agents reach it through PRs, or by the fast-forward push step 7 allows. GitHub acts on `Closes #N` only in a PR into the default branch, so the batch PR into `main` carries every merged PR's `Closes #N` or `Refs #N` line (step 6): its merge closes the one, and the other stays open for the post-deploy check (step 7). A push that rewrites or deletes it makes the guard ask the user first.

@@ -1,12 +1,12 @@
 ---
 name: batch-pr
-description: "Open the batch PR from pre-main into main, carrying every merged PR's Closes or Refs line."
+description: "Open the batch PR from pre-main into main, carrying every merged PR's Closes or Refs line, and finish the batch once it merged."
 disable-model-invocation: true
 ---
 
 # Batch PR
 
-The batch PR takes everything merged into `pre-main` since the last batch into `main`, and its merge deploys. It carries every merged PR's `Closes #N` or `Refs #N` line, for the reason the `dk:issue-flow` skill gives in step 6. Before it opens, one local CodeRabbit review of the batch lets you fix what it finds, so the review bot on the PR sees a mostly clean diff. This skill opens the PR; the maintainer merges it and moves both branches.
+The batch PR takes everything merged into `pre-main` since the last batch into `main`, and its merge deploys. It carries every merged PR's `Closes #N` or `Refs #N` line, for the reason the `dk:issue-flow` skill gives in step 6. Before it opens, one local CodeRabbit review of the batch lets you fix what it finds, so the review bot on the PR sees a mostly clean diff. This skill opens the PR; the maintainer merges it, and step 5 then brings `pre-main` level with `main`.
 
 ## 1. Collect
 
@@ -20,7 +20,7 @@ It reads origin and opens nothing. Act on its exit code:
 
 - **0**: it printed `## PRs` (merged into `pre-main`, not yet in `main`), `## Lines` (one `Closes` or `Refs` line per issue) and, when a PR names no issue, `## Without a line`. Go on to step 2.
 - **3**: a batch PR is already open. Give the user the URL it printed, and stop.
-- **4**: nothing to batch (`pre-main` holds nothing that `main` lacks, or origin has no `pre-main`). Pass its line on, and stop.
+- **4**: nothing to batch (`pre-main` holds nothing that `main` lacks, or origin has no `pre-main`). When the user asked to finish a merged batch, go to step 5; otherwise pass its line on, and stop.
 - **1**: `git` or `gh` failed, origin is no github.com repo, a merged PR's merge commit is missing from the clone (it names the PRs), or `pre-main` holds merge commits of branches but no PR merged in the repo it names. Show its message, and stop.
 
 Done when you hold the PR list and the lines.
@@ -66,4 +66,19 @@ When step 2 pushed fixes, `pre-main`'s head moved since step 3: run its nightly 
 gh pr create --base main --head pre-main --title "Batch: pre-main into main, <YYYY-MM-DD>" --body-file <scratchpad>/batch-pr.md
 ```
 
-Give the user the URL, and name each `(no issue)` PR: an issue it was meant to close stays open after the merge. Watch it as `dk:issue-flow` step 6 says: its checks are the batch's evidence, and what the review bot still finds takes step 7's route.
+Give the user the URL, and name each `(no issue)` PR: an issue it was meant to close stays open after the merge. Watch it as `dk:issue-flow` step 6 says: its checks are the batch's evidence, and what the review bot still finds takes step 7's route. When the watcher prints `merged`, go to step 5.
+
+## 5. Finish
+
+Runs once the batch PR has merged: when step 4's watcher prints `merged`, or when the user asks to finish a merged batch. From the repo's main checkout:
+
+```sh
+python3 -I <base directory>/finish.py
+```
+
+It brings `pre-main` level with `main`, runs the **Fresh-worktree setup** line of `docs/agents/workflow.md` in the checkouts that hold them, and prints the cleanup list; `--help` says how. Act on its exit code:
+
+- **0**: give the user the cleanup list as printed, and remove it with `dk-gc --yes` in the same checkout on their word (`dk:issue-flow` step 7).
+- **1**: show its message and stop. A message ending `Nothing was changed.` names a branch that cannot fast-forward (the batch PR still open or merged by squash or rebase, a local commit, or a change in its checkout in the way) or a setup line written as prose; moving that branch or rewriting that line is the maintainer's call. One ending `The branches have moved.` names the setup command that failed: show its output too.
+
+Done when `finish.py` exited 0 and the user holds the cleanup list.

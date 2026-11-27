@@ -38,4 +38,9 @@ if not re.search(r"^## Risk paths\n", params, re.M):
 if not re.search(r"Add its `## Risk paths` section when the repo has none", setup):
     errors.append("skills/setup: its Workflow step does not add the ## Risk paths section")
 
+# The Worktree slot writes the **Fresh-worktree setup** line that batch-pr's finish.py runs (#181).
+setup_slot = re.search(r"^- \*\*Worktree\*\*: .*", (DK / "skills/setup/workflow-parameters.md").read_text(), re.M)
+if not setup_slot or "**Fresh-worktree setup**" not in setup_slot.group(0) or "finish.py" not in setup_slot.group(0):
+    errors.append("skills/setup: the Worktree slot does not name the **Fresh-worktree setup** line batch-pr's finish.py runs")
+
 lib.finish("dk:setup")

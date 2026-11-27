@@ -36,6 +36,7 @@ A change no row covers (docs, CI, tooling) owes what the Evidence section of the
 - **Ports**: before starting a process, `lsof -iTCP:<port> -sTCP:LISTEN` shows the port free; a stale process from an earlier run answers with old code. Use the repo doc's way of moving to a free port.
 - **External services**: stub them or leave them absent, as the repo doc says per service. The stack never talks to a production service.
 - **Files**: logs, cookie jars, stub output and builds go in `$RUN`.
+- **Long runs**: a stack's first start, a drive of both sides, a stress or performance series and a mutation run name their `timeout` (`dk:issue-flow` step 4).
 
 Note every process and port you start; step 7 removes them.
 

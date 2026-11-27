@@ -8,13 +8,14 @@ leaked a credential (reading a credential file) or broke the shell (a zsh
 special parameter such as `path` as a loop, read or assigned variable, `$name:`
 before a zsh modifier, a variable holding a spaced command as the command, a
 function named like one of the user's zsh aliases) or blocked the session (a CI
-or merge wait outside run_in_background) or dropped the issue body (`gh issue
-view --comments`) or a dk:verify run's evidence (`rm` inside a verify.XXXXXX run
-directory) or ran a Markdown code span (a backtick span in an unquoted here-doc
-body), ask for
-rewriting the shared pre-main branch, a push to the current branch when the
+or merge wait outside run_in_background, though not three quick reads of the
+merge state) or dropped the issue body (`gh issue view --comments`) or a
+dk:verify run's evidence (`rm` inside a verify.XXXXXX run directory, outside its
+control checkout and its cookie jars) or ran a Markdown code span (a backtick
+span in an unquoted here-doc body) or hung on stdin (a `cat` with no file and no
+input), ask for rewriting the shared pre-main branch, a push to the current branch when the
 guard cannot tell which branch that is, or answering dk-gc's question for the
-human (--yes, piped input), and
+human across the workspace (--workspace with --yes or piped input), and
 hints for `gh pr view --comments`, which drops the body, for an unlabelled
 Postgres server that dk-pg should start instead, and for `git worktree remove`
 in a loop, which dk-gc does. Everything else passes.
@@ -206,6 +207,10 @@ OPERATOR = re.compile(r"&&|\|\||\|&|\||;;|;&|;\||;|&\||&!|&")
 LEAD = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}", "fi", "done", "esac"}
 # Words that open or close a compound command: from the first one on, a segment may run never or more than once.
 COMPOUND = LEAD | {"for", "foreach", "select", "repeat", "case", "coproc"}
+# The words that open and close a construct whose commands share its input; a subshell's kind is `)`.
+OPENS = {"{": "}", "if": "fi", "case": "esac", "while": "done", "until": "done", "for": "done", "select": "done"}
+CLOSES = {"}", "fi", "esac", "done"}
+CONSTRUCTS = itertools.count()  # ids unique across splitters, since a script's or backtick's segments join the call's
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\[[^]]*\])?\+?=")
 # A source word whose dropped quotes matter: a `$` in single quotes, after a backslash or before a quote, a quote at or
 # after a `~`, or a name that only a quote or backslash separates from more word characters (`"$WT"x`).
@@ -240,6 +245,8 @@ class Segment:
         self.heredoc_backticks = []  # the backtick substitutions in the body of its unquoted here-docs
         self.defines = None  # the function name when the segment is `f()`, `f ()` or `function f`
         self.loop_last = None  # for a one-line `for x (a b) cmd` header, the last segment of the sublist it repeats
+        self.inside = frozenset()  # the ids of the subshells and compound commands it runs in
+        self.closes = None  # the id of the construct whose input or output its redirections give, as `} < f`, `) < f`
         self.piped_in = self.piped_out = self.started = False
         self.pipe_to = None
 
@@ -259,6 +266,17 @@ class Splitter:
         self.list = self.first_list = 0  # the current `&&` list, and the first one of its `;` or newline command line
         self.conditional = self.passed_or = False  # whether that line has passed a `&&` or `||`, and a `||`
         self.continued = False  # the last thing read is a `&&`, `||` or `|`, so a newline does not end the line
+        self.open = []  # (id, closing word) of the constructs the cursor is inside, innermost last
+        self.fed = set()  # the ids of those a pipe feeds: every command inside reads the pipe
+
+    def inherit(self, splitter, piped):
+        """Start a script's or backtick's splitter inside this one's constructs, fed when its command is piped."""
+        splitter.open, splitter.fed = list(self.open), set(self.fed)
+        if piped:
+            cid = next(CONSTRUCTS)
+            splitter.open.append((cid, None))
+            splitter.fed.add(cid)
+        return splitter
 
     def run(self):
         self.parse(None, self.substituted)
@@ -311,7 +329,7 @@ class Splitter:
             elif REDIRECT.match(self.s, self.i):
                 op = REDIRECT.match(self.s, self.i).group()
                 self.i += len(op)
-                self.redirect(seg, op.lstrip("0123456789"))
+                self.redirect(seg, op.lstrip("0123456789"), op[:len(op) - len(op.lstrip("0123456789"))])
             elif OPERATOR.match(self.s, self.i):
                 op = OPERATOR.match(self.s, self.i).group()
                 self.i += len(op)
@@ -322,9 +340,16 @@ class Splitter:
             elif c == "(" and not seg.started and self.peek(1) != "(":
                 self.i += 1
                 seg = self.close(seg)
+                cid = next(CONSTRUCTS)
+                self.open.append((cid, ")"))
+                if seg.piped_in:
+                    self.fed.add(cid)
                 self.nesting += 1
                 self.parse(")", substituted)  # a subshell
                 self.nesting -= 1
+                del self.open[next(k for k, (c, _) in enumerate(self.open) if c == cid):]
+                seg = Segment(self.shell, substituted)  # the pipe fed the subshell, not what follows it
+                seg.closes = cid
             else:
                 mark, start = len(self.modifier_names), self.i
                 word, quoted, subs = self.word()
@@ -346,6 +371,12 @@ class Splitter:
         """Add a word; True when it ends a function's name (`f() {`, `f () {`, `function f {`), so its body starts
         a new segment."""
         first = not seg.started and word not in LEAD
+        if word in OPENS and not quoted and all(w in COMPOUND for w in seg.words):
+            # opened here, before the substitutions in the rest of the segment are split
+            cid = next(CONSTRUCTS)
+            self.open.append((cid, OPENS[word]))
+            if seg.piped_in:
+                self.fed.add(cid)
         seg.started = seg.started or first
         seg.words.append(word)
         named = command_words(seg.words)[1]
@@ -364,9 +395,19 @@ class Splitter:
 
     def close(self, seg, piped=False):
         if not (seg.words or seg.redirects):
+            if piped and seg.closes is not None:  # `(...) | cmd`: the subshell's output feeds cmd
+                seg = Segment(self.shell, seg.substituted)
+                seg.piped_in = True
             return seg
         self.out.append(seg)
         self.continued = False
+        seg.inside = frozenset(c for c, _ in self.open)
+        seg.piped_in = seg.piped_in or bool(seg.inside & self.fed)
+        for w in itertools.takewhile(lambda w: w in COMPOUND, seg.words):
+            if w in CLOSES and any(kind == w for _, kind in self.open):
+                while (top := self.open.pop())[1] != w:
+                    pass  # a construct left open, such as zsh's `while true { … }`, ends with the one around it
+                seg.closes = top[0]
         # a `case` inside a subshell ends the subshell's parse at its first pattern's `)`
         if (seg.defines or seg.words[:1] and seg.words[0] in COMPOUND) and (not self.nesting or seg.words[0] == "case"):
             self.straight = False
@@ -411,12 +452,13 @@ class Splitter:
                 j += 2 if words[j] in ("-o", "+o") else 1
             if has_c and j < len(words):
                 seg.scripts.add(j)
-                inner = Splitter(words[j], shell, seg.substituted, self.depth + 1).run()
+                fed = seg.piped_in or any(op in INPUT_REDIRECTS for op, _ in seg.redirects)
+                inner = self.inherit(Splitter(words[j], shell, seg.substituted, self.depth + 1), fed).run()
                 if inner:
-                    inner[0].piped_in = seg.piped_in
+                    inner[0].piped_in = fed
                 self.out += inner
 
-    def redirect(self, seg, op):
+    def redirect(self, seg, op, fd=""):
         while self.peek() in (" ", "\t"):
             self.i += 1
         if self.peek() in ("<", ">") and self.peek(1) == "(":
@@ -430,7 +472,8 @@ class Splitter:
             target, quoted, subs = self.word()
             seg.subs += subs
             self.take_modifiers(seg, mark)
-        seg.redirects.append((op, target))
+        # `3< file` feeds descriptor 3, not stdin, so it keeps its number and counts as no input redirect
+        seg.redirects.append((fd + op if op.startswith("<") and fd not in ("", "0") else op, target))
         if op in ("<<", "<<-"):
             self.heredocs.append((seg, target, op == "<<-", not quoted))
 
@@ -581,7 +624,7 @@ class Splitter:
                 self.i += 1
         if not self.command_subs:
             self.backticks.append(self.s[start:self.i])
-        inner = Splitter("".join(buf), self.shell, True, self.depth + 1).run()
+        inner = self.inherit(Splitter("".join(buf), self.shell, True, self.depth + 1), False).run()
         self.out += inner
         return inner
 
@@ -1252,6 +1295,41 @@ def check_waits(cmd):
     return [FOREGROUND_WAIT] if any(not quoted_text(cmd, m.start(1)) for m in hits) else []
 
 
+# a retry this short on a merge state GitHub has not computed yet waits on no CI
+RETRY_TRIES, RETRY_SLEEP = 3, 5
+MERGE_FIELDS = {"mergeable", "mergeStateStatus"}
+CHECK_FIELDS = {"statusCheckRollup"}
+LITERAL_ITEM = re.compile(r"[\w.:@%+-]+")
+BRACE_RANGE = re.compile(r"\{(-?\d+)\.\.(-?\d+)\}")
+
+
+def for_tries(rest, seg):
+    """How many passes `for <name> in <items>` makes when its items are literal; None when known only at run time."""
+    if rest[1:2] != ["in"] or seg.subs:
+        return None
+    items = rest[2:]
+    brace = BRACE_RANGE.fullmatch(items[0]) if len(items) == 1 else None
+    if brace:
+        return abs(int(brace.group(2)) - int(brace.group(1))) + 1
+    return len(items) if all(LITERAL_ITEM.fullmatch(w) for w in items) else None
+
+
+def short_sleep(words):
+    return len(words) == 2 and re.fullmatch(r"\d+(?:\.\d+)?", words[1]) is not None \
+        and float(words[1]) <= RETRY_SLEEP
+
+
+def reads_merge_state(words):
+    """A `gh pr view` that reads the merge state and not the checks."""
+    args = gh_args(words) or []
+    if args[:2] != ["pr", "view"]:
+        return False
+    fields = [w.split("=", 1)[1] for w in args if w.startswith("--json=")] \
+        + [args[k + 1] for k, w in enumerate(args[:-1]) if w == "--json"]
+    fields = set(",".join(fields).split(","))
+    return bool(MERGE_FIELDS & fields) and not CHECK_FIELDS & fields
+
+
 @dataclasses.dataclass
 class Loop:
     keyword: str
@@ -1260,9 +1338,17 @@ class Loop:
     body_polls: bool = False
     sleeps: bool = False
     loop_last: object = None
+    tries: int | None = None  # a for loop's passes, when its items are literal
+    long_sleep: bool = False  # a sleep longer than RETRY_SLEEP, or one whose length the guard cannot read
+    polls_other: bool = False  # a poll other than reads_merge_state()
+    holds_loop: bool = False  # its passes multiply those of the loop inside
+
+    def short_retry(self):
+        return self.keyword == "for" and self.tries is not None and self.tries <= RETRY_TRIES \
+            and not self.long_sleep and not self.polls_other and not self.holds_loop
 
     def waits(self):
-        return self.condition_polls or (self.body_polls and self.sleeps)
+        return self.condition_polls or (self.body_polls and self.sleeps and not self.short_retry())
 
 
 def wait_words(segs):
@@ -1285,12 +1371,15 @@ def wait_words(segs):
             return [FOREGROUND_WAIT]
         for kw in keywords:
             if kw in LOOP_KEYWORDS:
-                loop = Loop(kw, in_condition=kw in ("while", "until"), loop_last=seg.loop_last)
+                loop = Loop(kw, in_condition=kw in ("while", "until"), loop_last=seg.loop_last,
+                            tries=for_tries(rest, seg) if kw == "for" else None)
                 # this segment's substitutions came before it in segs: the condition of a while or until, the first
                 # body command of a repeat, the word list of a for (read once)
                 sub_polls = any(polls(command(s)[1]) for sub in seg.subs for s in sub)
                 loop.condition_polls = loop.in_condition and sub_polls
                 loop.body_polls = kw == "repeat" and sub_polls
+                for outer in loops:
+                    outer.holds_loop = True
                 loops.append(loop)
             elif kw == "do" and loops:
                 loops[-1].in_condition = False
@@ -1300,7 +1389,9 @@ def wait_words(segs):
             loops[-1].condition_polls = True
         for loop in loops:
             loop.body_polls = loop.body_polls or polls(words)
+            loop.polls_other = loop.polls_other or polls(words) and not reads_merge_state(words)
             loop.sleeps = loop.sleeps or words[:1] == ["sleep"]
+            loop.long_sleep = loop.long_sleep or words[:1] == ["sleep"] and not short_sleep(words)
         while loops and loops[-1].loop_last is seg:
             if loops.pop().waits():
                 return [FOREGROUND_WAIT]
@@ -1310,8 +1401,9 @@ def wait_words(segs):
 DK_GC = re.compile(r"(?:^|(\|\|?|" + OPENERS + r"))\s*" + PREFIX
                    + r"(?:python3?\s+(?:-\S+\s+)*)?(?:[^\s;&|()<>'\"]*/)?dk-gc"
                    + r"(?=$|[\s;&|)`<>]|['\"](?:$|[\s;&|)]))(" + END + ")")
-DK_GC_YES = ("ask", "dk-gc removes worktrees, branches and databases after one yes, and that yes is the human's. "
-             "Run `dk-gc` or `dk-gc --dry-run` and leave the answer to them.")
+DK_GC_YES = ("ask", "dk-gc --workspace removes worktrees, branches and databases in every repo under the workspace "
+             "after one yes, and that yes is the human's. Clean one repo with `dk-gc --yes` run in it, or run "
+             "`dk-gc --workspace --dry-run` and leave the answer to them.")
 OUTPUT_REDIRECT = re.compile(r"\d*>>?&(?:\d+|-)?|&>>?")
 
 
@@ -1336,6 +1428,11 @@ def quoted_text(cmd, pos, shell=""):
     return quote is not None and not re.search(shell + r"-c\s+$", cmd[:quote])
 
 
+def workspace_wide(args):
+    """--workspace, or a `$` word that may hold it."""
+    return any(a == "--workspace" or a.startswith("--workspace=") or "$" in a for a in args)
+
+
 def check_dk_gc(cmd):
     # `2>&1` and `&>` would end the match at their `&` and hide a later --yes or `<`; `<&3` stays as input
     cmd = OUTPUT_REDIRECT.sub(lambda r: " " * len(r.group()), cmd)
@@ -1345,9 +1442,12 @@ def check_dk_gc(cmd):
             continue
         piped = sep == "|" or (sep == "&" and cmd[m.start() - 1:m.start()] == "|")
         args = rest.split()
-        if "--dry-run" not in args and ("--yes" in args or "<" in rest or piped):
+        if "--dry-run" not in args and workspace_wide(args) and ("--yes" in args or "<" in rest or piped):
             return [DK_GC_YES]
     return []
+
+
+INLINE_SCRIPT = ("-", "-c", "-m")  # python runs stdin, a -c string or a -m module, so a later dk-gc is an argument
 
 
 def dk_gc_words(segs):
@@ -1355,18 +1455,20 @@ def dk_gc_words(segs):
         _, words = command(seg)
         if words and re.fullmatch(r"python3?", os.path.basename(words[0])):
             words = words[1:]
-            while words and words[0].startswith("-"):
+            while words and words[0].startswith("-") and words[0] not in INLINE_SCRIPT:
                 words = words[1:]
-        if not words or os.path.basename(words[0]) != "dk-gc" or "--dry-run" in words:
+            if words[:1] and words[0] in INLINE_SCRIPT:
+                continue
+        if not words or os.path.basename(words[0]) != "dk-gc" or "--dry-run" in words or not workspace_wide(words):
             continue
         if "--yes" in words or seg.piped_in or any(op.startswith("<") for op, _ in seg.redirects):
             return [DK_GC_YES]
     return []
 
 
-WORKTREE_LOOP = ("hint", "This loop removes worktrees by hand. `dk-gc --dry-run` lists the worktrees and branches of "
-                 "merged PRs and the databases of closed issues; `dk-gc` removes them after the human's yes and keeps "
-                 "a worktree with uncommitted changes.")
+WORKTREE_LOOP = ("hint", "This loop removes worktrees by hand. `dk-gc --dry-run`, run in the repo, lists the worktrees "
+                 "and branches of its merged PRs and the databases of its closed issues; `dk-gc --yes` removes them "
+                 "and keeps a worktree with uncommitted changes.")
 RAW_WORKTREE_LOOP = re.compile(START + r"(" + "|".join(k for k in LOOP_KEYWORDS if k != "repeat")
                                + r")\b(?=.*?\bgit\b[^;&|\n]*?\sworktree\s+remove\b)", re.S)
 
@@ -1712,14 +1814,42 @@ def credential_words(segs):
 # Under the issue number's directory any six characters or a glob name a run; elsewhere mktemp's six are rarely all
 # lowercase, which keeps a file such as `verify.output` out.
 RUN_DIR = re.compile(r"(?:^|/)(?:verify\.(?=[a-z]{0,5}[A-Z0-9])[A-Za-z0-9]{6}|\d+/verify\.(?:[A-Za-z0-9]{6}|\*))(?:/|$)")
-VERIFY_RM = ("deny", "This deletes inside a dk:verify run directory (verify.XXXXXX), and a rerun needs no cleanup: "
-             "screenshots overwrite by name, and a rerun takes a new `mktemp -d \"$SCRATCH/<N>/verify.XXXXXX\"` "
-             "while the earlier runs stay as evidence. The control worktree goes with `git worktree remove`.")
+VERIFY_RM = ("deny", "This deletes inside a dk:verify run directory (verify.XXXXXX), whose files are the run's "
+             "evidence. Set a file aside by moving it into the run's discarded directory: `mkdir -p "
+             "\"$RUN/discarded\" && mv <file> \"$RUN/discarded/\"`. A rerun needs no cleanup: screenshots overwrite "
+             "by name, and a rerun takes a new `mktemp -d \"$SCRATCH/<N>/verify.XXXXXX\"`. Files inside the control "
+             "checkout (`$RUN/base/`) and cookie jars may go; the control checkout itself goes with "
+             "`git worktree remove`.")
+# login state a rerun starts over: cookies.txt, control-cookies.txt, control.cookies, jar, cookie-jar.txt
+COOKIE_JAR = re.compile(r"(?i)(?:^|[-_.*])(?:cookies?|jar)(?:[-_.*]|$)")
+IMAGE = re.compile(r"(?i)\.(?:png|jpe?g|webp)$")
+EXTENSION = re.compile(r"\.\w+$")
 
 
-def rm_operands(rm_words):
+def cookie_jar(name):
+    """A cookie jar's name, not a screenshot's. A glob names jars only when its text before or after the wildcards
+    ends in an extension other than an image's (`cookies-*.txt`, `control-cookies.txt*`), so `cookies.*` is none."""
+    if not COOKIE_JAR.search(name) or IMAGE.search(name):
+        return False
+    if not re.search(r"[*?[]", name):
+        return True
+    ends = (re.split(r"[*?[]", name)[0], re.split(r"[*?\]]", name)[-1])
+    return any(EXTENSION.search(end) and not IMAGE.search(end) for end in ends)
+
+
+def discardable(path, run, recursive):
+    """Inside the control checkout (`$RUN/base/...`, code rather than evidence) or a cookie jar, which is a file, so
+    a recursive rm of a cookie-named path may be a directory of evidence."""
+    rest = path[run.end():]
+    # what follows base/ must name something past a word that may be empty, or the rm may take the checkout itself
+    inside = re.sub(r"\$(?:\{[^}]*\}|\([^)]*\)|\w+)", "", rest[len("base/"):]).strip("/")
+    # a path the walk could not resolve keeps its `..`, which may lead out of base/
+    return (rest.startswith("base/") and bool(inside) and ".." not in rest.split("/")) or (not recursive and cookie_jar(os.path.basename(path)))
+
+
+def operands(words):
     options = True
-    for w in rm_words[1:]:
+    for w in words[1:]:
         if options and w == "--":
             options = False
         elif not (options and w.startswith("-") and len(w) > 1):
@@ -1727,8 +1857,12 @@ def rm_operands(rm_words):
 
 
 def removes_run(words, walk, seg):
-    return bool(words) and os.path.basename(words[0]) == "rm" \
-        and any(RUN_DIR.search(walk.guess(t, seg)) for t in rm_operands(words))
+    if not (words and os.path.basename(words[0]) == "rm"):
+        return False
+    opts = list(itertools.takewhile(lambda w: w != "--", (w for w in words[1:] if w.startswith("-") and len(w) > 1)))
+    recursive = any(w in ("--recursive",) or (not w.startswith("--") and set(w[1:]) & {"r", "R"}) for w in opts)
+    return any((run := RUN_DIR.search(path)) and not discardable(path, run, recursive)
+               for path in (walk.guess(t, seg) for t in operands(words)))
 
 
 def verify_rm_words(segs, cwd):
@@ -1748,6 +1882,50 @@ def check_verify_rm(cmd, cwd):
         if not quoted_text(cmd, offset) \
                 and removes_run(tokens, *raw_walk(cwd, [move for move in moves if move[0] < offset])):
             return [VERIFY_RM]
+    return []
+
+
+STDIN_CAT = ("deny", "This cat has no file to read and nothing piped, redirected or here-doc'd into it, so it waits on "
+             "stdin until the call times out. Write the file with the Write tool, or give cat its text as a "
+             "here-doc: `cat > <file> <<'EOF'`, the text, then `EOF` on a line of its own.")
+INPUT_REDIRECTS = {"<", "<<", "<<-", "<<<", "<>", "<&"}
+# a cat whose words after it are only options and output redirections, at the start of a command a pipe does not feed
+RAW_STDIN_CAT = re.compile(r"(?:^|[;\n(]|(?<!\|)&|\|\||\$\(|\b(?:then|do|else)\s)\s*" + PREFIX + r"(?:[\w./~-]*/)?(cat)"
+                           r"(?:\s+(?:-\w*|\d*>>?[&|!]?\s*[^\s;&|<>()]+|&>>?\s*[^\s;&|<>()]+))*\s*(?=$|[;&|\n)`])")
+
+
+def reads_stdin(seg):
+    wrappers, words = command(seg)
+    return bool(words) and os.path.basename(words[0]) == "cat" and "xargs" not in wrappers and not seg.piped_in \
+        and not any(op in INPUT_REDIRECTS for op, _ in seg.redirects) and all(w == "-" for w in operands(words))
+
+
+def in_function_body(cmd, pos):
+    starts = [m.end() for m in FUNCTION_RAW.finditer(cmd, 0, pos)]
+    return bool(starts) and cmd.count("{", starts[-1], pos) > cmd.count("}", starts[-1], pos)
+
+
+def check_stdin_cat(cmd):
+    return [STDIN_CAT] if any(not quoted_text(cmd, m.start(1)) and not in_function_body(cmd, m.start(1))
+                              for m in RAW_STDIN_CAT.finditer(cmd)) else []
+
+
+def stdin_cat_words(segs):
+    """A cat in a function body reads what the call feeds the function, so the body's segments are skipped: from the
+    one after the name until its braces close. A cat inside a group, subshell or loop given input (by a later segment
+    of no command that closes it, such as `} < file` or `done < file`) reads that input, so it passes."""
+    depth = None
+    for k, seg in enumerate(segs):
+        if seg.defines:
+            depth = 0
+            continue
+        if depth is None and reads_stdin(seg) and not any(
+                not command(later)[1] and later.closes in seg.inside
+                and any(op in INPUT_REDIRECTS for op, _ in later.redirects) for later in segs[k + 1:]):
+            return [STDIN_CAT]
+        if depth is not None:
+            depth += seg.words.count("{") - seg.words.count("}")
+            depth = depth if depth > 0 else None
     return []
 
 
@@ -1779,12 +1957,12 @@ def decide(cmd, cwd, background=False):
         findings = check_docker(raw) + check_git(raw, cwd) + check_credentials(raw) + check_gh(raw) \
             + check_postgres(raw) + check_dk_gc(raw) + check_zsh_names(raw) + check_waits(raw) \
             + check_modifiers(raw) + check_command_variable(raw) + check_function_names(raw) \
-            + check_verify_rm(raw, cwd) + check_heredoc_backticks(cmd)
+            + check_verify_rm(raw, cwd) + check_heredoc_backticks(cmd) + check_stdin_cat(raw)
     else:
         findings = docker_words(segs) + git_words(segs, cwd) + credential_words(segs) + gh_words(segs) \
             + postgres_words(segs) + dk_gc_words(segs) + zsh_name_words(segs) + wait_words(segs) \
             + modifier_words(segs) + command_variable_words(segs) + function_name_words(segs) \
-            + verify_rm_words(segs, cwd) + heredoc_backtick_words(segs)
+            + verify_rm_words(segs, cwd) + heredoc_backtick_words(segs) + stdin_cat_words(segs)
     findings += check_worktree_loop(cmd) if segs is None else worktree_loop_words(segs)
     if background:  # the same wait started with run_in_background blocks nothing
         findings = [f for f in findings if f is not FOREGROUND_WAIT]

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Runs the dk:batch-pr collection and review scripts against a fixture repo, the eval `gh` stand-in
-and a `coderabbit` stand-in.
+"""Runs the dk:batch-pr collection, review and finish scripts against a fixture repo, the eval `gh` stand-in,
+a `coderabbit` stand-in and a `dk-gc` stand-in.
 
 The workspace copies the shape plugins/dk/evals/_fixture/build.sh builds: .bin/gh
 first on PATH, its state in .tracker/state.json, a bare origin beside the repo, which
@@ -19,6 +19,7 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "plugins" / "dk" / "skills" / "batch-pr" / "batch.py"
 REVIEW = ROOT / "plugins" / "dk" / "skills" / "batch-pr" / "review.py"
+FINISH = ROOT / "plugins" / "dk" / "skills" / "batch-pr" / "finish.py"
 GH = ROOT / "plugins" / "dk" / "evals" / "_fixture" / "bin" / "gh"
 ORIGIN = "https://github.com/acme/ledger.git"
 INHERITED = "kaminski-dev/dk-agent-kit"
@@ -380,6 +381,198 @@ r, calls = run_review(ws)
 check("coderabbit fails: a failed run is no review, the next run reviews",
       r.returncode == 0 and len(calls) == 6, (r.returncode, r.stdout, r.stderr, calls))
 check("coderabbit fails: no worktree is left", ws.git("worktree", "list").count("\n") == 1, ws.git("worktree", "list"))
+ws.remove()
+
+# Finishing a merged batch. The stand-in dk-gc logs its argv and directory, and prints one list line.
+DK_GC = """#!/bin/sh
+printf '%s\\t%s\\n' "$*" "$PWD" >> "$(dirname "$0")/../.tracker/dk-gc.log"
+echo "dk-gc stand-in: remove worktree ~/workspace/ledger-101"
+"""
+SETUP_LINE = "- **Fresh-worktree setup**: `touch installed`, then `echo routes > generated.txt`.\n"
+
+
+def finish_ws(setup_line=SETUP_LINE, batch=None):
+    """main checked out with workflow.md, pre-main one commit ahead (or batch's); the batch PR merged on origin from another clone."""
+    ws = Workspace()
+    (ws.repo / "docs" / "agents").mkdir(parents=True)
+    (ws.repo / "docs" / "agents" / "workflow.md").write_text("# Workflow\n\n## Worktree\n\n" + setup_line)
+    ws.git("add", "docs")
+    ws.git("commit", "-qm", "workflow")
+    ws.git("branch", "pre-main")
+    ws.git("checkout", "-q", "pre-main")
+    (batch or (lambda ws: ws.commit("first")))(ws)
+    ws.push()
+    ws.git("checkout", "-q", "main")
+    ws.git_in(ws.root, "clone", "-q", "--branch", "main", ORIGIN, "github")
+    github = ws.root / "github"
+    ws.git_in(github, "-c", "user.name=GitHub", "-c", "user.email=gh@example.com", "merge", "-q", "--no-ff",
+              "-m", "Merge pull request #90 from acme/pre-main", "origin/pre-main")
+    ws.git_in(github, "push", "-q", "origin", "main")
+    ws.merged = ws.git_in(github, "rev-parse", "HEAD").strip()
+    stub = ws.root / ".bin" / "dk-gc"
+    stub.write_text(DK_GC)
+    stub.chmod(0o755)
+    return ws
+
+
+def run_finish(ws, cwd=None):
+    r = subprocess.run([sys.executable, "-I", str(FINISH)], cwd=cwd or ws.repo, env=ws.env, capture_output=True, text=True)
+    log = ws.root / ".tracker" / "dk-gc.log"
+    return r, log.read_text().splitlines() if log.exists() else []
+
+
+def refs(ws):
+    """origin's main and pre-main, then the local ones."""
+    remote = ws.git_in(ws.root / "origin.git", "rev-parse", "main", "pre-main").split()
+    return remote + ws.git("rev-parse", "main", "pre-main").split()
+
+
+ws = finish_ws()
+r, gc = run_finish(ws)
+check("merged batch: exits 0", r.returncode == 0, (r.returncode, r.stdout, r.stderr))
+check("merged batch: pre-main fast-forwarded to main on origin, and both local branches with it",
+      refs(ws) == [ws.merged] * 4, (refs(ws), ws.merged))
+check("merged batch: the checked-out main carries the merge, with nothing left uncommitted",
+      (ws.repo / "first").exists() and ws.git("status", "--porcelain", "-uno") == "", ws.git("status", "--porcelain"))
+check("merged batch: the setup commands from workflow.md ran in the checkout",
+      (ws.repo / "installed").exists() and (ws.repo / "generated.txt").read_text() == "routes\n"
+      if (ws.repo / "generated.txt").exists() else False, r.stdout)
+check("merged batch: dk-gc --dry-run ran in the checkout, and its list is printed",
+      gc == [f"--dry-run\t{ws.repo.resolve()}"] and "remove worktree ~/workspace/ledger-101" in r.stdout, (gc, r.stdout))
+ws.remove()
+
+# A commit landed on pre-main after the batch PR merged: origin's pre-main cannot fast-forward.
+ws = finish_ws()
+ws.git_in(ws.root / "github", "fetch", "-q", "origin")
+ws.git_in(ws.root / "github", "checkout", "-q", "-b", "late", "origin/pre-main")
+(ws.root / "github" / "late").write_text("late\n")
+ws.git_in(ws.root / "github", "add", "late")
+ws.git_in(ws.root / "github", "-c", "user.name=Dev", "-c", "user.email=dev@example.com", "commit", "-qm", "late")
+ws.git_in(ws.root / "github", "push", "-q", "origin", "late:pre-main")
+before = refs(ws)
+r, gc = run_finish(ws)
+check("origin's pre-main ahead of main: exits 1 and names it", r.returncode == 1 and "origin/pre-main cannot fast-forward" in r.stderr,
+      (r.returncode, r.stdout, r.stderr))
+check("origin's pre-main ahead of main: no branch moves, no setup runs, no cleanup list",
+      refs(ws) == before and not (ws.repo / "installed").exists() and gc == [], (refs(ws), before, gc))
+ws.remove()
+
+# A local commit on pre-main: checked before origin's pre-main is pushed, so origin stays too.
+ws = finish_ws()
+ws.git("checkout", "-q", "pre-main")
+ws.commit("local")
+ws.git("checkout", "-q", "main")
+before = refs(ws)
+r, gc = run_finish(ws)
+check("a local commit on pre-main: exits 1 and names it", r.returncode == 1 and "pre-main cannot fast-forward" in r.stderr,
+      (r.returncode, r.stdout, r.stderr))
+check("a local commit on pre-main: origin's pre-main and the local main stay", refs(ws) == before and gc == [],
+      (refs(ws), before, gc))
+ws.remove()
+
+# Uncommitted work on the checked-out main: a merge refused there would come after origin moved, so nothing moves.
+ws = finish_ws()
+(ws.repo / "base").write_text("edited\n")
+before = refs(ws)
+r, gc = run_finish(ws)
+check("uncommitted change on the checked-out main: exits 1, nothing moves, the change stays",
+      r.returncode == 1 and "uncommitted" in r.stderr and refs(ws) == before
+      and (ws.repo / "base").read_text() == "edited\n", (r.returncode, r.stderr, refs(ws), before))
+ws.remove()
+
+# A repo whose workflow.md names no setup line (this kit's own): the setup is skipped, the rest runs.
+ws = finish_ws(setup_line="- Path and branch: `git worktree add ~/workspace/ledger-<issue> origin/main`. No install step.\n")
+r, gc = run_finish(ws)
+check("no setup line: exits 0, says the setup is skipped, runs no backticked command",
+      r.returncode == 0 and "no **Fresh-worktree setup** line" in r.stdout and "git worktree add" not in r.stdout
+      and not (ws.root / "workspace").exists(), (r.returncode, r.stdout, r.stderr))
+check("no setup line: the branches still move and the cleanup list is printed",
+      refs(ws) == [ws.merged] * 4 and len(gc) == 1, (refs(ws), gc))
+r, gc = run_finish(ws)
+check("a second run: says the branches are level and changes nothing",
+      r.returncode == 0 and "level with origin/main" in r.stdout and refs(ws) == [ws.merged] * 4, (r.stdout, r.stderr))
+ws.remove()
+
+# A setup line written as prose: its backticked spans are no list of commands, so nothing runs and nothing moves.
+ws = finish_ws(setup_line="- **Fresh-worktree setup**: `touch installed`, then `cp .env .env` (or `cp .env.example .env` "
+                          "and fill `SECRET` with `openssl rand -base64 32`).\n")
+before = refs(ws)
+r, gc = run_finish(ws)
+check("a prose setup line: exits 1 and names the line, before any branch moves",
+      r.returncode == 1 and "Fresh-worktree setup" in r.stderr and refs(ws) == before
+      and not (ws.repo / "installed").exists() and gc == [], (r.returncode, r.stdout, r.stderr, refs(ws), before))
+ws.remove()
+
+# A repo whose origin has no pre-main (batch.py's exit 4 sends it here): main still moves, and no pre-main is pushed.
+ws = finish_ws()
+ws.git_in(ws.root / "github", "push", "-q", "origin", "--delete", "pre-main")
+r, gc = run_finish(ws)
+remote = ws.git_in(ws.root / "origin.git", "for-each-ref", "--format=%(refname)", "refs/heads")
+check("no pre-main on origin: exits 0, moves the local main, and pushes no pre-main",
+      r.returncode == 0 and ws.git("rev-parse", "main").strip() == ws.merged and remote == "refs/heads/main\n"
+      and (ws.repo / "installed").exists() and len(gc) == 1, (r.returncode, r.stdout, r.stderr, remote, gc))
+ws.remove()
+
+# An untracked file in the checked-out main that the merge adds: the merge there would refuse after origin moved.
+ws = finish_ws()
+(ws.repo / "first").write_text("mine\n")
+before = refs(ws)
+r, gc = run_finish(ws)
+check("untracked file the merge would overwrite: exits 1 and names it, nothing moves, the file stays",
+      r.returncode == 1 and "first" in r.stderr and refs(ws) == before
+      and (ws.repo / "first").read_text() == "mine\n", (r.returncode, r.stderr, refs(ws), before))
+ws.remove()
+
+def commit_paths(ws, message, files):
+    """Writes each path with its text, or git-mvs it there when the text is "<- old"."""
+    for path, text in files.items():
+        if text.startswith("<- "):
+            ws.git("mv", text[3:], path)
+            continue
+        (ws.repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (ws.repo / path).write_text(text)
+        ws.git("add", path)
+    ws.git("commit", "-qm", message)
+
+
+def refused_before_moving(name, ws, path, text, why):
+    """The finish exits 1 naming the path, no ref moves, and the local file keeps its text."""
+    before = refs(ws)
+    r, gc = run_finish(ws)
+    check(f"{name}: exits 1 and names {path}, nothing moves, the file stays",
+          r.returncode == 1 and path in r.stderr and refs(ws) == before and gc == []
+          and (ws.repo / path).read_text() == text, (why, r.returncode, r.stdout, r.stderr, refs(ws), before))
+
+
+# The batch renames base to renamed, and an untracked renamed sits in the checked-out main.
+ws = finish_ws(batch=lambda ws: commit_paths(ws, "rename", {"renamed": "<- base"}))
+(ws.repo / "renamed").write_text("mine\n")
+refused_before_moving("untracked rename destination", ws, "renamed", "mine\n", "a rename is no A in git diff")
+ws.remove()
+
+# The batch adds assets/routes.json, and an untracked file assets sits where its directory goes.
+ws = finish_ws(batch=lambda ws: commit_paths(ws, "routes", {"assets/routes.json": "{}\n"}))
+(ws.repo / "assets").write_text("mine\n")
+refused_before_moving("untracked file where the batch adds a directory", ws, "assets", "mine\n", "file/directory")
+ws.remove()
+
+# The batch adds config.local.json, which the checkout ignores and holds: a fast-forward overwrites ignored files.
+ws = finish_ws(batch=lambda ws: commit_paths(ws, "config", {"config.local.json": "{}\n"}))
+(ws.repo / ".git" / "info" / "exclude").write_text("config.local.json\n")
+(ws.repo / "config.local.json").write_text("mine\n")
+refused_before_moving("ignored file the batch adds", ws, "config.local.json", "mine\n", "ignored")
+ws.remove()
+
+# Ignored files the batch does not add stay permitted, an ignored directory it adds a file into among them.
+ws = finish_ws(batch=lambda ws: commit_paths(ws, "build", {"build/out.js": "out\n"}))
+(ws.repo / ".git" / "info" / "exclude").write_text("build/\n*.log\n")
+(ws.repo / "build").mkdir()
+(ws.repo / "build" / "cache").write_text("cache\n")
+(ws.repo / "debug.log").write_text("log\n")
+r, gc = run_finish(ws)
+check("unrelated ignored files: exits 0, the branches move, the ignored files stay",
+      r.returncode == 0 and refs(ws) == [ws.merged] * 4 and (ws.repo / "build" / "cache").read_text() == "cache\n"
+      and (ws.repo / "build" / "out.js").exists() and (ws.repo / "debug.log").exists(), (r.returncode, r.stdout, r.stderr))
 ws.remove()
 
 print(f"{len(failures)} failures")
