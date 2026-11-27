@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Runs dk-comment-edit against the eval `gh` stand-in: the maintainer's own attributed comment is replaced, and
-another author's, one without the attribution note, a new body without it and an unknown id are refused. Then
+"""Runs dk-comment-edit against the eval `gh` stand-in: the maintainer's own marked comment is replaced, one that opens
+with the earlier visible note included, and another author's, one without the agent marker, a new body without it
+(or with the earlier note in its place) and an unknown id are refused. Then
 checks its command line against the product repos' ask rules (tests/fixtures/product_ask_rules.json), which ask
 before any `gh api` PATCH, PUT or DELETE: an ask outranks an allow, so the command is only prompt-free while its
 line matches none of them.
@@ -22,7 +23,8 @@ CMD = ROOT / "plugins" / "dk-guard" / "bin" / "dk-comment-edit"
 GH = ROOT / "plugins" / "dk" / "evals" / "_fixture" / "bin" / "gh"
 WATCHER = ROOT / "plugins" / "dk" / "skills" / "issue-flow" / "pr-wait"
 ASK = json.loads((ROOT / "tests" / "fixtures" / "product_ask_rules.json").read_text())["ask"]
-NOTE = "> [!NOTE]\n> **Claude Opus 5.5 responding on behalf of kaminski-dev**\n\n"
+NOTE = "<!-- dk-agent -->\n\n"
+LEGACY = "> [!NOTE]\n> **Claude Opus 5.5 responding on behalf of kaminski-dev**\n\n"
 
 failures = []
 
@@ -49,6 +51,7 @@ STATE.write_text(json.dumps({
         {"id": 101, "author": "kaminski-dev", "body": NOTE + "Fixed in #12, out on Friday."},
         {"id": 102, "author": "customer", "body": NOTE + "Quoting the bot's format."},
         {"id": 103, "author": "kaminski-dev", "body": "The maintainer's own words."},
+        {"id": 104, "author": "kaminski-dev", "body": LEGACY + "Scope amendment: one more case."},
     ]}},
     "prs": [{"number": 12, "title": "Fix login", "body": "", "base": "main", "head": "fix/7-login", "state": "OPEN",
              "comments": [{"id": 201, "author": "kaminski-dev", "body": NOTE + "Ready for review."}],
@@ -79,6 +82,10 @@ check("own issue comment: prints its URL",
       r.stdout.strip() == "https://github.com/acme/app/issues/7#issuecomment-101", r.stdout)
 r = edit(201, new)
 check("own PR comment: replaced", r.returncode == 0 and body(201) == new.read_text(), (r.returncode, r.stderr))
+r = edit(104, new)
+check("own comment with the earlier visible note: replaced by a marked body, the note gone",
+      r.returncode == 0 and body(104) == new.read_text() and "responding on behalf" not in body(104),
+      (r.returncode, r.stderr))
 r = edit(302, new)
 check("own thread reply: replaced", r.returncode == 0 and body(302) == new.read_text()
       and r.stdout.strip() == "https://github.com/acme/app/pull/12#discussion_r302", (r.returncode, r.stdout, r.stderr))
@@ -98,16 +105,21 @@ r = edit(301, new)
 check("a bot's thread comment: refused", r.returncode == 1 and body(301) == "Handle None.", (r.returncode, r.stderr))
 r = edit(103, new)
 check("the maintainer's comment without the note: refused and left as it was",
-      r.returncode == 1 and body(103) == "The maintainer's own words." and "attribution note" in r.stderr,
+      r.returncode == 1 and body(103) == "The maintainer's own words." and "agent marker" in r.stderr,
       (r.returncode, r.stderr))
 
 bare = root / "bare.md"
 bare.write_text("Fixed in #12, out on Tuesday.")
 before = body(101)
 r = edit(101, bare)
-check("a new body without the note: refused, the comment left as it was",
-      r.returncode == 1 and body(101) == before and "attribution note" in r.stderr and str(bare) in r.stderr,
+check("a new body without the marker: refused, the comment left as it was",
+      r.returncode == 1 and body(101) == before and "agent marker" in r.stderr and str(bare) in r.stderr,
       (r.returncode, r.stderr))
+old_note = root / "old-note.md"
+old_note.write_text(LEGACY + "Fixed in #12, out on Tuesday.")
+r = edit(101, old_note)
+check("a new body opening with the earlier visible note: refused, the comment left as it was",
+      r.returncode == 1 and body(101) == before and "agent marker" in r.stderr, (r.returncode, r.stderr))
 
 r = edit(999, new)
 check("an unknown id: fails and says no comment has it",
@@ -119,11 +131,11 @@ r = edit(101, root / "missing.md")
 check("a missing file: fails and names it", r.returncode == 1 and "missing.md" in r.stderr, (r.returncode, r.stderr))
 
 calls = (root / ".tracker" / "calls.log").read_text()
-check("a refusal sends no PATCH", calls.count("PATCH") == 4, calls)
+check("a refusal sends no PATCH", calls.count("PATCH") == 5, calls)
 
-watcher = re.search(r'^ATTRIBUTION = re\.compile\(r"([^"\n]+)"\)$', WATCHER.read_text(), re.M)
-own = re.search(r'^ATTRIBUTION = re\.compile\(r"([^"\n]+)"\)$', CMD.read_text(), re.M)
-check("its ATTRIBUTION pattern is pr-wait's, which tests/skills/test_issue-flow.py ties to the skill's note",
+watcher = re.search(r'^MARKER = re\.compile\(r"([^"\n]+)"\)$', WATCHER.read_text(), re.M)
+own = re.search(r'^MARKER = re\.compile\(r"([^"\n]+)"\)$', CMD.read_text(), re.M)
+check("its MARKER pattern is pr-wait's, which tests/skills/test_issue-flow.py ties to the skill's marker",
       bool(watcher and own and watcher.group(1) == own.group(1)), (own and own.group(1), watcher and watcher.group(1)))
 shutil.rmtree(root, ignore_errors=True)
 
