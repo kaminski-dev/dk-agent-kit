@@ -53,8 +53,9 @@ START = r"(?:^|" + OPENERS + r")\s*"
 # `perl -e 'alarm N; exec @ARGV' <command>`: how dk:issue-flow bounds a command where `timeout` is missing. A script
 # that shifts (`alarm shift; exec @ARGV`) takes its first argument, the seconds, off the command.
 EXEC_ARGV = r"\bexec\s*(?:\(\s*)?@ARGV\b"
-PERL_SCRIPT = r"(?:'[^']*" + EXEC_ARGV + r"[^']*'|\"[^\"]*" + EXEC_ARGV + r"[^\"]*\")(?:\s+--)?"
-PERL_EXEC = r"perl\s+-[A-Za-z]*[eE]\s*(?:(?=(?:'[^']*|\"[^\"]*)\bshift\b)" + PERL_SCRIPT + r"\s+\S+|" + PERL_SCRIPT + r")"
+EXEC_SCRIPT = r"(?:'[^']*" + EXEC_ARGV + r"[^']*'|\"[^\"]*" + EXEC_ARGV + r"[^\"]*\")"
+SHIFTS = r"(?=(?:'[^']*|\"[^\"]*)\bshift\b)"
+PERL_EXEC = r"perl\s+-[A-Za-z]*[eE]\s*(?:" + SHIFTS + EXEC_SCRIPT + r"(?:\s+--)?\s+\S+|" + EXEC_SCRIPT + r"(?:\s+--)?)"
 PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:(?:sudo|command|exec|nohup|time|env|nice|xargs(?:\s+-\S+)*|g?timeout\s+\S+|" \
     + PERL_EXEC + r")\s+)*"
 END = r"[^;&|\n)`]*"
