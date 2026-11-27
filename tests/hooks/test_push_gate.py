@@ -351,6 +351,31 @@ def case_a_hash_that_leaves_the_gate_less_time_than_its_last_pass_took_denies_th
     assert "held every slot" not in reason and "Fix the failure" not in reason and not gate_ran(wt), reason
 
 
+def case_a_gate_whose_last_pass_outlasts_the_push_is_sent_to_a_hand_run_at_once(root):
+    # The last pass took 2 s, by hand or under a longer timeout, and the push has 1 s: no push can fit the gate, so
+    # the denial names the hand run only, and comes before the wait for the slot the holder keeps.
+    main, wt = make_checkout(root, "outgrown", "#!/bin/sh\ntouch .gate-ran\nsleep 2\n")
+    env = {"DK_GATE_SLOTS": "1", "DK_GATE_WAIT": "30"}
+    assert run(main, f"cd {wt} && git push", env=env) == (0, None, "") and gate_ran(wt, forget=True)
+    with open(os.path.join(wt, "src.txt"), "w") as f:
+        f.write("new\n")
+    flag = os.path.join(root, "outgrown-holder.started")
+    _, holder = make_checkout(root, "outgrown-holder", f"#!/bin/sh\necho $$ > {flag}\nexec sleep 30\n")
+    hand = hand_run(holder, flag, env)
+    try:
+        began = time.monotonic()
+        code, out, err = run(main, f"cd {wt} && git push", env={**env, "DK_PUSH_GATE_TIMEOUT": "1"})
+        reason = denial(out)
+        assert code == 0 and reason and time.monotonic() - began < 10, (code, out, err)
+        assert "more than the push's whole 1 s" in reason and "run dk-gate there first" in reason, reason
+        assert "push again" not in reason and "held every slot" not in reason and not gate_ran(wt), reason
+    finally:
+        hand.kill()
+        with open(flag) as f:
+            os.kill(int(f.read()), 9)
+        hand.wait()
+
+
 def case_decisions_go_to_the_guard_log(root):
     main, wt = make_checkout(root, "logged", FAIL)
     data = os.path.join(root, "plugin-data")
