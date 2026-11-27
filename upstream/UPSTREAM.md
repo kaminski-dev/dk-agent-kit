@@ -51,7 +51,7 @@ HumanLayer's default branch dropped these files in `d8197bab`; its `legacy` bran
 
 | dk file | Upstream path | Changes |
 |---|---|---|
-| skills/research-codebase | .claude/commands/research_codebase.md | ticket-blind split, single documentarian subagent, `docs/research/` output; diagrams follow `dk:pr`'s rules |
+| skills/research-codebase | .claude/commands/research_codebase.md | ticket-blind split, single documentarian subagent, `docs/research/` output; diagrams follow `dk:pr`'s rules; the issue comment posted per `dk:issue-flow` step 6's **Comments.**, agent marker first |
 | agents/codebase-locator, codebase-analyzer, codebase-pattern-finder | .claude/agents/codebase-locator.md, .claude/agents/codebase-analyzer.md, .claude/agents/codebase-pattern-finder.md | trimmed, positive phrasing, Bash for reads |
 
 ## t3dotgg/tstack (MIT) @ 1085050
