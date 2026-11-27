@@ -13,7 +13,11 @@ Call the Skill tool with `dk:tdd` where possible, at pre-agreed seams.
 
 Run typechecking regularly, single test files regularly, and the full test suite once at the end. Commit after each green step.
 
-When the code is done, call the Skill tool with `dk:verify` and prove the change.
+**Tier.** When the code is done, run `python3 -I <base directory>/../code-review/tier <base>`, with `<base directory>` the one this skill's header names and `<base>` the branch's base, both written out literally. `dk:verify`, `dk:code-review` and `dk:pr` each read it themselves: a small change gets a red/green test, one reviewer for one round (a second when a behaviour fix reopens review) and the short PR body, and a risky one adds blast radius to the PR.
+
+Then call the Skill tool with `dk:verify` and prove the change.
+
+**Self-pass** over the diff, so review spends no round on it: delete each comment that restates the code, rename a symbol where a comment explains what it holds, and update every doc line that names a symbol the change renamed or changed. Commit it.
 
 Then call the Skill tool with `dk:code-review` to review the work, and answer its findings by its **Answer findings** step: each id fixed, disagreed with or declined in the ledger, within its round budget. The PR body carries the ledger.
 
@@ -41,4 +45,4 @@ Before reporting, dry-merge the tickets' branches: fetch, then run `git merge-tr
 
 ## Report
 
-The final message is the report: the PR link and its head, the proof, `dk:code-review`'s **Answer findings** report (the rounds run, the ledger, the shortstat before and after, each declined finding's issue number), the **Decisions taken** with the reason for each, and the risks that remain. It ends with the verdict from `dk:issue-flow` step 6's **Ready gate.**, one per PR. A run stopped before any PR reports where it stopped, the question and the **Decisions taken**, and ends on the question, with no verdict line.
+The final message is the report: the PR link and its head, the tier line, the proof, `dk:code-review`'s **Answer findings** report (the rounds run, the ledger, the shortstat before and after, each declined finding's issue number), the **Decisions taken** with the reason for each, and the risks that remain. It ends with the verdict from `dk:issue-flow` step 6's **Ready gate.**, one per PR. A run stopped before any PR reports where it stopped, the question and the **Decisions taken**, and ends on the question, with no verdict line.

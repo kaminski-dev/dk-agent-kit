@@ -3,7 +3,8 @@ name: implement-353
 description: >
   clientdata #353 (Customer History order), replayed on a stand-in repo: dk:implement takes the
   triaged ticket to a PR into pre-main with evidence, and its report ends with one ready-gate
-  verdict. The tracker is the workspace's gh stand-in,
+  verdict, the standard tier stated and a nit-only round ending the review. The tracker is the
+  workspace's gh stand-in,
   so the PR is a file, never a real one.
 tags: [implement]
 runs: 1
@@ -51,6 +52,19 @@ graders:
     type: tool_used
     tool: Skill
     input_match: '"skill"\s*:\s*"dk:code-review"'
+  - name: pr-states-the-tier
+    type: regex
+    target: { source: file, path: .tracker/pr.md }
+    pattern: "\\*\\*Tier:\\*\\* standard"
+  - name: nit-only-round-ends-the-review
+    type: llm
+    criteria: >
+      The repo keeps no risk-path list, so the tier is standard (#173). The report names that tier and
+      gives the review's rounds and the axes each ran. A round whose findings were all nits (or no
+      findings), or whose fixes were only to nits, "also" lines, Standards or Comments findings, or
+      touched only tests, comments or docs, ends the review: no later round follows it (#172). PASS
+      when the report names the standard tier and no round follows such a round; FAIL when the tier is
+      missing, or a second round ran after a round that brought only nits.
   - name: ends-with-one-verdict
     type: llm
     criteria: >

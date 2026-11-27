@@ -39,4 +39,21 @@ if not summary or not re.search(r"one plain sentence on the problem.*before any 
 if not re.search(r"^### Title\n\n[^\n]*why the change matters", pr_skill, re.M):
     errors.append("skills/pr: no ### Title section saying the title tells why the change matters")
 
+# The body follows the tier, and states it, so the maintainer sees which path ran (#173).
+template = re.search(r"```markdown\n.*?\n```", pr_skill, re.S)
+if not re.search(r"^\*\*Tier:\*\* ", template.group(0) if template else "", re.M):
+    errors.append("skills/pr: the template does not carry the **Tier:** line")
+tier = re.search(r"^### Tier\n.*?(?=^#{1,3} )", pr_skill, re.M | re.S)
+tier = tier.group(0) if tier else ""
+for what, pattern in (
+    ("the tier script, run from dk:code-review", r"`python3 -I <base directory>/\.\./code-review/tier <base>`"),
+    ("the small body: one sentence, the evidence, the tier line, the closing line",
+     r"^- \*\*Small\*\*: [^\n]*opening sentence, the Evidence, the \*\*Tier:\*\* line and the closing line"),
+    ("the standard body: the template", r"^- \*\*Standard\*\*: the template"),
+    ("the risky body: dk:blast-radius whatever the door", r"^- \*\*Risky\*\*: [^\n]*`dk:blast-radius`[^\n]*whatever the door"),
+    ("the risky PR's ci label where the repo has one", r"^- \*\*Risky\*\*: [^\n]*`ci` label[^\n]*`gh pr edit <PR> --add-label ci`"),
+):
+    if not re.search(pattern, tier, re.M):
+        errors.append(f"skills/pr: its ### Tier section does not name {what}")
+
 lib.finish("dk:pr")
