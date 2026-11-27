@@ -45,6 +45,23 @@ for what, pattern in (
     if perf and not re.search(pattern, perf):
         errors.append(f"skills/verify: step 1's Performance claim row does not name {what}")
 
+# A fix with no correct test seam is proven by the control run (dk:diagnosing-bugs Phase 5), and a reader of dk:verify
+# alone must tell when that holds, or it reports the proof missing or writes the shallow test Phase 5 warns against (#151).
+bugfix = re.search(r"^\| Bug fix .*$", owe.group(0) if owe else "", re.M)
+bugfix = bugfix.group(0) if bugfix else ""
+if not bugfix:
+    errors.append("skills/verify: step 1's proof table has no Bug fix row")
+for what, pattern in (
+    ("the regression test seen red before its green run", r"regression test seen \*\*red\*\*[^|]*before its green run counts"),
+    ("what makes a seam too shallow, without dk:diagnosing-bugs loaded", r"[Nn]o correct seam[^|]*shallower than the bug"),
+    ("the control run on the original scenario in the test's place",
+     r"control run \(step 4[^)]*\) on the original scenario[^|]*in the test's place"),
+    ("the missing seam recorded in the report and the PR", r"report and the PR name the missing seam"),
+    ("the regression test owed without that record", r"with no such record, the regression test is owed"),
+):
+    if bugfix and not re.search(pattern, bugfix):
+        errors.append(f"skills/verify: step 1's Bug fix row does not name {what}")
+
 # Verify was 25% of a small PR's time; a small change owes a red/green test or one phone-width screenshot (#173).
 tier = re.search(r"^\*\*Tier\.\*\*.*$", owe.group(0) if owe else "", re.M)
 tier = tier.group(0) if tier else ""
@@ -53,6 +70,8 @@ for what, pattern in (
     ("the small tier's red/green test", r"`small` tier[^\n]*regression test seen red, then green"),
     ("the small tier's one phone-width screenshot for a visible change", r"visible change[^\n]*one screenshot at 390 × 844"),
     ("the small tier skipping the stack and the control run", r"no rest of the stack \(steps 2 and 3\) and no control run \(step 4\)"),
+    # A small fix with no correct seam has only its control run for proof (#151).
+    ("the control run kept for a fix with no correct seam", r"no control run \(step 4\) outside the Bug fix row's no-seam case"),
     ("the other tiers owing the table in full", r"`standard` and `risky` tiers owe[^\n]*in full"),
 ):
     if not re.search(pattern, tier):
