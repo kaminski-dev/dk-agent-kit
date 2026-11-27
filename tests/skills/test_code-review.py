@@ -224,6 +224,32 @@ pin = re.search(r"^### 1\. Pin the fixed point\n.*?(?=^### 2)", review, re.M | r
 pin = pin.group(0) if pin else ""
 if not re.search(r"`python3 -I <base directory>/tier <fixed-point>`", pin):
     errors.append("skills/code-review: step 1 does not run the tier script on the fixed point")
+# The author settles the repeating small findings before any reviewer sees them (#172: 588 restating comments, 239
+# renames, 178 drifted doc lines among 3,923 findings). It lives here, not in dk:implement, so a fanned-out
+# implementer, whose brief names dk:code-review but cannot call dk:implement, reaches it too (#185).
+self_pass = re.search(r"^\*\*Self-pass\.\*\*.*?(?=^\*\*Tier\.\*\*)", pin, re.M | re.S)
+self_pass = self_pass.group(0) if self_pass else ""
+if not self_pass:
+    errors.append("skills/code-review: step 1 has no **Self-pass.** paragraph before its **Tier.** paragraph, so the "
+                  "tier and the reviewers see the diff after it")
+for what, pattern in (
+    ("removing comments that restate the code", r"comment[^.;]*restate"),
+    ("renaming in place of commenting", r"renam[^.;]*comment"),
+    ("updating doc lines that name a changed symbol", r"doc line[^.;]*name[^.;]*symbol"),
+    ("its condition: you wrote the change", r"you wrote the change"),
+    ("a change someone else wrote left unedited", r"someone else wrote goes straight to the tier, unedited"),
+    ("committed work getting it as its own commit once the checks pass", r"checks[^.;]*pass[^.;]*own commit"),
+    ("uncommitted work keeping its edits in the working tree", r"uncommitted[^.]*working tree"),
+):
+    if self_pass and not re.search(pattern, self_pass, re.S):
+        errors.append(f"skills/code-review: its **Self-pass.** paragraph does not name {what}")
+# A relative fixed point (`HEAD~1`) names another commit once the self-pass commits (CodeRabbit on #196).
+# A path that exists passes a bare `git rev-parse` and prints itself (CodeRabbit on #196, round 2).
+if not re.search(r'`git rev-parse --verify --end-of-options "<fixed-point>\^\{commit\}"`[^.]*SHA it prints[^.]*`<fixed-point>`',
+                 pin):
+    errors.append("skills/code-review: step 1 does not pin the fixed point to the commit SHA `git rev-parse --verify "
+                  "--end-of-options \"<fixed-point>^{commit}\"` prints, so a self-pass commit leaves a relative fixed "
+                  "point where it was and a path fails before the self-pass")
 spawn = re.search(r"^### \d\. Spawn the sub-agents.*?(?=^### )", review, re.M | re.S)
 spawn = spawn.group(0) if spawn else ""
 for what, pattern in (
