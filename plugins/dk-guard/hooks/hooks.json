@@ -1,5 +1,5 @@
 {
-  "description": "dk-guard: PreToolUse guard for Bash, fails closed if the script crashes or times out; a push gate on Bash that runs the pushed checkout's .claude/gate.sh before git push through dk-gate, which reuses a pass on the same tree and runs at most two gates at once, denies the push when no slot frees in time and otherwise fails open; require-worktree on Edit|Write, fork-guard on Agent and a SessionStart baseline, all three fail open.",
+  "description": "dk-guard: PreToolUse guard for Bash, fails closed if the script crashes or times out; a push gate on Bash that runs the pushed checkout's .claude/gate.sh before git push through dk-gate, which reuses a pass on the same tree and runs at most two gates at once, denies the push when no slot frees in time and otherwise fails open; require-worktree on Edit|Write, fork-guard on Agent and a SessionStart baseline, all three fail open. Every hook starts through scripts/run-hook, which starts the interpreter pyenv would pick without its shim.",
   "hooks": {
     "PreToolUse": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "exec sh \"${CLAUDE_PLUGIN_ROOT}\"/scripts/run-hook guard-bash",
+            "command": "exec sh \"${CLAUDE_PLUGIN_ROOT}\"/scripts/run-hook guard-bash-cached",
             "timeout": 30,
             "onFailure": "block"
           }
