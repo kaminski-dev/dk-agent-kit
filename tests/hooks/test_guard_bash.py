@@ -6,10 +6,11 @@ branch, so implicit pushes resolve the way they would in a session (`"repo":
 "verify"`: in a dk:verify run directory, `<scratch>/50/verify.Ab3dE9`; the `main` one holds `linked`, a link into the feature repo), and with a
 throwaway HOME whose zsh alias list holds ALIASES (`"aliases": false`: a HOME
 without the list). A case with `"process": true` or `max_seconds` runs as a real
-hook call instead, JSON on stdin to the answer on stdout, so the wiring stays
-covered; a `max_seconds` case fails when the hook takes longer, and a case with
-`says` when the reason leaves out any of its phrases. The process cases must
-hold an allow, a deny, an ask, a hint and a `max_seconds` case.
+hook call instead: the command hooks.json names for the Bash guard, through
+`sh -c` as the harness starts it, JSON on stdin to the answer on stdout, so the
+wiring stays covered; a `max_seconds` case fails when the hook takes longer, and
+a case with `says` when the reason leaves out any of its phrases. The process
+cases must hold an allow, a deny, an ask, a hint and a `max_seconds` case.
 """
 import importlib.util
 import json
@@ -20,7 +21,8 @@ import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-GUARD = os.path.join(HERE, "..", "..", "plugins", "dk-guard", "scripts", "guard-bash.py")
+PLUGIN = os.path.abspath(os.path.join(HERE, "..", "..", "plugins", "dk-guard"))
+GUARD = os.path.join(PLUGIN, "scripts", "guard-bash.py")
 ALIASES = ["g", "gs", "gst", "ll"]
 LEVELS = ("allow", "deny", "ask", "hint")
 PATH = os.environ["PATH"]
@@ -52,6 +54,13 @@ def load_guard():
     return module
 
 
+def bash_guard_command():
+    groups = json.load(open(os.path.join(PLUGIN, "hooks", "hooks.json")))["hooks"]["PreToolUse"]
+    command, = [h["command"] for g in groups if g["matcher"] == "Bash" for h in g["hooks"]
+                if h.get("onFailure") == "block"]
+    return command.replace("${CLAUDE_PLUGIN_ROOT}", PLUGIN)
+
+
 def by_process(case):
     return case.get("process", False) or "max_seconds" in case
 
@@ -72,7 +81,7 @@ def run(cmd, cwd, home, background=False, max_seconds=None):
     payload = {"session_id": "test", "cwd": cwd, "hook_event_name": "PreToolUse",
                "tool_name": "Bash", "tool_input": tool_input}
     try:
-        out = subprocess.run([sys.executable, "-I", GUARD], input=json.dumps(payload), timeout=max_seconds,
+        out = subprocess.run(["sh", "-c", bash_guard_command()], input=json.dumps(payload), timeout=max_seconds,
                              capture_output=True, text=True, env={"PATH": PATH, "HOME": home})
     except subprocess.TimeoutExpired:
         return "slow", f"took over {max_seconds} s"

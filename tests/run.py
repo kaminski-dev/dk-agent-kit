@@ -36,6 +36,7 @@ class Check:
 
 
 HOOKS = "plugins/dk-guard/scripts/"
+HOOKS_JSON = "plugins/dk-guard/hooks/hooks.json"
 BIN = "plugins/dk-guard/bin/"
 SKILLS = "plugins/dk/skills/"
 SKILL_LIB = "tests/skills/_skills.py"
@@ -47,7 +48,10 @@ def skill(name, *reads):
 
 
 CHECKS = [
-    Check("tests/hooks/test_guard_bash.py", [HOOKS + "guard-bash.py", "tests/hooks/guard_bash_cases.json"], fast=True),
+    # Its process cases run the command hooks.json names.
+    Check("tests/hooks/test_guard_bash.py", [HOOKS + "guard-bash.py", "tests/hooks/guard_bash_cases.json",
+                                             HOOKS_JSON], fast=True),
+    Check("tests/hooks/test_hook_start.py", [HOOKS_JSON, HOOKS + "find-python.sh", HOOKS + "guard-bash-cached.py"]),
     # It loads the guard, and runs dk-gate.
     Check("tests/hooks/test_push_gate.py", [HOOKS + "push-gate.py", HOOKS + "guard-bash.py", HOOKS + "gate.py",
                                             BIN + "dk-gate"]),
