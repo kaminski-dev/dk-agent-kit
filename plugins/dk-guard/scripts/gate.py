@@ -36,18 +36,20 @@ slot.
 One gate runs per checkout at a time, so two overlapping runs cannot leave a
 pass the later, failing one contradicts. Before its slot a run takes an
 exclusive flock on checkout-<hash of the root>.lock beside the slots, released
-the same way. A second run waits for it holding no slot, then reads the cache
+the same way; a pass drops the locks of worktrees that are gone. A second run waits for it holding no slot, then reads the cache
 again: it reuses the first run's pass on the same tree and runs the gate
 otherwise (--fresh always runs). That wait and the slot wait share the
-DK_GATE_WAIT seconds; a run whose checkout stays busy gives up and says so. The gate runs with DK_GATE_WORKERS (default 4: two gates on a 12-core
-machine, with cores left for the sessions) in its environment, for the gate
-script to pass to its tools (`go test -p`, `vitest --maxWorkers`, ...); a gate
-that ignores it runs as before.
+DK_GATE_WAIT seconds; a run whose checkout stays busy gives up and says so.
+
+The gate runs with DK_GATE_WORKERS (default 4: two gates on a 12-core machine,
+with cores left for the sessions) in its environment, for the gate script to
+pass to its tools (`go test -p`, `vitest --maxWorkers`, ...); a gate that
+ignores it runs as before.
 
 A hand run prints the gate's output as it comes and exits 0 on a pass, 1 on
 a failure and 3 when the gate did not run (no slot freed, or its checkout's
-other run outlasted the wait); a checkout without an executable
-gate exits 0 and says so.
+other run outlasted the wait); a checkout without an executable gate exits 0
+and says so.
 """
 import datetime
 import fcntl
